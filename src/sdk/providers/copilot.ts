@@ -5,7 +5,9 @@
  * `s.client` and `s.session` instead of manual SDK client creation.
  */
 
-import type { SessionConfig as CopilotSessionConfig } from "@github/copilot-sdk";
+import type { CopilotClientOptions, SessionConfig as CopilotSessionConfig } from "@github/copilot-sdk";
+import { normalizedTerminalEnv } from "../../lib/terminal-env.ts";
+import { getCommandPath } from "../../services/system/detect.ts";
 import { createProviderValidator } from "../types.ts";
 
 /**
@@ -19,13 +21,55 @@ import { createProviderValidator } from "../types.ts";
  * leaks into every `atomic chat -a copilot` and `atomic workflow -a
  * copilot` invocation.
  *
+ * Also normalizes UTF-8 locale and terminal defaults via
+ * {@link normalizedTerminalEnv} so the CLI subprocess inherits sane
+ * values regardless of the host shell's configuration.
+ *
  * The SDK uses `options.env ?? process.env` as-is (no merge) when
  * spawning, so we must fold the existing env in ourselves. Returns a
  * fresh object per call so callers can layer additional env without
  * mutating shared state.
  */
-export function copilotSubprocessEnv(): Record<string, string | undefined> {
-  return { ...process.env, NODE_NO_WARNINGS: "1" };
+export function copilotSubprocessEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string | undefined> {
+  return { ...normalizedTerminalEnv(baseEnv), NODE_NO_WARNINGS: "1" };
+}
+
+/**
+ * Resolve the absolute path to the Copilot CLI executable.
+ *
+ * Precedence:
+ * 1. `COPILOT_CLI_PATH` env var — if set and non-empty.
+ * 2. `getCommandPath('copilot')` — resolved via `Bun.which`.
+ * 3. `undefined` — let the SDK use its bundled instance.
+ *
+ * Does NOT validate by spawning; SDK start surfaces executable errors.
+ */
+export function resolveCopilotCliPath(): string | undefined {
+  const envPath = process.env["COPILOT_CLI_PATH"];
+  if (envPath) return envPath;
+  const resolved = getCommandPath("copilot");
+  return resolved ?? undefined;
+}
+
+/**
+ * Build options suitable for `new CopilotClient(...)`.
+ *
+ * Includes:
+ * - `env` from {@link copilotSubprocessEnv} (UTF-8 locale + `NODE_NO_WARNINGS=1`).
+ * - `cliPath` from {@link resolveCopilotCliPath} when resolvable; omitted
+ *   otherwise so the SDK falls back to its bundled CLI.
+ */
+export function copilotSdkLaunchOptions(): CopilotClientOptions {
+  const options: CopilotClientOptions = {
+    env: copilotSubprocessEnv(),
+  };
+  const cliPath = resolveCopilotCliPath();
+  if (cliPath !== undefined) {
+    options.cliPath = cliPath;
+  }
+  return options;
 }
 
 /**
