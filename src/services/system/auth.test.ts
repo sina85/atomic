@@ -38,7 +38,13 @@ let copilotGetAuthStatus = mock<() => Promise<CopilotAuthStatus>>(async () => ({
   login: "octocat",
 }));
 
+// Captures the options passed to `new CopilotClient(...)` on each call.
+let lastCopilotConstructorOptions: unknown = undefined;
+
 class FakeCopilotClient {
+  constructor(options: unknown) {
+    lastCopilotConstructorOptions = options;
+  }
   async start(): Promise<void> {
     await copilotStart();
   }
@@ -114,6 +120,7 @@ afterAll(() => {
 const { checkAgentAuth, printAuthError } = await import("./auth.ts");
 
 beforeEach(() => {
+  lastCopilotConstructorOptions = undefined;
   copilotStart.mockClear();
   copilotStart.mockImplementation(async () => {});
   copilotStop.mockClear();
@@ -172,6 +179,24 @@ describe("checkAgentAuth(copilot)", () => {
     expect(result.detail).toContain("auth probe failed");
     // The stop failure must not shadow the probe result.
     expect(result.detail).not.toContain("stop crashed");
+  });
+
+  test("constructs CopilotClient with COPILOT_CLI_PATH as cliPath and NODE_NO_WARNINGS=1 in env", async () => {
+    const origCliPath = process.env["COPILOT_CLI_PATH"];
+    process.env["COPILOT_CLI_PATH"] = "/explicit/bin/copilot";
+    try {
+      await checkAgentAuth("copilot");
+      const opts = lastCopilotConstructorOptions as {
+        cliPath?: string;
+        env?: Record<string, string | undefined>;
+      };
+      expect(opts).toBeDefined();
+      expect(opts.cliPath).toBe("/explicit/bin/copilot");
+      expect(opts.env?.["NODE_NO_WARNINGS"]).toBe("1");
+    } finally {
+      if (origCliPath === undefined) delete process.env["COPILOT_CLI_PATH"];
+      else process.env["COPILOT_CLI_PATH"] = origCliPath;
+    }
   });
 });
 
