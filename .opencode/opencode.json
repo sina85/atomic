@@ -18,6 +18,8 @@
     }
   },
   "instructions": [
-    "/home/alilavaee/.atomic/AGENTS.md"
-  ]
+    "/home/alilavaee/.atomic/AGENTS.md",
+    "/home/vscode/.atomic/AGENTS.md"
+  ],
+  "permission": "allow"
 }

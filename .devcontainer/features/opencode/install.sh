@@ -6,7 +6,7 @@
 #
 # NOTE: This script is duplicated across claude, copilot, and opencode features.
 #       Keep all three copies in sync when making changes.
-#       See: devcontainer-features/src/{claude,copilot,opencode}/install.sh
+#       See: .devcontainer/features/{claude,copilot,opencode}/install.sh
 #-------------------------------------------------------------------------------------------------------------
 
 set -e

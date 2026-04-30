@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'devcontainer-features/**'
+      - '.devcontainer/features/**'
   workflow_dispatch:
 
 jobs:
@@ -25,6 +25,6 @@ jobs:
         uses: devcontainers/action@v1
         with:
           publish-features: "true"
-          base-path-to-features: "./devcontainer-features/src"
+          base-path-to-features: "./.devcontainer/features"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
