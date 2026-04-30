@@ -17,6 +17,17 @@ const DEFAULT_COLORTERM = "truecolor";
 
 const LOCALE_KEYS = ["LANG", "LC_ALL", "LC_CTYPE"] as const;
 
+/** Terminal-related env keys that should be forwarded to launcher scripts. */
+export const TERMINAL_ENV_KEYS = [
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "COLORTERM",
+] as const;
+
+export type TerminalEnvKey = (typeof TERMINAL_ENV_KEYS)[number];
+
 /**
  * Build a string-only environment record with normalized UTF-8 locale
  * and sane terminal defaults, derived from `baseEnv`.
@@ -73,4 +84,55 @@ export function mergeTerminalEnv(
 ): Record<string, string> {
   const defaults = normalizedTerminalEnv(baseEnv);
   return { ...defaults, ...envVars };
+}
+
+/**
+ * Pick only {@link TERMINAL_ENV_KEYS} from a string-keyed env record.
+ *
+ * Keys absent in `env` are omitted from the result; no defaults are applied.
+ */
+export function pickTerminalEnv(
+  env: Record<string, string>,
+): Partial<Record<TerminalEnvKey, string>> {
+  const result: Partial<Record<TerminalEnvKey, string>> = {};
+  for (const key of TERMINAL_ENV_KEYS) {
+    if (key in env) {
+      result[key] = env[key];
+    }
+  }
+  return result;
+}
+
+/**
+ * Build an env record for `spawnDirect` / child-process spawning.
+ *
+ * Inherits the full normalized environment (all keys) from `baseEnv`,
+ * then overlays explicit `explicitEnv` overrides.
+ *
+ * @param explicitEnv - Caller-supplied overrides; always win.
+ * @param baseEnv     - Source environment; defaults to `process.env`.
+ */
+export function buildSpawnEnv(
+  explicitEnv: Record<string, string>,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  return mergeTerminalEnv(explicitEnv, baseEnv);
+}
+
+/**
+ * Build an env record for launcher scripts / shell wrappers.
+ *
+ * Only the terminal-relevant keys ({@link TERMINAL_ENV_KEYS}) are inherited
+ * from `baseEnv`, preventing full `process.env` from leaking into scripts.
+ * Explicit `explicitEnv` overrides are then merged on top.
+ *
+ * @param explicitEnv - Caller-supplied overrides; always win.
+ * @param baseEnv     - Source environment; defaults to `process.env`.
+ */
+export function buildLauncherEnv(
+  explicitEnv: Record<string, string>,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const terminalEnv = pickTerminalEnv(normalizedTerminalEnv(baseEnv));
+  return { ...terminalEnv, ...explicitEnv };
 }

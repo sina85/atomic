@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mergeTerminalEnv, normalizedTerminalEnv } from "./terminal-env.ts";
+import {
+  TERMINAL_ENV_KEYS,
+  buildLauncherEnv,
+  buildSpawnEnv,
+  mergeTerminalEnv,
+  normalizedTerminalEnv,
+  pickTerminalEnv,
+} from "./terminal-env.ts";
 
 describe("normalizedTerminalEnv", () => {
   test("missing locale defaults to en_US.UTF-8", () => {
@@ -83,5 +90,92 @@ describe("mergeTerminalEnv", () => {
     expect(env["LANG"]).toBe("de_DE.UTF-8");
     // TERM=dumb normalized then no override → xterm-256color
     expect(env["TERM"]).toBe("xterm-256color");
+  });
+});
+
+describe("TERMINAL_ENV_KEYS", () => {
+  test("contains exactly the five expected keys", () => {
+    expect(TERMINAL_ENV_KEYS).toEqual(["LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM"]);
+  });
+});
+
+describe("pickTerminalEnv", () => {
+  test("picks only TERMINAL_ENV_KEYS", () => {
+    const env = { LANG: "en_US.UTF-8", TERM: "xterm", HOME: "/home/user", PATH: "/usr/bin" };
+    const picked = pickTerminalEnv(env);
+    expect(Object.keys(picked)).toEqual(expect.arrayContaining(["LANG", "TERM"]));
+    expect("HOME" in picked).toBe(false);
+    expect("PATH" in picked).toBe(false);
+  });
+
+  test("omits absent keys rather than setting undefined", () => {
+    const env = { LANG: "en_US.UTF-8" };
+    const picked = pickTerminalEnv(env);
+    expect("LC_ALL" in picked).toBe(false);
+    expect("TERM" in picked).toBe(false);
+    expect("COLORTERM" in picked).toBe(false);
+  });
+
+  test("returns all five when all present", () => {
+    const env = { LANG: "a", LC_ALL: "b", LC_CTYPE: "c", TERM: "d", COLORTERM: "e" };
+    const picked = pickTerminalEnv(env);
+    expect(Object.keys(picked).sort()).toEqual(["COLORTERM", "LANG", "LC_ALL", "LC_CTYPE", "TERM"]);
+  });
+});
+
+describe("buildSpawnEnv", () => {
+  test("includes full normalized baseEnv", () => {
+    const base = { HOME: "/root", PATH: "/usr/bin", TERM: "xterm-256color" };
+    const env = buildSpawnEnv({ MY_VAR: "1" }, base);
+    expect(env["HOME"]).toBe("/root");
+    expect(env["PATH"]).toBe("/usr/bin");
+    expect(env["MY_VAR"]).toBe("1");
+  });
+
+  test("explicit env wins over baseEnv", () => {
+    const base = { LANG: "C", TERM: "dumb" };
+    const env = buildSpawnEnv({ LANG: "ja_JP.UTF-8" }, base);
+    expect(env["LANG"]).toBe("ja_JP.UTF-8");
+  });
+
+  test("applies sane terminal defaults from baseEnv", () => {
+    const env = buildSpawnEnv({}, {});
+    expect(env["TERM"]).toBe("xterm-256color");
+    expect(env["COLORTERM"]).toBe("truecolor");
+  });
+});
+
+describe("buildLauncherEnv", () => {
+  test("does NOT include non-terminal keys from baseEnv", () => {
+    const base = { HOME: "/root", PATH: "/usr/bin", LANG: "en_US.UTF-8", TERM: "xterm-256color", COLORTERM: "truecolor" };
+    const env = buildLauncherEnv({}, base);
+    expect("HOME" in env).toBe(false);
+    expect("PATH" in env).toBe(false);
+  });
+
+  test("includes TERMINAL_ENV_KEYS from normalized baseEnv", () => {
+    const base = { LANG: "C", TERM: "dumb" };
+    const env = buildLauncherEnv({}, base);
+    // normalization applies: C → en_US.UTF-8, dumb → xterm-256color
+    expect(env["LANG"]).toBe("en_US.UTF-8");
+    expect(env["TERM"]).toBe("xterm-256color");
+    expect(env["COLORTERM"]).toBe("truecolor");
+  });
+
+  test("explicit env wins and is included", () => {
+    const base = { LANG: "en_US.UTF-8", TERM: "xterm-256color" };
+    const env = buildLauncherEnv({ LANG: "ja_JP.UTF-8", MY_VAR: "hello" }, base);
+    expect(env["LANG"]).toBe("ja_JP.UTF-8");
+    expect(env["MY_VAR"]).toBe("hello");
+  });
+
+  test("no process.env leakage with empty baseEnv", () => {
+    const env = buildLauncherEnv({}, {});
+    // Only terminal keys + sane defaults, no PATH/HOME from process.env
+    const envKeys = Object.keys(env);
+    const nonTerminalKeys = envKeys.filter(
+      (k) => !(TERMINAL_ENV_KEYS as readonly string[]).includes(k),
+    );
+    expect(nonTerminalKeys).toEqual([]);
   });
 });
