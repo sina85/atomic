@@ -5,11 +5,10 @@
  * `s.client` and `s.session` instead of manual SDK client creation.
  */
 
-import { readFileSync, realpathSync } from "node:fs";
-import { sep } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { delimiter, join, sep } from "node:path";
 import type { CopilotClientOptions, SessionConfig as CopilotSessionConfig } from "@github/copilot-sdk";
 import { normalizedTerminalEnv } from "../../lib/terminal-env.ts";
-import { getCommandPath } from "../../services/system/detect.ts";
 import { createProviderValidator } from "../types.ts";
 
 // ---------------------------------------------------------------------------
@@ -66,8 +65,10 @@ function safeRealpath(filePath: string): string {
  *
  * Filesystem errors for a given candidate are treated as "not a shim" so
  * that the SDK can surface the real error (e.g. permission denied, ENOENT).
+ *
+ * Exported for unit testing.
  */
-function isCopilotShim(candidate: string): boolean {
+export function isCopilotShim(candidate: string): boolean {
   // 1. JS extension check — no I/O required.
   if (JS_EXT_RE.test(candidate)) return true;
 
@@ -117,15 +118,31 @@ export function copilotSubprocessEnv(
  *
  * Does NOT validate by spawning; SDK start surfaces executable errors.
  */
+/**
+ * Enumerate every occurrence of `cmd` across all directories in `pathEnv`.
+ * Returns ordered list of absolute paths that exist on the filesystem.
+ * Exported for unit testing.
+ */
+export function enumeratePathCandidates(cmd: string, pathEnv: string): string[] {
+  const dirs = pathEnv.split(delimiter).filter(Boolean);
+  const results: string[] = [];
+  for (const dir of dirs) {
+    const full = join(dir, cmd);
+    if (existsSync(full)) results.push(full);
+  }
+  return results;
+}
+
 export function resolveCopilotCliPath(): string | undefined {
   // 1. Explicit env var — trusted verbatim, no shim check.
   const envPath = process.env["COPILOT_CLI_PATH"];
   if (envPath) return envPath;
 
-  // 2. PATH-resolved candidate — reject if it is a JS shim.
-  const candidate = getCommandPath("copilot");
-  if (candidate !== null && !isCopilotShim(candidate)) {
-    return candidate;
+  // 2. Enumerate all PATH dirs; return first non-shim candidate.
+  const pathEnv = process.env["PATH"] ?? "";
+  const candidates = enumeratePathCandidates("copilot", pathEnv);
+  for (const candidate of candidates) {
+    if (!isCopilotShim(candidate)) return candidate;
   }
 
   // 3. No valid standalone binary found.
