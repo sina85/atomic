@@ -198,6 +198,34 @@ describe("checkAgentAuth(copilot)", () => {
       else process.env["COPILOT_CLI_PATH"] = origCliPath;
     }
   });
+
+  test("constructs CopilotClient via centralized launch options — env.NODE_NO_WARNINGS=1 present even when COPILOT_CLI_PATH is unset", async () => {
+    // When COPILOT_CLI_PATH is absent the auth probe delegates entirely to
+    // copilotSdkLaunchOptions(), which always injects NODE_NO_WARNINGS=1
+    // via copilotSubprocessEnv(). No cliPath should appear in the options
+    // because resolveCopilotCliPath() returns undefined when the env var is
+    // not set and no standalone binary is found on PATH.
+    const origCliPath = process.env["COPILOT_CLI_PATH"];
+    delete process.env["COPILOT_CLI_PATH"];
+    try {
+      await checkAgentAuth("copilot");
+      const opts = lastCopilotConstructorOptions as {
+        cliPath?: string;
+        env?: Record<string, string | undefined>;
+      };
+      expect(opts).toBeDefined();
+      // Centralized env must always include NODE_NO_WARNINGS regardless of cliPath.
+      expect(opts.env?.["NODE_NO_WARNINGS"]).toBe("1");
+      // cliPath must not be injected from a stale or undefined resolution.
+      // (It may be defined if a copilot binary happens to be on PATH in the
+      // test environment, but it must never be "/explicit/bin/copilot" which
+      // is only set by the sibling test above.)
+      expect(opts.cliPath).not.toBe("/explicit/bin/copilot");
+    } finally {
+      if (origCliPath === undefined) delete process.env["COPILOT_CLI_PATH"];
+      else process.env["COPILOT_CLI_PATH"] = origCliPath;
+    }
+  });
 });
 
 describe("checkAgentAuth(claude)", () => {
