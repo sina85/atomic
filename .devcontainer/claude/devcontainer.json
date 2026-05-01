@@ -6,19 +6,8 @@
     "ghcr.io/flora131/atomic/claude:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "mounts": [
-    {
-      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.ssh",
-      "target": "/home/vscode/.ssh",
-      "type": "bind"
-    },
-    {
-      "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig",
-      "target": "/home/vscode/.gitconfig",
-      "type": "bind"
-    }
-  ],
   "remoteEnv": {
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
   },
   "customizations": {

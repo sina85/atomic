@@ -24,7 +24,7 @@ export function isCommandInstalled(cmd: string): boolean {
  * @returns The absolute path to the command, or null if not found
  */
 export function getCommandPath(cmd: string): string | null {
-  return Bun.which(cmd);
+  return Bun.which(cmd, { PATH: process.env["PATH"] ?? "" });
 }
 
 /**

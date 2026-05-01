@@ -62,11 +62,13 @@ import {
   HeadlessClaudeSessionWrapper,
 } from "../providers/claude.ts";
 import { withHeadlessOpencodeEnv } from "../providers/opencode.ts";
+import { resolveCopilotCliPath } from "../providers/copilot.ts";
 import { OrchestratorPanel } from "./panel.tsx";
 import { GraphFrontierTracker } from "./graph-inference.ts";
 import { buildSnapshot, writeSnapshot } from "./status-writer.ts";
 import { errorMessage } from "../errors.ts";
 import { createPainter } from "../../theme/colors.ts";
+import { atomicTempEnv } from "../../lib/atomic-temp.ts";
 
 /** Maximum time (ms) for the SDK probe to succeed after port is discovered. */
 export const SERVER_PROBE_TIMEOUT_MS = 60_000;
@@ -287,29 +289,37 @@ export function buildPaneCommand(
     envVars: defaultEnvVars,
   } = AGENT_CLI[agent];
   const chatFlags = overrides.chatFlags ?? defaultFlags;
+  const claudeTempEnv = agent === "claude" ? atomicTempEnv() : {};
   const envVars = overrides.envVars
     ? { ...defaultEnvVars, ...overrides.envVars }
     : defaultEnvVars;
+  const mergedEnvVars = { ...envVars, ...claudeTempEnv, ...overrides.envVars };
 
   const resolvedCmd = quotePathIfNeeded(resolveCliBinary(cmd));
 
   switch (agent) {
-    case "copilot":
+    case "copilot": {
+      // Prefer the copilot binary resolved via resolveCopilotCliPath so that
+      // COPILOT_CLI_PATH (set by applyContainerEnvDefaults in Bun-without-node
+      // environments) is honoured in the tmux pane command, keeping the pane
+      // binary consistent with the SDK subprocess binary.
+      const copilotBin = resolveCopilotCliPath() ?? resolveCliBinary(cmd);
       return {
         command: [
-          resolvedCmd,
+          quotePathIfNeeded(copilotBin),
           "--ui-server",
           "--port",
           "0",
           ...chatFlags,
           ...extraChatFlags,
         ].join(" "),
-        envVars,
+        envVars: mergedEnvVars,
       };
+    }
     case "opencode":
       return {
         command: [resolvedCmd, "--port", "0", ...chatFlags].join(" "),
-        envVars,
+        envVars: mergedEnvVars,
       };
     case "claude": {
       // Claude is started via createClaudeSession() in the workflow's run().
@@ -323,7 +333,7 @@ export function buildPaneCommand(
           : resolveCliBinary(shellCandidate);
       return {
         command: quotePathIfNeeded(resolvedShell),
-        envVars,
+        envVars: mergedEnvVars,
       };
     }
     default:
@@ -494,6 +504,7 @@ export async function executeWorkflow(
   const launcherExt = isWin ? "ps1" : "sh";
   const launcherPath = join(sessionsBaseDir, `orchestrator.${launcherExt}`);
   const logPath = join(sessionsBaseDir, "orchestrator.log");
+  const launcherEnvVars = agent === "claude" ? atomicTempEnv() : {};
 
   // Inputs are passed through as base64-encoded JSON so long multiline
   // text values survive shell quoting without any further escaping.
@@ -515,6 +526,9 @@ export async function executeWorkflow(
   const launcherScript = isWin
     ? [
         `Set-Location "${escPwsh(projectRoot)}"`,
+        ...Object.entries(launcherEnvVars).map(
+          ([key, value]) => `$env:${key} = "${escPwsh(value)}"`,
+        ),
         `$env:ATOMIC_WF_ID = "${escPwsh(workflowRunId)}"`,
         `$env:ATOMIC_WF_TMUX = "${escPwsh(tmuxSessionName)}"`,
         `$env:ATOMIC_WF_AGENT = "${escPwsh(agent)}"`,
@@ -524,6 +538,9 @@ export async function executeWorkflow(
     : [
         "#!/bin/bash",
         `cd "${escBash(projectRoot)}"`,
+        ...Object.entries(launcherEnvVars).map(
+          ([key, value]) => `export ${key}="${escBash(value)}"`,
+        ),
         `export ATOMIC_WF_ID="${escBash(workflowRunId)}"`,
         `export ATOMIC_WF_TMUX="${escBash(tmuxSessionName)}"`,
         `export ATOMIC_WF_AGENT="${escBash(agent)}"`,
@@ -536,7 +553,7 @@ export async function executeWorkflow(
   const shellCmd = isWin
     ? `pwsh -NoProfile -File "${escPwsh(launcherPath)}"`
     : `bash "${escBash(launcherPath)}"`;
-  tmux.createSession(tmuxSessionName, shellCmd, "orchestrator");
+  tmux.createSession(tmuxSessionName, shellCmd, "orchestrator", undefined, launcherEnvVars);
   tmux.setSessionEnv(tmuxSessionName, "ATOMIC_AGENT", agent);
 
   if (detach) {
@@ -1322,7 +1339,7 @@ async function initProviderClientAndSession<A extends AgentType>(
   switch (agent) {
     case "copilot": {
       const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
-      const { copilotSubprocessEnv, mergeCopilotSystemMessage } =
+      const { copilotSdkLaunchOptions, mergeCopilotSystemMessage } =
         await import("../providers/copilot.ts");
       const { resolveAdditionalInstructionsContent } =
         await import("../../services/config/additional-instructions.ts");
@@ -1331,7 +1348,7 @@ async function initProviderClientAndSession<A extends AgentType>(
       // Headless: let the SDK spawn its own CLI process (no cliUrl).
       // Non-headless: connect to the CLI server running in a tmux pane.
       // `env` is only meaningful in the headless path — the SDK ignores
-      // it when `cliUrl` is set — but layering in `copilotSubprocessEnv`
+      // it when `cliUrl` is set — but layering in `copilotSdkLaunchOptions`
       // when the caller didn't supply their own env keeps the
       // SQLite `ExperimentalWarning` from leaking through the SDK's
       // `[CLI subprocess]` stderr forwarder.
@@ -1339,7 +1356,7 @@ async function initProviderClientAndSession<A extends AgentType>(
       let client: InstanceType<typeof CopilotClient>;
       if (headless) {
         client = new CopilotClient({
-          env: copilotSubprocessEnv(),
+          ...copilotSdkLaunchOptions(),
           ...copilotClientOpts,
         });
       } else {

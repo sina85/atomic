@@ -1046,6 +1046,22 @@ describe("buildPaneCommand", () => {
     expect(command).not.toContain("--port");
   });
 
+  test("claude: scopes temp files to the user's Atomic temp directory", () => {
+    const { envVars } = buildPaneCommand("claude");
+    expect(envVars.TMPDIR).toMatch(/\/\.atomic\/tmp$/);
+    expect(envVars.TMP).toBe(envVars.TMPDIR);
+    expect(envVars.TEMP).toBe(envVars.TMPDIR);
+  });
+
+  test("claude: explicit temp env overrides the Atomic default", () => {
+    const { envVars } = buildPaneCommand("claude", {
+      envVars: { TMPDIR: "/custom/tmp", TMP: "/custom/tmp", TEMP: "/custom/tmp" },
+    });
+    expect(envVars.TMPDIR).toBe("/custom/tmp");
+    expect(envVars.TMP).toBe("/custom/tmp");
+    expect(envVars.TEMP).toBe("/custom/tmp");
+  });
+
   test("overrides.envVars merges with defaults for copilot", () => {
     const { envVars } = buildPaneCommand("copilot", {
       envVars: { MY_VAR: "hello" },
@@ -1073,6 +1089,19 @@ describe("buildPaneCommand", () => {
   test("extraChatFlags not appended to opencode command", () => {
     const { command } = buildPaneCommand("opencode", {}, ["--extra-flag"]);
     expect(command).not.toContain("--extra-flag");
+  });
+
+  test("copilot: respects COPILOT_CLI_PATH env var for binary resolution", () => {
+    const origCliPath = process.env["COPILOT_CLI_PATH"];
+    process.env["COPILOT_CLI_PATH"] = "/custom/path/copilot";
+    try {
+      const { command } = buildPaneCommand("copilot");
+      // The command should start with the COPILOT_CLI_PATH binary.
+      expect(command.startsWith("/custom/path/copilot ")).toBe(true);
+    } finally {
+      if (origCliPath === undefined) delete process.env["COPILOT_CLI_PATH"];
+      else process.env["COPILOT_CLI_PATH"] = origCliPath;
+    }
   });
 });
 
@@ -1249,5 +1278,44 @@ describe("waitForServer", () => {
 
     const result = await waitForServer("copilot", "%0");
     expect(result).toBe("localhost:50001");
+  });
+
+  test("copilot: probe does not pass useLoggedInUser to CopilotClient (external server owns auth)", async () => {
+    mock.module("./tmux.ts", () => ({
+      capturePane: () => PANE_CONTENT_READY,
+      getPanePid: () => 12345,
+      spawnMuxAttach: () => {},
+    }));
+
+    mock.module("./port-discovery.ts", () => ({
+      getListeningPortForPid: async () => 50002,
+      PORT_DISCOVERY_TIMEOUT_MS: 100,
+    }));
+
+    let capturedOptions: unknown;
+    mock.module("@github/copilot-sdk", () => ({
+      CopilotClient: class {
+        constructor(opts: unknown) {
+          capturedOptions = opts;
+        }
+        start() {
+          return Promise.resolve();
+        }
+        listSessions() {
+          return Promise.resolve([]);
+        }
+        stop() {
+          return Promise.resolve();
+        }
+      },
+    }));
+
+    await waitForServer("copilot", "%0");
+    const opts = capturedOptions as Record<string, unknown>;
+    expect(opts).toBeDefined();
+    // cliUrl must be set — connecting to an existing server
+    expect(opts["cliUrl"]).toBe("localhost:50002");
+    // useLoggedInUser must NOT be set — external server owns auth
+    expect(Object.prototype.hasOwnProperty.call(opts, "useLoggedInUser")).toBe(false);
   });
 });

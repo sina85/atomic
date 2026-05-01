@@ -6,7 +6,7 @@
 #
 # NOTE: This script is duplicated across claude, copilot, and opencode features.
 #       Keep all three copies in sync when making changes.
-#       See: devcontainer-features/src/{claude,copilot,opencode}/install.sh
+#       See: .devcontainer/features/{claude,copilot,opencode}/install.sh
 #-------------------------------------------------------------------------------------------------------------
 
 set -e
@@ -132,13 +132,33 @@ echo "✓ Atomic CLI installed (${ATOMIC_SPEC})"
 # Agent CLIs (e.g. Copilot) emit Unicode box-drawing / figlet characters.
 # Without a UTF-8 locale the output is garbled when spawned as a Bun
 # subprocess inside the devcontainer.
-if command -v locale-gen >/dev/null 2>&1; then
-    locale-gen en_US.UTF-8 >/dev/null 2>&1 || true
+
+# Step 1: install locales package if locale-gen is not present
+if ! command -v locale-gen >/dev/null 2>&1; then
+    apt-get update -y
+    apt-get install -y --no-install-recommends locales
+fi
+
+# Step 2: ensure en_US.UTF-8 UTF-8 is uncommented in /etc/locale.gen
+if [ -f /etc/locale.gen ]; then
+    sed -i 's/^# *en_US\.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+fi
+if ! grep -q '^en_US\.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null; then
+    echo 'en_US.UTF-8 UTF-8' >> /etc/locale.gen
+fi
+
+# Step 3: generate the locale
+locale-gen en_US.UTF-8
+
+# Step 4: set system default locale when update-locale is available
+if command -v update-locale >/dev/null 2>&1; then
+    update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8
 fi
 
 cat > /etc/profile.d/atomic-locale.sh <<'LOCALE_EOF'
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
 LOCALE_EOF
 chmod 644 /etc/profile.d/atomic-locale.sh
 
@@ -149,6 +169,7 @@ if [ -f /etc/bash.bashrc ] && ! grep -q 'atomic-locale' /etc/bash.bashrc 2>/dev/
 # atomic-locale: ensure UTF-8 for agent CLI Unicode rendering
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
 BASHRC_LOCALE_EOF
 fi
 
@@ -159,6 +180,7 @@ if [ -f /etc/zsh/zshrc ] && ! grep -q 'atomic-locale' /etc/zsh/zshrc 2>/dev/null
 # atomic-locale: ensure UTF-8 for agent CLI Unicode rendering
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
 ZSHRC_LOCALE_EOF
 fi
 
@@ -171,6 +193,9 @@ if not set -q LANG
 end
 if not set -q LC_ALL
     set -gx LC_ALL en_US.UTF-8
+end
+if not set -q LC_CTYPE
+    set -gx LC_CTYPE en_US.UTF-8
 end
 FISH_LOCALE_EOF
     chmod 644 /etc/fish/conf.d/atomic-locale.fish

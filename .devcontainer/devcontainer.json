@@ -3,19 +3,18 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/common-utils": {},
-    "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {},
-    "ghcr.io/devcontainers-extra/features/bun:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
-    "ghcr.io/devcontainers/features/copilot-cli:1": {},
-    "ghcr.io/devcontainers-extra/features/opencode:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "./features/claude": {},
+    "./features/copilot": {},
+    "./features/opencode": {}
   },
   "remoteEnv": {
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "COPILOT_GITHUB_TOKEN": "${localEnv:COPILOT_GITHUB_TOKEN}",
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
   },
-  "postCreateCommand": "bun install && curl -fsSL https://raw.githubusercontent.com/flora131/atomic/main/install.sh | bash",
+  "postCreateCommand": "bun install",
   "mounts": [
     {
       "source": "${localEnv:HOME}${localEnv:USERPROFILE}/.ssh",

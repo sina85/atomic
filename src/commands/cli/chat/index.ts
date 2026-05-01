@@ -10,7 +10,7 @@
  *   atomic chat -a <agent> [native-args...]
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { AGENT_CONFIG, type AgentKey } from "../../../services/config/index.ts";
@@ -19,10 +19,11 @@ import { getCopilotScmDisableFlags } from "../../../services/config/scm-sync.ts"
 import {
   resolveAdditionalInstructionsPath,
 } from "../../../services/config/additional-instructions.ts";
-import { dirname } from "node:path";
 import { ensureProjectSetup } from "../init/index.ts";
 import { COLORS } from "../../../theme/colors.ts";
-import { isCommandInstalled } from "../../../services/system/detect.ts";
+import {
+  getCommandPath,
+} from "../../../services/system/detect.ts";
 import { checkAgentAuth, printAuthError } from "../../../services/system/auth.ts";
 import {
   ensureAtomicGlobalAgentConfigs,
@@ -42,6 +43,21 @@ import {
 } from "../../../sdk/runtime/tmux.ts";
 import { spawnAttachedFooter } from "../../../sdk/runtime/attached-footer.ts";
 import { ensureTmuxInstalled } from "../../../lib/spawn.ts";
+import {
+  buildLauncherEnv,
+  buildSpawnEnv,
+  buildTmuxEnv,
+} from "../../../lib/terminal-env.ts";
+import { atomicTempEnv } from "../../../lib/atomic-temp.ts";
+import { resolveCopilotCliPath } from "../../../sdk/providers/copilot.ts";
+
+export {
+  buildLauncherEnv,
+  buildSpawnEnv,
+  buildTmuxEnv,
+  TERMINAL_ENV_KEYS,
+  type TerminalEnvKey,
+} from "../../../lib/terminal-env.ts";
 
 // ============================================================================
 // Types
@@ -118,6 +134,15 @@ export function getAdditionalInstructionsDir(
   return path ? dirname(path) : undefined;
 }
 
+export function resolveChatCommand(agentType: AgentType): string | undefined {
+  if (agentType === "copilot") {
+    return resolveCopilotCliPath();
+  }
+
+  const config = AGENT_CONFIG[agentType];
+  return getCommandPath(config.cmd) ?? undefined;
+}
+
 function generateChatId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
@@ -130,6 +155,28 @@ function escBash(s: string): string {
 /** Escape a string for safe interpolation inside a PowerShell double-quoted string. */
 function escPwsh(s: string): string {
   return s.replace(/[`"$]/g, "`$&");
+}
+
+const POSIX_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function assertBashEnvKey(key: string): void {
+  if (!POSIX_ENV_KEY_RE.test(key)) {
+    throw new Error(
+      `Invalid Bash env key "${key}": must match /^[A-Za-z_][A-Za-z0-9_]*$/`,
+    );
+  }
+}
+
+function escPwshEnvKey(key: string): string {
+  return key.replace(/}/g, "`}");
+}
+
+async function removeLauncher(path: string): Promise<void> {
+  try {
+    await rm(path, { force: true });
+  } catch {
+    // Cleanup best effort; attach/fallback result should remain authoritative.
+  }
 }
 
 /**
@@ -149,7 +196,7 @@ export function buildLauncherScript(
     // PowerShell: use array splatting for safe arg passing
     const argList = args.map((a) => `"${escPwsh(a)}"`).join(", ");
     const envLines = envEntries.map(
-      ([key, value]) => `$env:${key} = "${escPwsh(value)}"`,
+      ([key, value]) => `\${env:${escPwshEnvKey(key)}} = "${escPwsh(value)}"`,
     );
     const script = [
       `Set-Location "${escPwsh(projectRoot)}"`,
@@ -164,18 +211,19 @@ export function buildLauncherScript(
     return { script, ext: "ps1" };
   }
 
-  // Bash: use proper quoting for each arg
-  const quotedArgs = args
-    .map((a) => `"${escBash(a)}"`)
-    .join(" ");
-  const envLines = envEntries.map(
-    ([key, value]) => `export ${key}="${escBash(value)}"`,
-  );
+  const quotedCommand = [
+    `"${escBash(cmd)}"`,
+    ...args.map((arg) => `"${escBash(arg)}"`),
+  ].join(" ");
+  const envLines = envEntries.map(([key, value]) => {
+    assertBashEnvKey(key);
+    return `export ${key}="${escBash(value)}"`;
+  });
   const script = [
     "#!/bin/bash",
     `cd "${escBash(projectRoot)}"`,
     ...envLines,
-    `"${escBash(cmd)}" ${quotedArgs}`,
+    quotedCommand,
     "atomic_exit_code=$?",
     'exit "$atomic_exit_code"',
   ].join("\n");
@@ -206,8 +254,10 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
 
   const config = AGENT_CONFIG[agentType];
 
+  const executable = resolveChatCommand(agentType);
+
   // Check the agent CLI is installed
-  if (!isCommandInstalled(config.cmd)) {
+  if (!executable) {
     console.error(
       `${COLORS.red}Error: '${config.cmd}' is not installed or not in PATH.${COLORS.reset}`
     );
@@ -236,12 +286,14 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
 
   // ── Build argv ──
   const args = await buildAgentArgs(agentType, passthroughArgs, projectRoot);
-  const cmd = [config.cmd, ...args];
+  const cmd = [executable, ...args];
   const overrides = await getProviderOverrides(agentType, projectRoot);
+  const claudeTempEnv = agentType === "claude" ? atomicTempEnv() : {};
   // ATOMIC_AGENT must be baked into the launcher env so the agent CLI
   // and anything it spawns can read it from process start.
   const envVars: Record<string, string> = {
     ...config.env_vars,
+    ...claudeTempEnv,
     ...overrides.envVars,
     ATOMIC_AGENT: agentType,
   };
@@ -267,9 +319,13 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
     }
   }
 
+  const spawnEnv = buildSpawnEnv(envVars);
+  const launcherEnv = buildLauncherEnv(envVars);
+  const tmuxEnv = buildTmuxEnv(envVars);
+
   // ── No TTY: tmux attach requires a real terminal ──
   if (!process.stdin.isTTY) {
-    return spawnDirect(cmd, projectRoot, envVars);
+    return spawnDirect(cmd, projectRoot, spawnEnv);
   }
 
   // ── Ensure tmux is available ──
@@ -283,7 +339,7 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
     }
     if (!isTmuxInstalled()) {
       // No tmux available — fall back to direct spawn
-      return spawnDirect(cmd, projectRoot, envVars);
+      return spawnDirect(cmd, projectRoot, spawnEnv);
     }
   }
 
@@ -294,10 +350,10 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
   const sessionsDir = join(homedir(), ".atomic", "sessions", "chat");
   await mkdir(sessionsDir, { recursive: true });
   const { script, ext } = buildLauncherScript(
-    config.cmd,
+    executable,
     args,
     projectRoot,
-    envVars,
+    launcherEnv,
   );
   const launcherPath = join(sessionsDir, `${windowName}.${ext}`);
   await writeFile(launcherPath, script, { mode: 0o755 });
@@ -308,14 +364,14 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
 
   // ── Create session on the atomic socket and attach ──
   try {
-    const paneId = createSession(windowName, shellCmd, undefined, projectRoot);
+    const paneId = createSession(windowName, shellCmd, undefined, projectRoot, tmuxEnv);
     spawnAttachedFooter(windowName, paneId, agentType);
     killSessionOnPaneExit(windowName, paneId);
 
     if (isInsideAtomicSocket()) {
       // Already on the atomic server — just switch to the new session.
       switchClient(windowName);
-      try { await rm(launcherPath, { force: true }); } catch {}
+      await removeLauncher(launcherPath);
       return 0;
     }
 
@@ -323,30 +379,29 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
       // Inside a different tmux server — detach and replace the client
       // with an attach to the atomic socket (no nesting).
       detachAndAttachAtomic(windowName);
-      try { await rm(launcherPath, { force: true }); } catch {}
+      await removeLauncher(launcherPath);
       return 0;
     }
 
     const attachProc = spawnMuxAttach(windowName);
     const exitCode = await attachProc.exited;
 
-    // Clean up launcher
-    try { await rm(launcherPath, { force: true }); } catch {}
+    await removeLauncher(launcherPath);
 
     // If tmux attach itself failed (e.g. lost TTY), clean up and fall back
     if (exitCode !== 0) {
       try { killSession(windowName); } catch {}
-      return spawnDirect(cmd, projectRoot, envVars);
+      return spawnDirect(cmd, projectRoot, spawnEnv);
     }
 
     return exitCode;
   } catch (error) {
-    try { await rm(launcherPath, { force: true }); } catch {}
+    await removeLauncher(launcherPath);
     const message = error instanceof Error ? error.message : String(error);
     console.error(
       `${COLORS.yellow}Warning: Failed to create tmux session (${message}). Falling back to direct spawn.${COLORS.reset}`
     );
-    return spawnDirect(cmd, projectRoot, envVars);
+    return spawnDirect(cmd, projectRoot, spawnEnv);
   }
 }
 
@@ -357,12 +412,12 @@ export async function chatCommand(options: ChatCommandOptions = {}): Promise<num
 async function spawnDirect(
   cmd: string[],
   projectRoot: string,
-  envVars: Record<string, string> = {},
+  env: Record<string, string> = {},
 ): Promise<number> {
   const proc = Bun.spawn(cmd, {
     stdio: ["inherit", "inherit", "inherit"],
     cwd: projectRoot,
-    env: { ...process.env, ...envVars },
+    env,
   });
 
   return await proc.exited;
