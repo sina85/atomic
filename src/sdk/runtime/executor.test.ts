@@ -1074,6 +1074,19 @@ describe("buildPaneCommand", () => {
     const { command } = buildPaneCommand("opencode", {}, ["--extra-flag"]);
     expect(command).not.toContain("--extra-flag");
   });
+
+  test("copilot: respects COPILOT_CLI_PATH env var for binary resolution", () => {
+    const origCliPath = process.env["COPILOT_CLI_PATH"];
+    process.env["COPILOT_CLI_PATH"] = "/custom/path/copilot";
+    try {
+      const { command } = buildPaneCommand("copilot");
+      // The command should start with the COPILOT_CLI_PATH binary.
+      expect(command.startsWith("/custom/path/copilot ")).toBe(true);
+    } finally {
+      if (origCliPath === undefined) delete process.env["COPILOT_CLI_PATH"];
+      else process.env["COPILOT_CLI_PATH"] = origCliPath;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1249,5 +1262,44 @@ describe("waitForServer", () => {
 
     const result = await waitForServer("copilot", "%0");
     expect(result).toBe("localhost:50001");
+  });
+
+  test("copilot: probe does not pass useLoggedInUser to CopilotClient (external server owns auth)", async () => {
+    mock.module("./tmux.ts", () => ({
+      capturePane: () => PANE_CONTENT_READY,
+      getPanePid: () => 12345,
+      spawnMuxAttach: () => {},
+    }));
+
+    mock.module("./port-discovery.ts", () => ({
+      getListeningPortForPid: async () => 50002,
+      PORT_DISCOVERY_TIMEOUT_MS: 100,
+    }));
+
+    let capturedOptions: unknown;
+    mock.module("@github/copilot-sdk", () => ({
+      CopilotClient: class {
+        constructor(opts: unknown) {
+          capturedOptions = opts;
+        }
+        start() {
+          return Promise.resolve();
+        }
+        listSessions() {
+          return Promise.resolve([]);
+        }
+        stop() {
+          return Promise.resolve();
+        }
+      },
+    }));
+
+    await waitForServer("copilot", "%0");
+    const opts = capturedOptions as Record<string, unknown>;
+    expect(opts).toBeDefined();
+    // cliUrl must be set — connecting to an existing server
+    expect(opts["cliUrl"]).toBe("localhost:50002");
+    // useLoggedInUser must NOT be set — external server owns auth
+    expect(Object.prototype.hasOwnProperty.call(opts, "useLoggedInUser")).toBe(false);
   });
 });

@@ -62,6 +62,7 @@ import {
   HeadlessClaudeSessionWrapper,
 } from "../providers/claude.ts";
 import { withHeadlessOpencodeEnv } from "../providers/opencode.ts";
+import { resolveCopilotCliPath } from "../providers/copilot.ts";
 import { OrchestratorPanel } from "./panel.tsx";
 import { GraphFrontierTracker } from "./graph-inference.ts";
 import { buildSnapshot, writeSnapshot } from "./status-writer.ts";
@@ -294,10 +295,15 @@ export function buildPaneCommand(
   const resolvedCmd = quotePathIfNeeded(resolveCliBinary(cmd));
 
   switch (agent) {
-    case "copilot":
+    case "copilot": {
+      // Prefer the copilot binary resolved via resolveCopilotCliPath so that
+      // COPILOT_CLI_PATH (set by applyContainerEnvDefaults in Bun-without-node
+      // environments) is honoured in the tmux pane command, keeping the pane
+      // binary consistent with the SDK subprocess binary.
+      const copilotBin = resolveCopilotCliPath() ?? resolveCliBinary(cmd);
       return {
         command: [
-          resolvedCmd,
+          quotePathIfNeeded(copilotBin),
           "--ui-server",
           "--port",
           "0",
@@ -306,6 +312,7 @@ export function buildPaneCommand(
         ].join(" "),
         envVars,
       };
+    }
     case "opencode":
       return {
         command: [resolvedCmd, "--port", "0", ...chatFlags].join(" "),
@@ -1322,7 +1329,7 @@ async function initProviderClientAndSession<A extends AgentType>(
   switch (agent) {
     case "copilot": {
       const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
-      const { copilotSubprocessEnv, mergeCopilotSystemMessage } =
+      const { copilotSdkLaunchOptions, mergeCopilotSystemMessage } =
         await import("../providers/copilot.ts");
       const { resolveAdditionalInstructionsContent } =
         await import("../../services/config/additional-instructions.ts");
@@ -1331,7 +1338,7 @@ async function initProviderClientAndSession<A extends AgentType>(
       // Headless: let the SDK spawn its own CLI process (no cliUrl).
       // Non-headless: connect to the CLI server running in a tmux pane.
       // `env` is only meaningful in the headless path — the SDK ignores
-      // it when `cliUrl` is set — but layering in `copilotSubprocessEnv`
+      // it when `cliUrl` is set — but layering in `copilotSdkLaunchOptions`
       // when the caller didn't supply their own env keeps the
       // SQLite `ExperimentalWarning` from leaking through the SDK's
       // `[CLI subprocess]` stderr forwarder.
@@ -1339,7 +1346,7 @@ async function initProviderClientAndSession<A extends AgentType>(
       let client: InstanceType<typeof CopilotClient>;
       if (headless) {
         client = new CopilotClient({
-          env: copilotSubprocessEnv(),
+          ...copilotSdkLaunchOptions(),
           ...copilotClientOpts,
         });
       } else {
