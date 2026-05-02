@@ -15,7 +15,7 @@
  *   atomic workflow session connect <id>      Attach to a session
  *   atomic session list                       List all running sessions
  *   atomic session connect [id]               Interactive session picker
- *   atomic session kill [id] [-y]             Kill a session (or all when no id); -y skips prompt
+ *   atomic session kill [id] [--all] [-y]     Kill sessions; no id opens multi-select
  *   atomic config set <key> <value>           Set configuration value
  *   atomic --version                          Show version
  *   atomic --help                             Show help
@@ -87,7 +87,7 @@ Examples:
   $ atomic chat -a claude "fix the bug"             Claude with initial prompt
   $ atomic chat session list                        List running sessions
   $ atomic chat session connect <id>                Attach to a session
-  $ atomic chat session kill [id]                   Kill a chat session (or all)`,
+  $ atomic chat session kill [id]                   Kill a chat session (multi-select when no id)`,
         )
         .action(async (localOpts, cmd) => {
             const validAgents = Object.keys(AGENT_CONFIG);
@@ -156,7 +156,7 @@ Examples:
   $ atomic workflow status <id>                     Query a single workflow's status
   $ atomic workflow session list                    List running sessions
   $ atomic workflow session connect <id>            Attach to a session
-  $ atomic workflow session kill [id] -y            Kill a workflow session (or all), no prompt`,
+  $ atomic workflow session kill --all -y           Kill all workflow sessions, no prompt`,
         );
 
     program.addCommand(workflowCommand);

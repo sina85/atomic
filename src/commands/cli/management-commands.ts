@@ -67,14 +67,15 @@ export function addSessionSubcommand(
 
   sessionCmd
     .command("kill")
-    .description("Kill a running session (omit id to kill all in scope)")
-    .argument("[session_id]", "Session name to kill (omit to kill all)")
+    .description("Kill running sessions (interactive multi-select when no id given)")
+    .argument("[session_id]", "Session name to kill (omit for interactive multi-select)")
     .option(
       "-a, --agent <name>",
       "Filter by agent backend (claude, copilot, opencode); repeatable",
       collectAgent,
       [] as string[],
     )
+    .option("--all", "Select all matching sessions (kills immediately with --yes)")
     .option("-y, --yes", "Skip the confirmation prompt (required for agent callers)")
     .action(async (sessionId, localOpts) => {
       const { sessionKillCommand } = await import("./session.ts");
@@ -83,7 +84,7 @@ export function addSessionSubcommand(
         localOpts.agent,
         scope,
         undefined,
-        { yes: localOpts.yes === true },
+        { yes: localOpts.yes === true, all: localOpts.all === true },
       );
       process.exit(exitCode);
     });
