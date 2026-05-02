@@ -123,15 +123,22 @@ _atomic_session() {
             local -a subs=(
                 'list:List running sessions'
                 'connect:Attach to a running session'
-                'kill:Kill a running session (omit id to kill all)'
+                'kill:Kill running sessions'
             )
             _describe 'subcommand' subs
             ;;
         subargs)
             case "\${words[1]}" in
-                list|connect|kill)
+                list|connect)
                     _arguments \\
                         '*'{-a,--agent}'[Filter by agent]:agent:(claude opencode copilot)' \\
+                        '(-h --help)'{-h,--help}'[Show help]'
+                    ;;
+                kill)
+                    _arguments \\
+                        '*'{-a,--agent}'[Filter by agent]:agent:(claude opencode copilot)' \\
+                        '--all[Select all matching sessions]' \\
+                        '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]' \\
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;
             esac

@@ -86,10 +86,12 @@ complete -c atomic -n '__atomic_using_cmd chat; and not __fish_seen_subcommand_f
 # chat session
 complete -c atomic -n '__atomic_using_cmd chat session; and not __fish_seen_subcommand_from list connect kill' -a list -d 'List running sessions'
 complete -c atomic -n '__atomic_using_cmd chat session; and not __fish_seen_subcommand_from list connect kill' -a connect -d 'Attach to a running session'
-complete -c atomic -n '__atomic_using_cmd chat session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill a running session (omit id to kill all)'
+complete -c atomic -n '__atomic_using_cmd chat session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill running sessions'
 complete -c atomic -n '__atomic_using_cmd chat session list' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd chat session connect' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd chat session kill' -s a -l agent -d 'Filter by agent' -r -a "$agents"
+complete -c atomic -n '__atomic_using_cmd chat session kill' -l all -d 'Select all matching sessions'
+complete -c atomic -n '__atomic_using_cmd chat session kill' -s y -l yes -d 'Skip confirmation prompt'
 
 # ── workflow ────────────────────────────────────────────────────────────────
 
@@ -104,19 +106,23 @@ complete -c atomic -n '__atomic_using_cmd workflow list' -s a -l agent -d 'Filte
 # workflow session
 complete -c atomic -n '__atomic_using_cmd workflow session; and not __fish_seen_subcommand_from list connect kill' -a list -d 'List running sessions'
 complete -c atomic -n '__atomic_using_cmd workflow session; and not __fish_seen_subcommand_from list connect kill' -a connect -d 'Attach to a running session'
-complete -c atomic -n '__atomic_using_cmd workflow session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill a running session (omit id to kill all)'
+complete -c atomic -n '__atomic_using_cmd workflow session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill running sessions'
 complete -c atomic -n '__atomic_using_cmd workflow session list' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd workflow session connect' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd workflow session kill' -s a -l agent -d 'Filter by agent' -r -a "$agents"
+complete -c atomic -n '__atomic_using_cmd workflow session kill' -l all -d 'Select all matching sessions'
+complete -c atomic -n '__atomic_using_cmd workflow session kill' -s y -l yes -d 'Skip confirmation prompt'
 
 # ── session (top-level) ────────────────────────────────────────────────────
 
 complete -c atomic -n '__atomic_using_cmd session; and not __fish_seen_subcommand_from list connect kill' -a list -d 'List running sessions'
 complete -c atomic -n '__atomic_using_cmd session; and not __fish_seen_subcommand_from list connect kill' -a connect -d 'Attach to a running session'
-complete -c atomic -n '__atomic_using_cmd session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill a running session (omit id to kill all)'
+complete -c atomic -n '__atomic_using_cmd session; and not __fish_seen_subcommand_from list connect kill' -a kill -d 'Kill running sessions'
 complete -c atomic -n '__atomic_using_cmd session list' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd session connect' -s a -l agent -d 'Filter by agent' -r -a "$agents"
 complete -c atomic -n '__atomic_using_cmd session kill' -s a -l agent -d 'Filter by agent' -r -a "$agents"
+complete -c atomic -n '__atomic_using_cmd session kill' -l all -d 'Select all matching sessions'
+complete -c atomic -n '__atomic_using_cmd session kill' -s y -l yes -d 'Skip confirmation prompt'
 
 # ── config ──────────────────────────────────────────────────────────────────
 

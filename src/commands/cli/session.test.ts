@@ -288,6 +288,8 @@ const tmuxMocks = {
   spawnMuxAttach: mock(() => ({ exited: Promise.resolve(0) }) as never),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   select: mock<(...args: any[]) => Promise<string | symbol>>(() => Promise.resolve("my-session")),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  multiselect: mock<(...args: any[]) => Promise<string[] | symbol>>(() => Promise.resolve([])),
   killSession: mock<(name: string) => void>(() => {}),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   confirm: mock<(...args: any[]) => Promise<boolean | symbol>>(() => Promise.resolve(true)),
@@ -309,6 +311,7 @@ function resetTmuxMocks(): void {
   tmuxMocks.detachAndAttachAtomic.mockReset();
   tmuxMocks.spawnMuxAttach.mockReset().mockReturnValue({ exited: Promise.resolve(0) } as never);
   tmuxMocks.select.mockReset().mockResolvedValue("my-session");
+  tmuxMocks.multiselect.mockReset().mockResolvedValue([]);
   tmuxMocks.killSession.mockReset();
   tmuxMocks.confirm.mockReset().mockResolvedValue(true);
 }
@@ -628,24 +631,29 @@ describe("sessionKillCommand", () => {
     }
   });
 
-  // (h) omitted id, N sessions, user confirms → killSession called for each, return 0
-  test("omitted id prompts and kills all sessions on confirm", async () => {
+  // (h) omitted id, N sessions, user selects sessions and confirms → killSession called for selected, return 0
+  test("omitted id prompts with multiselect and kills selected sessions on confirm", async () => {
     const now = new Date().toISOString();
     tmuxMocks.listSessions.mockReturnValue([
       { name: "session-a", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
       { name: "session-b", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
       { name: "session-c", windows: 1, created: now, attached: false, type: "chat" as const, agent: "copilot" },
     ]);
+    tmuxMocks.multiselect.mockResolvedValue(["session-a", "session-c"]);
     tmuxMocks.confirm.mockResolvedValue(true);
     const origWrite = process.stdout.write;
     process.stdout.write = (() => true) as typeof process.stdout.write;
     try {
       const code = await sessionKillCommand(undefined, [], "all", makeDeps());
       expect(code).toBe(0);
-      expect(tmuxMocks.killSession).toHaveBeenCalledTimes(3);
+      expect(tmuxMocks.multiselect).toHaveBeenCalledTimes(1);
+      expect(tmuxMocks.multiselect).toHaveBeenCalledWith(expect.objectContaining({
+        message: "Select sessions to kill (Space toggles, Enter continues)",
+      }));
+      expect(tmuxMocks.killSession).toHaveBeenCalledTimes(2);
       expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-a");
-      expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-b");
       expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-c");
+      expect(tmuxMocks.killSession).not.toHaveBeenCalledWith("session-b");
     } finally {
       process.stdout.write = origWrite;
     }
@@ -658,6 +666,7 @@ describe("sessionKillCommand", () => {
       { name: "chat-session", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
       { name: "wf-session", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
     ]);
+    tmuxMocks.multiselect.mockResolvedValue(["chat-session"]);
     tmuxMocks.confirm.mockResolvedValue(true);
     const origWrite = process.stdout.write;
     process.stdout.write = (() => true) as typeof process.stdout.write;
@@ -679,6 +688,7 @@ describe("sessionKillCommand", () => {
       { name: "chat-session", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
       { name: "wf-session", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
     ]);
+    tmuxMocks.multiselect.mockResolvedValue(["wf-session"]);
     tmuxMocks.confirm.mockResolvedValue(true);
     const origWrite = process.stdout.write;
     process.stdout.write = (() => true) as typeof process.stdout.write;
@@ -700,6 +710,7 @@ describe("sessionKillCommand", () => {
       { name: "session-x", windows: 1, created: now, attached: false, type: "chat" as const },
       { name: "session-y", windows: 1, created: now, attached: false, type: "workflow" as const },
     ]);
+    tmuxMocks.multiselect.mockResolvedValue(["session-x", "session-y"]);
     tmuxMocks.confirm.mockResolvedValue(false);
     const origWrite = process.stdout.write;
     process.stdout.write = (() => true) as typeof process.stdout.write;
@@ -736,8 +747,69 @@ describe("sessionKillCommand", () => {
     }
   });
 
-  // (m) -y on kill-all: skip prompt and kill every in-scope session
-  test("yes flag skips the prompt for kill-all and kills every in-scope session", async () => {
+  // (m) -y on omitted id: skip confirm after selection and kill selected sessions
+  test("yes flag skips the confirmation prompt after selecting sessions", async () => {
+    const now = new Date().toISOString();
+    tmuxMocks.listSessions.mockReturnValue([
+      { name: "session-a", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
+      { name: "session-b", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
+    ]);
+    tmuxMocks.multiselect.mockResolvedValue(["session-b"]);
+    const origWrite = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const code = await sessionKillCommand(undefined, [], "all", makeDeps(), { yes: true });
+      expect(code).toBe(0);
+      expect(tmuxMocks.confirm).not.toHaveBeenCalled();
+      expect(tmuxMocks.killSession).toHaveBeenCalledTimes(1);
+      expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-b");
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
+  test("selecting the all option kills every matching session after confirmation", async () => {
+    const now = new Date().toISOString();
+    tmuxMocks.listSessions.mockReturnValue([
+      { name: "session-a", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
+      { name: "session-b", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
+    ]);
+    tmuxMocks.multiselect.mockResolvedValue(["__atomic_select_all_sessions__"]);
+    tmuxMocks.confirm.mockResolvedValue(true);
+    const origWrite = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const code = await sessionKillCommand(undefined, [], "all", makeDeps());
+      expect(code).toBe(0);
+      expect(tmuxMocks.killSession).toHaveBeenCalledTimes(2);
+      expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-a");
+      expect(tmuxMocks.killSession).toHaveBeenCalledWith("session-b");
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
+  test("all flag skips multiselect and confirms every matching session", async () => {
+    const now = new Date().toISOString();
+    tmuxMocks.listSessions.mockReturnValue([
+      { name: "session-a", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
+      { name: "session-b", windows: 1, created: now, attached: false, type: "workflow" as const, agent: "opencode" },
+    ]);
+    tmuxMocks.confirm.mockResolvedValue(true);
+    const origWrite = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    try {
+      const code = await sessionKillCommand(undefined, [], "all", makeDeps(), { all: true });
+      expect(code).toBe(0);
+      expect(tmuxMocks.multiselect).not.toHaveBeenCalled();
+      expect(tmuxMocks.confirm).toHaveBeenCalledTimes(1);
+      expect(tmuxMocks.killSession).toHaveBeenCalledTimes(2);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+  });
+
+  test("all and yes flags kill every matching session without prompts", async () => {
     const now = new Date().toISOString();
     tmuxMocks.listSessions.mockReturnValue([
       { name: "session-a", windows: 1, created: now, attached: false, type: "chat" as const, agent: "claude" },
@@ -746,8 +818,9 @@ describe("sessionKillCommand", () => {
     const origWrite = process.stdout.write;
     process.stdout.write = (() => true) as typeof process.stdout.write;
     try {
-      const code = await sessionKillCommand(undefined, [], "all", makeDeps(), { yes: true });
+      const code = await sessionKillCommand(undefined, [], "all", makeDeps(), { all: true, yes: true });
       expect(code).toBe(0);
+      expect(tmuxMocks.multiselect).not.toHaveBeenCalled();
       expect(tmuxMocks.confirm).not.toHaveBeenCalled();
       expect(tmuxMocks.killSession).toHaveBeenCalledTimes(2);
     } finally {

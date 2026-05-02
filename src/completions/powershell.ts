@@ -80,7 +80,15 @@ Register-ArgumentCompleter -Native -CommandName atomic -ScriptBlock {
                             $completions = @(
                                 @{ text = 'list';    tip = 'List running sessions' }
                                 @{ text = 'connect'; tip = 'Attach to a running session' }
-                                @{ text = 'kill';    tip = 'Kill a running session (omit id to kill all)' }
+                                @{ text = 'kill';    tip = 'Kill running sessions' }
+                            )
+                        } elseif ($cmds.Count -ge 3 -and $cmds[2] -eq 'kill') {
+                            $completions = @(
+                                @{ text = '-a';      tip = 'Filter by agent' }
+                                @{ text = '--agent'; tip = 'Filter by agent' }
+                                @{ text = '--all';   tip = 'Select all matching sessions' }
+                                @{ text = '-y';      tip = 'Skip confirmation prompt' }
+                                @{ text = '--yes';   tip = 'Skip confirmation prompt' }
                             )
                         } else {
                             $completions = @(
@@ -110,7 +118,15 @@ Register-ArgumentCompleter -Native -CommandName atomic -ScriptBlock {
                             $completions = @(
                                 @{ text = 'list';    tip = 'List running sessions' }
                                 @{ text = 'connect'; tip = 'Attach to a running session' }
-                                @{ text = 'kill';    tip = 'Kill a running session (omit id to kill all)' }
+                                @{ text = 'kill';    tip = 'Kill running sessions' }
+                            )
+                        } elseif ($cmds.Count -ge 3 -and $cmds[2] -eq 'kill') {
+                            $completions = @(
+                                @{ text = '-a';      tip = 'Filter by agent' }
+                                @{ text = '--agent'; tip = 'Filter by agent' }
+                                @{ text = '--all';   tip = 'Select all matching sessions' }
+                                @{ text = '-y';      tip = 'Skip confirmation prompt' }
+                                @{ text = '--yes';   tip = 'Skip confirmation prompt' }
                             )
                         } else {
                             $completions = @(
@@ -125,7 +141,15 @@ Register-ArgumentCompleter -Native -CommandName atomic -ScriptBlock {
                         $completions = @(
                             @{ text = 'list';    tip = 'List running sessions' }
                             @{ text = 'connect'; tip = 'Attach to a running session' }
-                            @{ text = 'kill';    tip = 'Kill a running session (omit id to kill all)' }
+                            @{ text = 'kill';    tip = 'Kill running sessions' }
+                        )
+                    } elseif ($cmds.Count -ge 2 -and $cmds[1] -eq 'kill') {
+                        $completions = @(
+                            @{ text = '-a';      tip = 'Filter by agent' }
+                            @{ text = '--agent'; tip = 'Filter by agent' }
+                            @{ text = '--all';   tip = 'Select all matching sessions' }
+                            @{ text = '-y';      tip = 'Skip confirmation prompt' }
+                            @{ text = '--yes';   tip = 'Skip confirmation prompt' }
                         )
                     } else {
                         $completions = @(

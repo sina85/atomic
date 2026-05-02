@@ -7,7 +7,7 @@
  * tmux directly.
  */
 
-import { select, confirm, isCancel, cancel } from "@clack/prompts";
+import { select, multiselect, confirm, isCancel, cancel } from "@clack/prompts";
 import { createPainter, type PaletteKey } from "../../theme/colors.ts";
 import {
   listSessions as _listSessions,
@@ -40,6 +40,8 @@ export interface SessionDeps {
   killSession: (name: string) => void;
   /** Prompt function for the session picker — defaults to @clack/prompts select. */
   select: typeof select;
+  /** Prompt function for the session kill picker — defaults to @clack/prompts multiselect. */
+  multiselect: typeof multiselect;
   /** Prompt function for yes/no confirmations — defaults to @clack/prompts confirm. */
   confirm: typeof confirm;
   isCancel: typeof isCancel;
@@ -57,6 +59,7 @@ const defaultDeps: SessionDeps = {
   detachAndAttachAtomic: _detachAndAttachAtomic,
   killSession: _killSession,
   select,
+  multiselect,
   confirm,
   isCancel,
 };
@@ -273,10 +276,13 @@ export async function sessionPickerCommand(agents: string[] = [], scope: Session
 // ─── Session kill command ────────────────────────────────────────────────────
 
 /**
- * Kill a named session or all sessions matching the given scope and agents.
+ * Kill a named session or selected sessions matching the given scope and agents.
  *
  * - If `sessionId` is provided: confirm and kill that one session.
- * - If `sessionId` is omitted: confirm and kill all sessions in scope.
+ * - If `sessionId` is omitted: pick sessions with a checkbox multi-select,
+ *   then confirm and kill the selected sessions.
+ * - If `all: true` and `sessionId` is omitted: preselect every matching
+ *   session and only ask for confirmation unless `yes: true` is also set.
  *
  * Pass `yes: true` (the `-y/--yes` flag on the CLI) to skip the
  * confirmation prompt — useful for orchestrating agents that need to
@@ -287,9 +293,10 @@ export async function sessionKillCommand(
   agents: string[] = [],
   scope: SessionScope = "all",
   deps: SessionDeps = defaultDeps,
-  options: { yes?: boolean } = {},
+  options: { yes?: boolean; all?: boolean } = {},
 ): Promise<number> {
   const skipConfirm = options.yes === true;
+  const selectAll = options.all === true;
   const paint = createPainter();
 
   if (!deps.isTmuxInstalled()) {
@@ -351,7 +358,7 @@ export async function sessionKillCommand(
     return 0;
   }
 
-  // ── Kill-all path ─────────────────────────────────────────────────────────
+  // ── Multi-kill path ───────────────────────────────────────────────────────
   const targets = filterByAgent(filterByScope(deps.listSessions(), scope), agents);
 
   if (targets.length === 0) {
@@ -359,12 +366,29 @@ export async function sessionKillCommand(
     return 0;
   }
 
-  const noun = targets.length === 1 ? "session" : "sessions";
+  const selectedNames = selectAll
+    ? targets.map((t) => t.name)
+    : await selectSessionsToKill(targets, deps);
+
+  if (deps.isCancel(selectedNames)) {
+    cancel("Cancelled.");
+    return 0;
+  }
+
+  if (selectedNames.length === 0) {
+    process.stdout.write(
+      "\n  " + paint("dim", "No sessions selected.") + "\n\n",
+    );
+    return 0;
+  }
+
+  const selectedTargets = targets.filter((t) => selectedNames.includes(t.name));
+  const noun = selectedTargets.length === 1 ? "session" : "sessions";
   const scopePrefix = scope === "all" ? "" : `${scope} `;
   const answer = skipConfirm
     ? true
     : await deps.confirm({
-        message: `Kill all ${targets.length} ${scopePrefix}${noun}?`,
+        message: `Kill ${selectedTargets.length} ${scopePrefix}${noun}?`,
         initialValue: false,
       });
 
@@ -374,11 +398,11 @@ export async function sessionKillCommand(
   }
 
   if (answer === true) {
-    for (const t of targets) {
+    for (const t of selectedTargets) {
       deps.killSession(t.name);
     }
     process.stdout.write(
-      "\n  " + paint("success", "✓") + " killed " + paint("text", String(targets.length)) + " " + paint("dim", noun) + "\n\n",
+      "\n  " + paint("success", "✓") + " killed " + paint("text", String(selectedTargets.length)) + " " + paint("dim", noun) + "\n\n",
     );
     return 0;
   }
@@ -388,4 +412,36 @@ export async function sessionKillCommand(
     "\n  " + paint("dim", "Cancelled.") + "\n\n",
   );
   return 0;
+}
+
+const SELECT_ALL_SESSIONS = "__atomic_select_all_sessions__";
+
+async function selectSessionsToKill(
+  targets: TmuxSession[],
+  deps: SessionDeps,
+): Promise<string[] | symbol> {
+  const selected = await deps.multiselect({
+    message: "Select sessions to kill (Space toggles, Enter continues)",
+    options: [
+      {
+        value: SELECT_ALL_SESSIONS,
+        label: "All matching sessions",
+        hint: `selects ${targets.length}`,
+      },
+      ...targets.map((s) => {
+        const age = formatAge(s.created);
+        const tag = s.attached ? "attached" : undefined;
+        return {
+          value: s.name,
+          label: s.name,
+          hint: tag ? `${age}, ${tag}` : age,
+        };
+      }),
+    ],
+    required: false,
+  });
+
+  if (deps.isCancel(selected)) return selected;
+  if (selected.includes(SELECT_ALL_SESSIONS)) return targets.map((t) => t.name);
+  return selected;
 }
