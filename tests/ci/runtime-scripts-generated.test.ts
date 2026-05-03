@@ -16,12 +16,16 @@ test("runtime script bundles are emitted", () => {
 });
 
 test("runtime script bundles are self-contained (no relative imports)", () => {
-  // Self-contained = no `from "./..."` or `from "../..."` survives the bundle.
-  // node:* and bun:* externals are allowed.
-  const relImport = /from\s+['"]\.\.?\//;
+  // Self-contained = no real `import ... from "./..."` survives the bundle.
+  // node:* and bun:* externals are allowed. Use Bun.Transpiler.scanImports
+  // so matches inside string/template literals don't trigger false positives.
+  const transpiler = new Bun.Transpiler({ loader: "js" });
   for (const rel of bundles) {
-    const src = readFileSync(join(root, rel), "utf8");
-    expect(src).not.toMatch(relImport);
+    const src = readFileSync(join(root, rel), "utf8").replace(/^#![^\n]*\n/, "");
+    const relativeImports = transpiler
+      .scanImports(src)
+      .filter((i) => i.path.startsWith("./") || i.path.startsWith("../"));
+    expect(relativeImports).toEqual([]);
   }
 });
 
