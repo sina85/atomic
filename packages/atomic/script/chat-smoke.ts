@@ -114,7 +114,11 @@ const cleaned = captured.replace(ANSI_RE, "");
 //      through to the default `chat` command → "Missing agent" → pane dies).
 //      The pill text appears verbatim inside the captured PTY stream
 //      because tmux paints both panes into the same client terminal.
-const muxRe = /ATOMIC_CHAT_SMOKE\s+(?:TMUX=\S*atomic|\S*PSMUX=\S*atomic)/;
+// psmux separates the marker and `TMUX=…` field with a `\x1B[1C` cursor
+// advance rather than a literal space; once ANSI is stripped, the two
+// tokens are flush against each other (`ATOMIC_CHAT_SMOKETMUX=…`). Allow
+// zero-or-more whitespace between them.
+const muxRe = /ATOMIC_CHAT_SMOKE\s*(?:TMUX|PSMUX)=\S*atomic/;
 const footerRe = new RegExp(agent.toUpperCase());
 
 const muxOk = muxRe.test(cleaned);
