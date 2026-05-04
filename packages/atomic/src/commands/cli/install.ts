@@ -373,22 +373,24 @@ function runPowerShell(
 }
 
 /**
- * Each detected PowerShell host writes to its own `$PROFILE.CurrentUserCurrentHost`:
+ * Probe each PowerShell host's `$PROFILE.CurrentUserCurrentHost` and return
+ * paths for whichever editions are actually present:
  *   - `powershell.exe` (Windows PowerShell 5.1) → Documents\WindowsPowerShell\...
- *   - `pwsh.exe`       (PowerShell 7+)         → Documents\PowerShell\...
+ *   - `pwsh.exe`       (PowerShell 7+)          → Documents\PowerShell\...
  * The two paths don't overlap, so a wrapper installed under one edition is
- * invisible to the other. Probe for both and write to whichever are present
- * — the wrapper script is identical and is harmless if the user only ever
- * uses one edition.
+ * invisible to the other. Probe by spawning each binary directly — `Bun.which`
+ * with explicit PATHEXT handling has been unreliable from the compiled atomic
+ * binary on Windows runners (returns null even when pwsh.exe is on system
+ * PATH), so we just try the spawn and trust the success/failure result.
  */
-function detectPSHosts(): PSHost[] {
+function detectPSProfiles(): string[] {
     if (!isWindows()) return [];
-    const hosts: PSHost[] = [];
-    // powershell.exe ships with every supported Windows version.
-    if (Bun.which("powershell.exe", { PATH: process.env.PATH ?? "" })) hosts.push("powershell.exe");
-    // pwsh.exe is opt-in (Microsoft Store / winget / installer).
-    if (Bun.which("pwsh.exe", { PATH: process.env.PATH ?? "" })) hosts.push("pwsh.exe");
-    return hosts;
+    const paths: string[] = [];
+    for (const bin of ["powershell.exe", "pwsh.exe"] as const) {
+        const p = runPowerShell("$PROFILE.CurrentUserCurrentHost", {}, bin);
+        if (p) paths.push(p);
+    }
+    return paths;
 }
 
 // ── tmux/psmux detection ───────────────────────────────────────────────────
@@ -489,15 +491,7 @@ function installCompletions(paths: InstallPaths): CompletionInstall | null {
 
 function completionsRcPaths(shell: Shell): readonly string[] {
     if (shell === "powershell") {
-        // Query each detected PowerShell host's own profile path so 5.1 and
-        // 7+ both pick up the wrapper, regardless of which edition the user
-        // launches from.
-        const paths: string[] = [];
-        for (const bin of detectPSHosts()) {
-            const path = runPowerShell("$PROFILE.CurrentUserCurrentHost", {}, bin);
-            if (path) paths.push(path);
-        }
-        return paths;
+        return detectPSProfiles();
     }
     const home = homedir();
     if (shell === "bash") return [join(home, ".bashrc")];
@@ -641,9 +635,8 @@ export async function uninstallCommand(opts: UninstallOptions = {}): Promise<num
     if (isWindows()) {
         // Strip from every PowerShell edition's profile — a prior install
         // may have written to either or both.
-        for (const bin of detectPSHosts()) {
-            const psProfile = runPowerShell("$PROFILE.CurrentUserCurrentHost", {}, bin);
-            if (psProfile) rcCandidates.push(psProfile);
+        for (const psProfile of detectPSProfiles()) {
+            rcCandidates.push(psProfile);
         }
     }
 

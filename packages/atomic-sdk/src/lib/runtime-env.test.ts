@@ -20,6 +20,13 @@ describe("isCompiledBinaryRuntime", () => {
     expect(isCompiledBinaryRuntime("c:/~bun/root/x")).toBe(true);
   });
 
+  test("true for Windows ~BUN path without drive letter prefix", () => {
+    // Some runner images surface the path with normalization that drops or
+    // rewrites the drive letter. As long as `~BUN` appears as a path segment,
+    // it's a compiled binary.
+    expect(isCompiledBinaryRuntime("\\~BUN\\root\\x")).toBe(true);
+  });
+
   test("false for node_modules path", () => {
     expect(isCompiledBinaryRuntime("/home/user/node_modules/@bastani/atomic-sdk/src/lib")).toBe(false);
   });

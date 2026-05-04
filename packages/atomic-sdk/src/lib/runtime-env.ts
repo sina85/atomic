@@ -27,7 +27,12 @@
  */
 export function isCompiledBinaryRuntime(dir: string): boolean {
   if (dir.startsWith("/$bunfs/") || dir.startsWith("\\$bunfs\\")) return true;
-  return /^[a-z]:[\\/]~BUN[\\/]/i.test(dir);
+  // Bun's Windows compiled-binary path shape is `<DRIVE>:\~BUN\root\...` per
+  // oven-sh/bun#25500, but we've seen variants without a drive letter and
+  // with both slash directions on different runner images. Match any path
+  // segment of literal `~BUN` between path separators — the chance of a
+  // real on-disk directory named exactly `~BUN` is negligible.
+  return /[\\/]~BUN[\\/]/i.test(dir);
 }
 
 /**
