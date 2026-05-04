@@ -56,16 +56,20 @@ export async function getEmbeddedAsset(kind: EmbeddedAssetKind): Promise<string>
     await Bun.write(tarPathForOs, await Bun.file(tarPath).bytes());
   }
 
-  // GNU tar (shipped with Git Bash on the Windows runner) treats a colon
-  // before the first slash as an SCP-style `host:path` and tries to spawn
-  // rsh/ssh — `tar: Cannot connect to C: resolve failed` on any absolute
-  // Windows path. `--force-local` disables that interpretation; bsdtar
-  // doesn't recognize the flag, but bsdtar doesn't have the bug either,
-  // so we only pass it on win32 where GNU tar is what's resolved.
-  const args = ["tar"];
-  if (process.platform === "win32") args.push("--force-local");
-  args.push("-xf", tarPathForOs, "-C", stagingDir);
-  const proc = Bun.spawn(args, { stderr: "pipe" });
+  // On Windows, prefer the bsdtar shipped in System32 over whatever `tar`
+  // resolves to on PATH. Git Bash provides a Cygwin-flavored GNU tar that
+  // mangles native Windows paths in two ways: the `-f` arg with a drive
+  // letter is read as SCP-style `host:path` (`Cannot connect to C:`), and
+  // the `-C` arg is silently truncated to its first path component. bsdtar
+  // (`%SystemRoot%\System32\tar.exe`, present on every supported Windows)
+  // handles native paths correctly and has shipped with Windows 10+ since
+  // 1803. Fall back to PATH lookup if it's somehow absent.
+  let tarBin = "tar";
+  if (process.platform === "win32") {
+    const sysTar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+    if (existsSync(sysTar)) tarBin = sysTar;
+  }
+  const proc = Bun.spawn([tarBin, "-xf", tarPathForOs, "-C", stagingDir], { stderr: "pipe" });
   const exitCode = await proc.exited;
   if (inBunfs) await rm(tarPathForOs, { force: true });
   if (exitCode !== 0) {
