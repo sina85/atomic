@@ -190,6 +190,72 @@ jobs:
         env:
           NPM_TAG: ${{ steps.npm-tag.outputs.tag }}
 
+  # Verifies the lazy auto-install path: when atomic launches and tmux/psmux
+  # is missing, autoSyncIfStale → ensureTmuxInstalled shells out to the host
+  # package manager and the binary lands on PATH. Linux uses apt-get (sudo
+  # passwordless on the runner), macOS uses brew. Windows is excluded — its
+  # package managers (winget/scoop/choco) are not reliably available on the
+  # GitHub-hosted runners and would make this test flaky.
+  mux-autoinstall-smoke:
+    name: Mux auto-install smoke (${{ matrix.os }})
+    needs: [publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, arch: x64   }
+          - { os: macos-14,      arch: arm64 }
+    runs-on: ${{ matrix.os }}
+    env:
+      RC_VERSION: ${{ needs.publish.outputs.version }}
+    steps:
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Ensure tmux is NOT pre-installed (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get remove -y tmux >/dev/null 2>&1 || true
+          if command -v tmux >/dev/null 2>&1; then
+            echo "tmux still on PATH after remove — runner image differs from expected"
+            exit 1
+          fi
+
+      - name: Ensure tmux is NOT pre-installed (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if command -v tmux >/dev/null 2>&1; then
+            brew uninstall --ignore-dependencies tmux >/dev/null 2>&1 || true
+          fi
+          if command -v tmux >/dev/null 2>&1; then
+            echo "tmux still on PATH after uninstall — runner image differs from expected"
+            exit 1
+          fi
+
+      - name: Install atomic from npm
+        run: bun install -g @bastani/atomic@${{ env.RC_VERSION }}
+
+      # autoSyncIfStale only runs for non-info commands (`--version` /
+      # `--help` / `completions` are gated out in cli.ts). `workflow list`
+      # is non-info, awaited, and silently triggers ensureTmuxInstalled
+      # when hasRequiredMuxBinary() returns false.
+      - name: Trigger lazy auto-install via atomic workflow list
+        shell: bash
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          atomic --version
+          atomic workflow list >/dev/null
+
+      - name: Verify tmux is now on PATH
+        shell: bash
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          which tmux
+          tmux -V
+
   install-smoke:
     name: Smoke test ${{ matrix.os }} ${{ matrix.arch }}
     needs: [publish]

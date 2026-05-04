@@ -50,14 +50,14 @@ Install, generate context, try Ralph, then write your own workflow — four step
 Atomic doesn't replace your coding agent or terminal — it gives them a workflow to follow. Three things have to exist on the host before a workflow can run:
 
 - **A terminal multiplexer** — every stage runs inside a detachable session on a dedicated `atomic` socket (your personal tmux is untouched). That's how workflows survive terminal disconnects, how `-d/--detach` puts a run in the background, and how `atomic session connect` reattaches later from any shell.
-  - **macOS / Linux:** [tmux](https://github.com/tmux/tmux) — `brew install tmux` or your distro's package manager
-  - **Windows:** [psmux](https://github.com/psmux/psmux) — a PowerShell-native tmux-compatible shim, detected as `psmux` / `pmux` / `tmux` on `PATH`
+  - **macOS / Linux:** [tmux](https://github.com/tmux/tmux) — auto-installed on first `atomic` run via `brew` (macOS) or `apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk` (Linux) when one is on `PATH`
+  - **Windows:** [psmux](https://github.com/psmux/psmux) — auto-installed on first `atomic` run via `winget` / `scoop` / `choco` / `cargo`; detected as `psmux` / `pmux` / `tmux` on `PATH`
 - **At least one coding agent** installed and logged in — Atomic spawns the agent's own CLI at each stage and talks to it via its SDK, so the CLI has to be present and authenticated:
   - [Claude Code](https://code.claude.com/docs/en/quickstart) — run `claude` and authenticate
   - [OpenCode](https://opencode.ai) — run `opencode` and authenticate
   - [GitHub Copilot CLI](https://github.com/features/copilot/cli) — run `copilot` and authenticate
 
-> The bootstrap installer below ships a prebuilt binary — it does **not** require Bun, Node, or any other runtime on your machine. It also does **not** install tmux/psmux or the coding agents; install those separately before running any workflow. The installer auto-detects tmux/psmux in common install locations (winget, scoop, brew, `/opt/homebrew/bin`, `%LOCALAPPDATA%\Programs\`, etc.) and adds them to your PATH if needed. Using a [devcontainer](#alternative-devcontainer-recommended-for-autonomous-workflows) short-circuits all of this: the atomic feature bundles tmux + the agent CLI into the container image.
+> The bootstrap installer below ships a prebuilt binary — it does **not** require Bun, Node, or any other runtime on your machine. tmux/psmux are not bundled but are **auto-installed lazily on the first non-info `atomic` command** (e.g. `atomic workflow list`) — atomic shells out to your platform's package manager (`brew`/`apt`/`dnf`/`yum`/`pacman`/`zypper`/`apk` on Unix, `winget`/`scoop`/`choco`/`cargo` on Windows), or you can pre-install yourself if you'd rather skip that step. Coding agents are **not** auto-installed — install and authenticate those separately. Using a [devcontainer](#alternative-devcontainer-recommended-for-autonomous-workflows) short-circuits all of this: the atomic feature bundles tmux + the agent CLI into the container image.
 
 ### 1. Install
 
