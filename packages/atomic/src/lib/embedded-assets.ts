@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir, platform, tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { VERSION } from "../version.ts";   // inlined by `bun build --compile`
 import type { EmbeddedAssetKind } from "@bastani/atomic-sdk/services/config/definitions";
 import { isCompiledBinaryRuntime } from "@bastani/atomic-sdk/lib/runtime-env";
@@ -58,13 +58,14 @@ export async function getEmbeddedAsset(kind: EmbeddedAssetKind): Promise<string>
 
   // GNU tar (shipped with Git Bash on the Windows runner) treats a colon
   // before the first slash as an SCP-style `host:path` and tries to spawn
-  // rsh/ssh, which fails with "Cannot connect to C: resolve failed" on any
-  // absolute Windows path. Pass the archive as a basename via `cwd` so the
-  // `-f` argument never carries a drive letter.
-  const proc = Bun.spawn(["tar", "-xf", basename(tarPathForOs), "-C", stagingDir], {
-    cwd: dirname(tarPathForOs),
-    stderr: "pipe",
-  });
+  // rsh/ssh — `tar: Cannot connect to C: resolve failed` on any absolute
+  // Windows path. `--force-local` disables that interpretation; bsdtar
+  // doesn't recognize the flag, but bsdtar doesn't have the bug either,
+  // so we only pass it on win32 where GNU tar is what's resolved.
+  const args = ["tar"];
+  if (process.platform === "win32") args.push("--force-local");
+  args.push("-xf", tarPathForOs, "-C", stagingDir);
+  const proc = Bun.spawn(args, { stderr: "pipe" });
   const exitCode = await proc.exited;
   if (inBunfs) await rm(tarPathForOs, { force: true });
   if (exitCode !== 0) {
