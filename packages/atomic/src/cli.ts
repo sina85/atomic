@@ -270,6 +270,42 @@ Examples:
             process.exit(exitCode);
         });
 
+    // ── Internal: orchestrator entry (spawned in the workflow tmux pane) ───
+    //
+    // Mirrors OpenCode's "every fresh-process entry is a CLI sub-command"
+    // model. The launcher script written by `executeWorkflow()` runs:
+    //   <bun> <cli.ts> _orchestrator-entry <workflowSource> <agent> <inputsB64>
+    // in dev, or
+    //   <atomic-binary> _orchestrator-entry <workflowSource> <agent> <inputsB64>
+    // in compiled-binary mode. The SDK never ships a separately-runnable
+    // bundle that a sub-process would `bun run` from outside the package's
+    // module resolution context — that pattern broke `@opentui/core`'s
+    // dynamic platform-binding import.
+    program
+        .command("_orchestrator-entry", { hidden: true })
+        .description("Internal: load a workflow definition and run the orchestrator panel")
+        .argument("<workflowSource>", "Absolute path to the workflow's source file")
+        .argument("<agent>", "claude | copilot | opencode")
+        .argument("[inputsB64]", "Base64-encoded JSON record of structured inputs", "")
+        .action(async (workflowSource: string, agent: string, inputsB64: string) => {
+            const { runOrchestratorEntry } = await import(
+                "@bastani/atomic-sdk/runtime/orchestrator-entry"
+            );
+            await runOrchestratorEntry(workflowSource, agent, inputsB64);
+        });
+
+    // ── Internal: cc-debounce (called by tmux.conf on every Ctrl+C) ────────
+    program
+        .command("_cc-debounce", { hidden: true })
+        .description("Internal: debounce Ctrl+C presses inside Atomic-managed tmux panes")
+        .argument("<paneId>", "tmux pane id (e.g. %0)")
+        .action(async (paneId: string) => {
+            const { runCcDebounce } = await import(
+                "@bastani/atomic-sdk/runtime/cc-debounce"
+            );
+            process.exit(runCcDebounce(paneId));
+        });
+
     // ── Internal: Claude Stop hook handler ────────────────────────────────
     program
         .command("_claude-stop-hook", { hidden: true })
@@ -434,6 +470,8 @@ async function main(): Promise<void> {
             argv[0] === "uninstall" ||
             argv[0] === "completions" ||
             argv[0] === "_footer" ||
+            argv[0] === "_orchestrator-entry" ||
+            argv[0] === "_cc-debounce" ||
             argv[0] === "_claude-stop-hook" ||
             argv[0] === "_claude-ask-hook" ||
             argv[0] === "_claude-session-start-hook" ||

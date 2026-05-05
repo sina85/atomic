@@ -1,33 +1,41 @@
 /**
  * Resolved paths to runtime sibling assets (RFC §5.1).
  *
- * Each export holds the path that `with { type: "file" }` resolves to:
+ * `tmuxConfPath` resolves to:
  *
- *  - **Compiled binary**: a `/$bunfs/…` virtual-filesystem path.
- *  - **Dev / installed package**: the absolute source path.
+ *  - **Compiled binary**: a `/$bunfs/…` virtual-filesystem path materialised
+ *    out to `~/.atomic/runtime/<sdk-version>/tmux.conf` so spawned OS
+ *    processes (tmux, psmux) can read it.
+ *  - **Dev / installed package**: the absolute on-disk source path.
  *
- * `with { type: "file" }` is the only correct mechanism for asset resolution
- * under `bun build --compile`. Do NOT use `import.meta.dir` inside this module.
- *
- * The `.script.js` bundles under `runtime-scripts/` are emitted by
- * `emitRuntimeScriptBundles` (RFC §5.3) so a runtime asset import never
- * collides with a module import of the canonical `cc-debounce.ts` /
- * `orchestrator-entry.ts` source (RFC §5.6).
+ * `with { type: "file" }` is the only correct mechanism for asset
+ * resolution under `bun build --compile`. Do NOT use `import.meta.dir`
+ * inside this module.
  *
  * ### Bunfs materialization
  *
- * In a compiled binary, `with { type: "file" }` returns a `/$bunfs/…` path
- * that is accessible to Bun APIs but NOT to spawned OS processes — `tmux`
- * cannot read `/$bunfs/.../tmux.conf`, and a re-exec'd `bun` cannot resolve
- * `/$bunfs/.../orchestrator-entry.script.js` from a different binary
- * instance. Mirrors the tarball treatment in
- * `packages/atomic/src/lib/embedded-assets.ts`.
+ * In a compiled binary, `with { type: "file" }` returns a `/$bunfs/…`
+ * path that is accessible to Bun APIs but NOT to spawned OS processes —
+ * `tmux -f /$bunfs/.../tmux.conf` fails with ENOENT. Mirrors the tarball
+ * treatment in `packages/atomic/src/lib/embedded-assets.ts`.
  *
- * To bridge that gap we copy each asset to a stable on-disk cache the
- * first time this module loads in a compiled binary. Subsequent loads see
- * an existing destination and skip the write. In dev / installed-package
- * runtime the import already resolves to a real on-disk path, so the
- * helper is a no-op.
+ * To bridge that gap we copy the asset to a stable on-disk cache the
+ * first time this module loads in a compiled binary. Subsequent loads
+ * see an existing destination and skip the write. In dev /
+ * installed-package runtime the import already resolves to a real
+ * on-disk path, so the helper is a no-op.
+ *
+ * ### What used to live here
+ *
+ * Earlier versions of atomic also exported `ccDebounceScriptPath` and
+ * `orchestratorEntryPath` — pre-bundled `.script.js` files spawned by
+ * tmux as fresh sub-processes. That pattern lifted `@opentui/core`'s
+ * dynamic platform-binding import out of the `@opentui/core` package's
+ * resolution context and broke at runtime. Following OpenCode's
+ * single-binary model, both scripts now live as hidden CLI sub-commands
+ * (`atomic _orchestrator-entry`, `atomic _cc-debounce`) that the
+ * launcher self-re-execs into. No more standalone bundles, no more
+ * materialisation for them.
  */
 
 import { existsSync, mkdirSync } from "node:fs";
@@ -36,14 +44,7 @@ import { basename, dirname, join } from "node:path";
 import sdkPackageJson from "../../package.json";
 import { isCompiledBinaryRuntime } from "./runtime-env.ts";
 
-import tmuxConfAsset          from "../runtime/tmux.conf"                           with { type: "file" };
-// `with { type: "file" }` makes Bun return a path string at runtime, but TypeScript
-// resolves the `.js` bundle as a module under `allowJs`. The suppression is
-// intentional and load-bearing.
-// @ts-expect-error see comment above
-import ccDebounceAsset         from "./runtime-scripts/cc-debounce.script.js"        with { type: "file" };
-// @ts-expect-error see comment above
-import orchestratorEntryAsset  from "./runtime-scripts/orchestrator-entry.script.js" with { type: "file" };
+import tmuxConfAsset from "../runtime/tmux.conf" with { type: "file" };
 
 const SDK_VERSION = sdkPackageJson.version;
 
@@ -102,9 +103,3 @@ export async function materializeRuntimeAsset(
 
 /** Resolved path to the tmux.conf runtime asset. */
 export const tmuxConfPath: string = await materializeRuntimeAsset(tmuxConfAsset);
-
-/** Resolved path to the cc-debounce runtime script. */
-export const ccDebounceScriptPath: string = await materializeRuntimeAsset(ccDebounceAsset);
-
-/** Resolved path to the orchestrator-entry runtime script. */
-export const orchestratorEntryPath: string = await materializeRuntimeAsset(orchestratorEntryAsset);

@@ -7,7 +7,8 @@
  */
 
 import { requiredMuxBinaryCandidatesForPlatform } from "../lib/spawn.ts";
-import { tmuxConfPath, ccDebounceScriptPath } from "../lib/runtime-assets.ts";
+import { tmuxConfPath } from "../lib/runtime-assets.ts";
+import { buildSelfExecCommand, resolveAtomicCliPath } from "../lib/self-exec.ts";
 import { writeFileSync, unlinkSync } from "node:fs";
 import type { Subprocess } from "bun";
 import { atomicTempPath } from "../lib/atomic-temp.ts";
@@ -22,11 +23,6 @@ export const SOCKET_NAME = "atomic";
 
 /** Path to the bundled tmux config (shared by tmux and psmux). */
 const CONFIG_PATH = tmuxConfPath;
-
-/** Path to the bundled Ctrl+C debounce script (TypeScript, run via bun
- *  so the same file handles Linux, macOS, and Windows without shell
- *  dialect gymnastics). Referenced from tmux.conf. */
-const CC_DEBOUNCE_PATH = ccDebounceScriptPath;
 
 /** Discriminated result from a tmux command execution. */
 export type TmuxResult =
@@ -208,14 +204,19 @@ export function createSession(
   // Reload config into the running server so keybindings are always current
   // (tmux only loads -f on first server start; source-file updates a running server).
   tmuxRun(["source-file", CONFIG_PATH]);
-  // Expose the bun binary and debounce-script paths as server-wide user
-  // options so tmux.conf's Ctrl+C binding can invoke them without
-  // hardcoding an install path or relying on the user's PATH — which
-  // tmux's run-shell does not always inherit in full, especially on
-  // Windows psmux. `process.execPath` is the exact bun interpreter
-  // currently running atomic, guaranteeing it's executable.
-  tmuxRun(["set-option", "-g", "@atomic-bun", process.execPath]);
-  tmuxRun(["set-option", "-g", "@atomic-cc-debounce", CC_DEBOUNCE_PATH]);
+  // Expose the cc-debounce self-re-exec command as a server-wide user
+  // option so tmux.conf's Ctrl+C binding can invoke it without hardcoding
+  // an install path or relying on the user's PATH — which tmux's
+  // run-shell does not always inherit in full, especially on Windows
+  // psmux. The command is fully quoted: in compiled-binary mode it's
+  // `<atomic-binary> _cc-debounce`; in dev it's `<bun> <cli.ts> _cc-debounce`.
+  const ccDebounceCmd = buildSelfExecCommand({
+    runtime: process.execPath,
+    cliPath: resolveAtomicCliPath(import.meta.dir),
+    subcommand: "_cc-debounce",
+    args: [],
+  });
+  tmuxRun(["set-option", "-g", "@atomic-cc-debounce", ccDebounceCmd]);
   return paneId || tmux(["list-panes", "-t", sessionName, "-F", "#{pane_id}"]).split("\n")[0]!;
 }
 

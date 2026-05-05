@@ -356,23 +356,22 @@ const WorkflowList = memo(function WorkflowList({
         const entryIdx = entryIndexByRow.get(i) ?? -1;
         const isFocused = entryIdx === focusedEntryIdx;
         const wf = row.entry.workflow;
-        const nameCol = isFocused ? theme.text : theme.textMuted;
 
         return (
           <box
             key={`wf-${wf.agent}-${wf.name}`}
             height={1}
             flexDirection="row"
-            backgroundColor={isFocused ? theme.border : theme.backgroundPanel}
+            backgroundColor={isFocused ? theme.primary : theme.backgroundPanel}
             paddingLeft={1}
             paddingRight={2}
           >
             <text>
-              <span fg={isFocused ? theme.primary : theme.textDim}>
-                {isFocused ? "▸ " : "  "}
+              <span fg={isFocused ? theme.surface : theme.textDim}>
+                {isFocused ? <strong>{"▸ "}</strong> : "  "}
               </span>
-              <span fg={nameCol}>
-                {wf.name}
+              <span fg={isFocused ? theme.surface : theme.textMuted}>
+                {isFocused ? <strong>{wf.name}</strong> : wf.name}
               </span>
             </text>
           </box>

@@ -49,7 +49,8 @@ import type { SessionPromptResponse } from "@opencode-ai/sdk/v2";
 import type { SessionMessage } from "@anthropic-ai/claude-agent-sdk";
 import * as tmux from "./tmux.ts";
 import { spawnMuxAttach } from "./tmux.ts";
-import { orchestratorEntryPath } from "../lib/runtime-assets.ts";
+import { buildSelfExecCommand, resolveAtomicCliPath } from "../lib/self-exec.ts";
+import { buildLauncherEnv, buildTmuxEnv } from "../lib/terminal-env.ts";
 import {
   getListeningPortForPid,
   PORT_DISCOVERY_TIMEOUT_MS,
@@ -497,18 +498,46 @@ export async function executeWorkflow(
   const sessionsBaseDir = join(getSessionsBaseDir(), workflowRunId);
   await ensureDir(sessionsBaseDir);
 
+  // Compose the per-session env exactly like `atomic chat` does in
+  // `chat/index.ts`: agent-CLI defaults + claude temp env + provider
+  // overrides + ATOMIC_AGENT, then layer terminal defaults
+  // (LANG / LC_ALL / LC_CTYPE / TERM / COLORTERM=truecolor) via
+  // `buildLauncherEnv`. Without this the orchestrator pane lost
+  // COLORTERM (OpenTUI fell back to 256-color rendering) and stage
+  // panes never saw provider-overrides envVars (e.g. custom
+  // ANTHROPIC_API_URL / OPENAI_BASE_URL set in
+  // `~/.atomic/settings.json#providers.<agent>.envVars`).
+  const providerOverrides = await getProviderOverrides(agent, projectRoot);
+  const claudeTempEnv = agent === "claude" ? atomicTempEnv() : {};
+  const agentEnv: Record<string, string> = {
+    ...AGENT_CLI[agent].envVars,
+    ...claudeTempEnv,
+    ...providerOverrides.envVars,
+    ATOMIC_AGENT: agent,
+  };
+  const sessionEnv = buildTmuxEnv(agentEnv);
+
   // Write a launcher script for the orchestrator pane.
-  // Runs the SDK-owned orchestrator entry script with positional args:
-  //   bun <orchestrator-entry.ts> <workflowSource> <agent> <inputsB64>
-  // The dev's own CLI is never re-execed.
+  // Re-executes the atomic CLI's hidden `_orchestrator-entry` sub-command
+  // with positional args:
+  //   atomic _orchestrator-entry <workflowSource> <agent> <inputsB64>
+  // (or `bun <cli.ts> _orchestrator-entry …` in dev). Mirrors OpenCode's
+  // single-binary architecture — every fresh-process entry into atomic
+  // goes through a CLI sub-command, never a free-standing JS bundle.
   const isWin = process.platform === "win32";
   const launcherExt = isWin ? "ps1" : "sh";
   const launcherPath = join(sessionsBaseDir, `orchestrator.${launcherExt}`);
   const logPath = join(sessionsBaseDir, "orchestrator.log");
-  const launcherEnvVars = {
-    ...(agent === "claude" ? atomicTempEnv() : {}),
-    ...terminalCapabilityEnv(),
+  // Orchestrator launcher env = session env + workflow-specific extras.
+  // The workflow extras (ATOMIC_WF_* + diagnostics) are orchestrator-only,
+  // so they live in the launcher script rather than the session env.
+  const launcherEnvVars: Record<string, string> = {
+    ...buildLauncherEnv(agentEnv),
     ...workflowDiagnosticsEnv(),
+    ATOMIC_WF_ID: workflowRunId,
+    ATOMIC_WF_TMUX: tmuxSessionName,
+    ATOMIC_WF_AGENT: agent,
+    ATOMIC_WF_CWD: projectRoot,
   };
 
   // Inputs are passed through as base64-encoded JSON so long multiline
@@ -517,16 +546,19 @@ export async function executeWorkflow(
   // prompt is stored under the `prompt` key so workflow authors always
   // read the user's prompt via `ctx.inputs.prompt`.
   const inputsB64 = Buffer.from(JSON.stringify(inputs)).toString("base64");
-
-  // Resolve the SDK's orchestrator entry script (sibling of this file).
-  const orchestratorEntry = orchestratorEntryPath;
   const workflowSource = definition.source;
 
-  // Resolve the bun binary to an absolute path here — `process.execPath` is
-  // the exact bun interpreter currently running atomic, so we don't depend on
-  // bare `bun` being on the tmux child shell's PATH (the same reason
-  // `attached-footer.ts` uses it).
-  const bunBinary = process.execPath;
+  // Build the self-re-exec command line. In a compiled binary this resolves
+  // to `<atomic-binary> _orchestrator-entry <args>`; in dev it resolves to
+  // `<bun> <cli.ts> _orchestrator-entry <args>`.
+  const runtime = process.execPath;
+  const cliPath = resolveAtomicCliPath(import.meta.dir);
+  const orchestratorCmd = buildSelfExecCommand({
+    runtime,
+    cliPath,
+    subcommand: "_orchestrator-entry",
+    args: [workflowSource, agent, inputsB64],
+  });
 
   const launcherScript = isWin
     ? [
@@ -534,11 +566,7 @@ export async function executeWorkflow(
         ...Object.entries(launcherEnvVars).map(
           ([key, value]) => `$env:${key} = "${escPwsh(value)}"`,
         ),
-        `$env:ATOMIC_WF_ID = "${escPwsh(workflowRunId)}"`,
-        `$env:ATOMIC_WF_TMUX = "${escPwsh(tmuxSessionName)}"`,
-        `$env:ATOMIC_WF_AGENT = "${escPwsh(agent)}"`,
-        `$env:ATOMIC_WF_CWD = "${escPwsh(projectRoot)}"`,
-        `& "${escPwsh(bunBinary)}" run "${escPwsh(orchestratorEntry)}" "${escPwsh(workflowSource)}" "${escPwsh(agent)}" "${escPwsh(inputsB64)}" 2>"${escPwsh(logPath)}"`,
+        `& ${orchestratorCmd} 2>"${escPwsh(logPath)}"`,
       ].join("\n")
     : [
         "#!/bin/bash",
@@ -546,11 +574,7 @@ export async function executeWorkflow(
         ...Object.entries(launcherEnvVars).map(
           ([key, value]) => `export ${key}="${escBash(value)}"`,
         ),
-        `export ATOMIC_WF_ID="${escBash(workflowRunId)}"`,
-        `export ATOMIC_WF_TMUX="${escBash(tmuxSessionName)}"`,
-        `export ATOMIC_WF_AGENT="${escBash(agent)}"`,
-        `export ATOMIC_WF_CWD="${escBash(projectRoot)}"`,
-        `"${escBash(bunBinary)}" run "${escBash(orchestratorEntry)}" "${escBash(workflowSource)}" "${escBash(agent)}" "${escBash(inputsB64)}" 2>"${escBash(logPath)}"`,
+        `${orchestratorCmd} 2>"${escBash(logPath)}"`,
       ].join("\n");
 
   await writeFile(launcherPath, launcherScript, { mode: 0o755 });
@@ -558,8 +582,13 @@ export async function executeWorkflow(
   const shellCmd = isWin
     ? `pwsh -NoProfile -File "${escPwsh(launcherPath)}"`
     : `bash "${escBash(launcherPath)}"`;
-  tmux.createSession(tmuxSessionName, shellCmd, "orchestrator", undefined, launcherEnvVars);
-  tmux.setSessionEnv(tmuxSessionName, "ATOMIC_AGENT", agent);
+  // Pass `sessionEnv` (not `launcherEnvVars`) to tmux's `new-session -e
+  // KEY=VALUE` so all subsequent windows / panes inherit the same agent
+  // env that chat sets — terminal defaults, AGENT_CLI defaults, provider
+  // overrides, ATOMIC_AGENT. Workflow-only extras (ATOMIC_WF_* and
+  // diagnostics) stay in the orchestrator launcher script's env exports
+  // since stage panes don't need them.
+  tmux.createSession(tmuxSessionName, shellCmd, "orchestrator", undefined, sessionEnv);
 
   if (detach) {
     // Session is already running detached on the atomic socket (tmux
@@ -597,13 +626,6 @@ function workflowDiagnosticsEnv(): Record<string, string> {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
-  return env;
-}
-
-function terminalCapabilityEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  const colorterm = process.env.COLORTERM;
-  if (colorterm !== undefined) env.COLORTERM = colorterm;
   return env;
 }
 

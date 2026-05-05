@@ -8,7 +8,7 @@ export interface BuildTarget {
   /** Artifact / npm package suffix (`@bastani/atomic-<name>`). */
   readonly name: string;
   /** `bun build --compile --target` value. */
-  readonly bunTarget: string;
+  readonly bunTarget: Bun.Build.CompileTarget;
   /** Value for npm's `os` field. */
   readonly os: "linux" | "darwin" | "win32";
   /** Value for npm's `cpu` field. */

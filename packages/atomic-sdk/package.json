@@ -22,6 +22,8 @@
     "./runtime/attached-footer": "./src/runtime/attached-footer.ts",
     "./runtime/theme": "./src/runtime/theme.ts",
     "./runtime/executor": "./src/runtime/executor.ts",
+    "./runtime/orchestrator-entry": "./src/runtime/orchestrator-entry.ts",
+    "./runtime/cc-debounce": "./src/runtime/cc-debounce.ts",
     "./providers/claude": "./src/providers/claude.ts",
     "./providers/copilot": "./src/providers/copilot.ts",
     "./providers/claude-stop-hook": "./src/providers/claude-stop-hook.ts",
@@ -60,7 +62,7 @@
   "scripts": {
     "build": "bun run script/build.ts",
     "release": "bun run script/publish.ts",
-    "typecheck": "bun run script/prebundle.ts && bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.128",

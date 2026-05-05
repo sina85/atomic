@@ -255,7 +255,7 @@ describe("NodeCard", () => {
     expect(spanHex(durationSpan.bg)).toBe(TEST_THEME.background);
   });
 
-  test("focused running node does not tint interior with warning color", async () => {
+  test("focused running node elevates interior one stratum without warning tint", async () => {
     const store = new PanelStore();
     const now = Date.now();
     const node = makeLayoutNode({
@@ -276,10 +276,10 @@ describe("NodeCard", () => {
     expect(durationSpan).toBeDefined();
     if (!durationSpan) throw new Error("Expected focused running node duration span");
     expect(spanHex(durationSpan.fg)).toBe(TEST_THEME.warning);
-    expect(spanHex(durationSpan.bg)).toBe(TEST_THEME.background);
+    expect(spanHex(durationSpan.bg)).toBe(TEST_THEME.backgroundElement);
   });
 
-  test("running node border keeps explicit graph background", async () => {
+  test("focused running node border lifts background to elevated stratum", async () => {
     const store = new PanelStore();
     const node = makeLayoutNode({
       name: "worker",
@@ -298,6 +298,6 @@ describe("NodeCard", () => {
     const borderSpan = findSpanContaining(testSetup, "worker");
     expect(borderSpan).toBeDefined();
     if (!borderSpan) throw new Error("Expected running node border/title span");
-    expect(spanHex(borderSpan.bg)).toBe(TEST_THEME.background);
+    expect(spanHex(borderSpan.bg)).toBe(TEST_THEME.backgroundElement);
   });
 });
