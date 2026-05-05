@@ -1,9 +1,37 @@
+/**
+ * Atomic CLI binary build.
+ *
+ * Mirrors OpenCode's build pipeline (`packages/opencode/script/build.ts`):
+ *
+ *  1. **Pre-install all platform variants of OpenTUI's native bindings.**
+ *     `@opentui/core` resolves its FFI library via
+ *     `await import(`@opentui/core-${platform}-${arch}/index.ts`)` —
+ *     a dynamic platform import that Bun's compiler can only inline if
+ *     the matching `@opentui/core-<plat>-<arch>` package is already
+ *     present in `node_modules` at build time. `bun install --os="*" --cpu="*"`
+ *     forces every variant in so cross-compile builds for non-host
+ *     platforms succeed.
+ *
+ *  2. **Programmatic `Bun.build({ compile: { target } })` per target.**
+ *     The `target: "bun-<os>-<arch>"` flag tells Bun which platform
+ *     binaries to embed; no need for `--external '@opentui/*'` or any
+ *     other workaround.
+ *
+ * Embedded asset tarballs (`.claude.tar`, `.opencode.tar`,
+ * `.github.tar`, `.agents/skills.tar`) are emitted before the build loop
+ * by `bundleEmbeddedAssets`. There are no longer any pre-bundled
+ * runtime-script `.script.js` files — both `_orchestrator-entry` and
+ * `_cc-debounce` live as hidden CLI sub-commands routed through
+ * `cli.ts`, so a single `Bun.build` call per target compiles
+ * everything.
+ */
+
 import { mkdir, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { $ } from "bun";
 import { findRepoRoot } from "../src/lib/workspace-paths.ts";
 import { TARGETS, hostTarget, type BuildTarget } from "./targets.ts";
-import { bundleEmbeddedAssets, emitRuntimeScriptBundles } from "./build-assets.ts";
+import { bundleEmbeddedAssets } from "./build-assets.ts";
 
 const WORKSPACE_ROOT = findRepoRoot(import.meta.dir);
 const CLI_PKG_ROOT = join(WORKSPACE_ROOT, "packages", "atomic");
@@ -15,7 +43,6 @@ function selectTargets(arg: string | undefined): readonly BuildTarget[] {
 }
 
 await bundleEmbeddedAssets(WORKSPACE_ROOT);
-await emitRuntimeScriptBundles(WORKSPACE_ROOT);
 
 const arg = process.argv[2];
 const requested = selectTargets(arg);
@@ -30,18 +57,39 @@ if (requested.length === 0) {
 const rootPkg = await Bun.file(join(WORKSPACE_ROOT, "package.json")).json();
 const version = rootPkg.version;
 const repository = rootPkg.repository;
+const opentuiCoreSpec: string = rootPkg.devDependencies?.["@opentui/core"]
+  ?? rootPkg.dependencies?.["@opentui/core"]
+  ?? "*";
+
+// Force every `@opentui/core-<os>-<arch>` variant into node_modules so
+// cross-compile builds for non-host platforms can find their native
+// binding. Mirrors OpenCode's pre-install step. Skipped when only one
+// host-platform target is requested (the host's variant is already
+// installed by `bun install`).
+const buildingForOtherPlatform = requested.some(
+  (t) => t.bunTarget !== `bun-${hostTarget()}`,
+);
+if (buildingForOtherPlatform) {
+  await $`bun install --os="*" --cpu="*" @opentui/core@${opentuiCoreSpec}`.cwd(WORKSPACE_ROOT);
+}
 
 for (const t of requested) {
   const outdir = join(CLI_PKG_ROOT, "dist", t.name);
   await mkdir(join(outdir, "bin"), { recursive: true });
 
-  const r = spawnSync("bun", [
-    "build", "--compile", "--minify",
-    "--target", t.bunTarget,
-    "--outfile", join(outdir, "bin", `atomic${t.ext ?? ""}`),
-    join(CLI_PKG_ROOT, "src", "cli.ts"),
-  ], { stdio: "inherit", cwd: WORKSPACE_ROOT });
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  const outfile = join(outdir, "bin", `atomic${t.ext ?? ""}`);
+  const result = await Bun.build({
+    entrypoints: [join(CLI_PKG_ROOT, "src", "cli.ts")],
+    minify: true,
+    compile: {
+      target: t.bunTarget,
+      outfile,
+    },
+  });
+  if (!result.success) {
+    for (const log of result.logs) console.error(log);
+    process.exit(1);
+  }
 
   await writeFile(join(outdir, "package.json"), JSON.stringify({
     name: `@bastani/atomic-${t.name}`,

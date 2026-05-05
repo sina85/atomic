@@ -2,14 +2,19 @@
  * G2 Validation Gate — RFC §8.3
  *
  * Asserts that no .ts or .tsx source file is imported via
- * `with { type: "file" }` outside the designated runtime-scripts directory.
+ * `with { type: "file" }`.
  *
- * Importing a .ts module path as a file asset creates a dual-identity bug:
- * the module is both compiled into the bundle AND embedded as a raw file copy,
- * causing divergent runtime behaviour.
+ * Importing a .ts module path as a file asset creates a dual-identity
+ * bug: the module is both compiled into the bundle AND embedded as a raw
+ * file copy, causing divergent runtime behaviour. (This was the path
+ * that broke the standalone `orchestrator-entry.script.js` bundle when
+ * `@opentui/core`'s dynamic platform-binding import got lifted out of
+ * the package's resolution context. Following OpenCode's single-binary
+ * model, every fresh-process entry into atomic now goes through a CLI
+ * sub-command — there's no legitimate reason to import a .ts as a file
+ * asset.)
  *
  * Allowlist:
- *   - Files inside packages/{pkg}/src/lib/runtime-scripts/ (intentional asset copies)
  *   - Test files (*.test.ts / *.test.tsx)
  */
 
@@ -28,18 +33,8 @@ const IMPORT_SOURCE_RE = /from\s+['"]([^'"]+)['"]/;
 
 /** Returns true when a repo-relative path should be skipped. */
 function isAllowlisted(repoRelPath: string): boolean {
-  if (repoRelPath.includes("/lib/runtime-scripts/")) return true;
   if (repoRelPath.endsWith(".test.ts") || repoRelPath.endsWith(".test.tsx")) return true;
   return false;
-}
-
-/**
- * Returns true when the import source path is an intentional file asset.
- * Imports from runtime-scripts/ are build-generated copies, not module-compiled
- * sources — they are explicitly allowed as file assets.
- */
-function isAllowlistedImportSource(importSource: string): boolean {
-  return importSource.includes("runtime-scripts/");
 }
 
 type Violation = { file: string; line: number; importSource: string };
@@ -92,10 +87,7 @@ async function collectViolations(): Promise<Violation[]> {
         const importSource = resolveImportSource(lines, i);
         if (!importSource) continue;
 
-        if (
-          (importSource.endsWith(".ts") || importSource.endsWith(".tsx")) &&
-          !isAllowlistedImportSource(importSource)
-        ) {
+        if (importSource.endsWith(".ts") || importSource.endsWith(".tsx")) {
           violations.push({ file: relPath, line: i + 1, importSource });
         }
       }
@@ -105,7 +97,7 @@ async function collectViolations(): Promise<Violation[]> {
   return violations;
 }
 
-test("G2: no .ts/.tsx file imported as a file asset outside runtime-scripts", async () => {
+test("G2: no .ts/.tsx file imported as a file asset", async () => {
   const violations = await collectViolations();
 
   if (violations.length === 0) {
@@ -120,8 +112,9 @@ test("G2: no .ts/.tsx file imported as a file asset outside runtime-scripts", as
   const message = [
     `Found ${violations.length} .ts/.tsx file(s) imported as raw file assets.`,
     "A module-compiled .ts MUST NOT also be imported as a file asset.",
-    'Move the script to packages/atomic-sdk/src/lib/runtime-scripts/ if it is',
-    "intentionally embedded as a raw file, then re-import from there.",
+    "If the script needs to run as a fresh process, expose it via a hidden",
+    "CLI sub-command in packages/atomic/src/cli.ts and self-re-exec the",
+    "binary instead (see _orchestrator-entry / _cc-debounce for the pattern).",
     "",
     ...descLines,
   ].join("\n");

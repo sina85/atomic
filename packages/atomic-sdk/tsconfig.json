@@ -3,6 +3,5 @@
   "compilerOptions": {
     "rootDir": "src"
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/lib/runtime-scripts/**"]
+  "include": ["src/**/*"]
 }

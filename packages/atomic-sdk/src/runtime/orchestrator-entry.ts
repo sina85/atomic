@@ -1,28 +1,18 @@
-#!/usr/bin/env bun
 /**
- * SDK-owned orchestrator entry script.
+ * SDK-owned orchestrator entry point.
  *
- * Run as the tmux pane command for every workflow spawned by `runWorkflow`.
- * Reads the workflow source path, agent, and base64-encoded inputs from
- * positional argv, imports the workflow module, validates the default
- * export, and hands off to `runOrchestrator()`.
+ * Called by the CLI's hidden `_orchestrator-entry` sub-command in the tmux
+ * pane that the workflow launcher script spawns. Receives the workflow
+ * source path, agent, and base64-encoded inputs as positional arguments,
+ * imports the workflow module, validates the default export, and hands off
+ * to `runOrchestrator()`.
  *
- * Argv layout (after `bun <this-file>`):
- *   argv[2] = absolute path to the workflow's source file
- *             (the `source` field from `defineWorkflow({ source: ... })`)
- *   argv[3] = agent — one of "claude" | "copilot" | "opencode"
- *   argv[4] = base64-encoded JSON record of structured inputs
- *
- * The dev's CLI never re-imports its own argv[1] — there's no
- * `ATOMIC_ORCHESTRATOR_MODE` env var, no `handleOrchestratorReentry()`,
- * no boilerplate. This file is the only re-exec target.
- *
- * The remaining ATOMIC_WF_* env vars (ID, TMUX, AGENT, CWD) are still set
- * by the launcher script written by `executeWorkflow()` — they describe
- * the runtime environment (which tmux session, which workflow run id,
- * etc.) rather than acting as a re-entry signal.
+ * This module is deliberately not its own executable. Mirroring OpenCode's
+ * single-binary architecture, every fresh-process entry into atomic goes
+ * through the CLI's command dispatcher (`atomic _<subcommand>`); the SDK
+ * never ships a separately-runnable JS bundle that a sub-process would
+ * `bun run` from outside the package's module resolution context.
  */
-
 import { runOrchestrator } from "./executor.ts";
 import type { AgentType, WorkflowDefinition } from "../types.ts";
 import { isValidAgent } from "../services/config/definitions.ts";
@@ -62,18 +52,20 @@ function decodeInputs(b64: string): Record<string, string> {
   return out;
 }
 
-async function main(): Promise<void> {
-  const sourcePath = process.argv[2];
-  const agentRaw = process.argv[3];
-  const inputsB64 = process.argv[4] ?? "";
-
-  if (!sourcePath || !agentRaw) {
-    throw new Error(
-      "[atomic/orchestrator-entry] Missing positional arguments. " +
-        "Expected: <workflowSource> <agent> <inputsB64>",
-    );
-  }
-
+/**
+ * Load the workflow at `sourcePath`, validate the agent, and run the
+ * orchestrator panel. Throws on validation failure so the calling
+ * sub-command surfaces a non-zero exit.
+ *
+ * The remaining `ATOMIC_WF_*` env vars (ID, TMUX, AGENT, CWD) are set by
+ * the launcher script written by `executeWorkflow()` — those describe the
+ * runtime environment (which tmux session, which workflow run id, etc.).
+ */
+export async function runOrchestratorEntry(
+  sourcePath: string,
+  agentRaw: string,
+  inputsB64: string,
+): Promise<void> {
   if (!isValidAgent(agentRaw)) {
     throw new Error(
       `[atomic/orchestrator-entry] Invalid agent "${agentRaw}". ` +
@@ -103,8 +95,4 @@ async function main(): Promise<void> {
 
   const inputs = decodeInputs(inputsB64);
   await runOrchestrator(def, inputs);
-}
-
-if (import.meta.main) {
-  await main();
 }

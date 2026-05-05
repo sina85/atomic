@@ -1,28 +1,28 @@
 /**
- * Internal smoke command: verifies that runtime sibling assets (tmux.conf,
- * cc-debounce script, orchestrator-entry script) are accessible to spawned
- * OS subprocesses.
+ * Internal smoke command: verifies that the runtime tmux.conf asset is
+ * accessible to spawned OS subprocesses.
  *
  * Why this exists: in a compiled binary, `with { type: "file" }` imports
  * resolve to `/$bunfs/…` paths inside Bun's virtual filesystem. Those
  * paths are readable by Bun APIs but NOT by external processes — so a
  * `tmux -f /$bunfs/.../tmux.conf` invocation fails with "no such file"
  * and `chatCommand` falls back to a plain spawn (no tmux). The
- * `materializeRuntimeAsset` helper in `runtime-assets.ts` copies each
- * asset to `~/.atomic/runtime/<sdk-version>/` on first use to bridge the
+ * `materializeRuntimeAsset` helper in `runtime-assets.ts` copies the
+ * conf to `~/.atomic/runtime/<sdk-version>/` on first use to bridge the
  * gap.
  *
  * This command exercises that materialization end-to-end so a CI matrix
  * job (Linux / macOS / Windows) can catch regressions before they ship.
  * Output is human-readable; CI just checks the exit code.
+ *
+ * (The earlier cc-debounce / orchestrator-entry script bundles were
+ * removed when those entry points moved to the CLI's `_cc-debounce` and
+ * `_orchestrator-entry` sub-commands — there's nothing for OS processes
+ * to read directly anymore.)
  */
 
 import { existsSync, statSync } from "node:fs";
-import {
-  ccDebounceScriptPath,
-  orchestratorEntryPath,
-  tmuxConfPath,
-} from "@bastani/atomic-sdk/lib/runtime-assets";
+import { tmuxConfPath } from "@bastani/atomic-sdk/lib/runtime-assets";
 import { isCompiledBinaryRuntime } from "@bastani/atomic-sdk/lib/runtime-env";
 import {
   createSession,
@@ -95,8 +95,6 @@ function checkTmuxLoadsConf(): CheckResult {
 export async function runtimeAssetsSmokeCommand(): Promise<number> {
   const checks: ReadonlyArray<readonly [string, CheckResult]> = [
     ["tmux.conf", checkAssetReadable("tmux.conf", tmuxConfPath)],
-    ["cc-debounce.script.js", checkAssetReadable("cc-debounce.script.js", ccDebounceScriptPath)],
-    ["orchestrator-entry.script.js", checkAssetReadable("orchestrator-entry.script.js", orchestratorEntryPath)],
     ["tmux load conf", checkTmuxLoadsConf()],
   ];
 

@@ -23,26 +23,33 @@ export const NodeCard = React.memo(function NodeCard({
   const isRunning = node.status === "running";
   const isAwaitingInput = node.status === "awaiting_input";
 
-  // Border: running nodes smoothly pulse, others show status color
+  // Border: focused locks to saturated status color (no pulse — pinned by the user).
+  // Unfocused running / awaiting_input pulse to signal liveness.
   let borderCol: string;
   if (isRunning) {
-    const t = (Math.sin((pulsePhase / 32) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
-    borderCol = focused
-      ? lerpColor(theme.warning, theme.text, 0.2)
-      : lerpColor(theme.border, theme.warning, t);
+    if (focused) {
+      borderCol = theme.warning;
+    } else {
+      const t = (Math.sin((pulsePhase / 32) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+      borderCol = lerpColor(theme.border, theme.warning, t);
+    }
   } else if (isAwaitingInput) {
-    const t = (Math.sin((pulsePhase / 32) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
-    borderCol = focused
-      ? lerpColor(theme.info, theme.text, 0.2)
-      : lerpColor(theme.border, theme.info, t);
+    if (focused) {
+      borderCol = theme.info;
+    } else {
+      const t = (Math.sin((pulsePhase / 32) * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+      borderCol = lerpColor(theme.border, theme.info, t);
+    }
   } else if (isPending) {
-    borderCol = focused ? sc : theme.borderActive;
+    // Pending status color is itself dim grey, so promote to bright text on focus.
+    borderCol = focused ? theme.text : theme.borderActive;
   } else {
     borderCol = sc;
   }
 
-  // Keep the card interior aligned with the graph canvas; status color belongs to the border/text.
-  const bgCol = theme.background;
+  // Focus shifts the interior one stratum (base → surface0), per the No-Glow Rule.
+  // This is the focus signal that survives on top of an already-saturated status border.
+  const bgCol = focused ? theme.backgroundElement : theme.background;
 
   // Duration computed live from start/end timestamps
   const durCol = isPending ? theme.textDim : sc;

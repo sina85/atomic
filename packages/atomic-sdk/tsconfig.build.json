@@ -9,5 +9,5 @@
     "declarationMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts", "src/lib/runtime-scripts/**"]
+  "exclude": ["src/**/*.test.ts"]
 }

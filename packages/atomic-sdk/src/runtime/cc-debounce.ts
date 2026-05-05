@@ -1,14 +1,17 @@
-#!/usr/bin/env bun
 /**
  * Ctrl+C debounce helper for Atomic-managed tmux panes.
  *
  * Invoked from `tmux.conf` on every root-table Ctrl+C:
  *
- *   bind -n C-c run-shell -b '"#{@atomic-bun}" "#{@atomic-cc-debounce}" "#{pane_id}"'
+ *   bind -n C-c run-shell -b '#{@atomic-cc-debounce} "#{pane_id}"'
  *
- * The binding sits on the shared atomic tmux server, so the debounce
- * applies uniformly to every pane — Claude Code, OpenCode, and Copilot
- * CLI, in both chat and workflow sessions.
+ * The `@atomic-cc-debounce` variable is a full self-re-exec command
+ * (set by `tmux.ts:setupAtomicSocket`) that resolves to
+ * `<atomic-binary> _cc-debounce` in compiled-binary mode or
+ * `<bun> <cli.ts> _cc-debounce` in dev. The binding sits on the shared
+ * atomic tmux server, so the debounce applies uniformly to every pane —
+ * Claude Code, OpenCode, and Copilot CLI, in both chat and workflow
+ * sessions.
  *
  * Rule: forward Ctrl+C only if the previous press is more than QUIET_MS
  * ago. The state file is touched on *every* press (forwarded or
@@ -70,8 +73,11 @@ function resolveMuxBinary(): string {
   return "tmux";
 }
 
-function main(): number {
-  const paneId = process.argv[2];
+/**
+ * Run the cc-debounce decision for a single tmux pane press. Returns the
+ * exit code the calling process should use.
+ */
+export function runCcDebounce(paneId: string): number {
   if (!paneId) return 0;
 
   const stateFile = stateFileFor(paneId);
@@ -97,8 +103,4 @@ function main(): number {
     stderr: "ignore",
   });
   return proc.exitCode ?? 0;
-}
-
-if (import.meta.main) {
-  process.exit(main());
 }
