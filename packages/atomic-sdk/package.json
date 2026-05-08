@@ -64,7 +64,9 @@
     "build": "bun run script/build.ts",
     "release": "bun run script/publish.ts",
     "typecheck": "bunx tsc --noEmit",
-    "lint:mcp": "bun run script/lint-claude-mcp-allowlist.ts"
+    "lint:mcp": "bun run script/lint-claude-mcp-allowlist.ts",
+    "lint:file-discovery": "bun run script/lint-file-discovery.ts",
+    "build:snippets": "bun run script/build-snippets.ts"
   },
   "dependencies": {
     "@colbymchenry/codegraph": "^0.7.3",
