@@ -5,6 +5,7 @@
  * Called from the scout stage prelude in claude/index.ts, copilot/index.ts, opencode/index.ts.
  */
 
+import { basename, extname } from "node:path";
 import CodeGraph from "@colbymchenry/codegraph";
 import { ensureUvInstalled } from "../../../../lib/spawn";
 
@@ -60,6 +61,38 @@ const SKIP_EXTENSIONS = new Set([
 ]);
 
 /**
+ * Pure helper: compute language ratio from an already-resolved file list.
+ *
+ * Extension is extracted via `extname(basename(file))` so dotted directory
+ * segments (e.g. `pkg.with.dots/Makefile`) do NOT pollute the extension.
+ *
+ * Files with extensions in SKIP_EXTENSIONS are excluded from both numerator
+ * and denominator so binaries / lock files don't dilute the ratio.
+ */
+export function computeLanguageRatio(files: string[]): {
+  total: number;
+  supported: number;
+  ratio: number;
+} {
+  let total = 0;
+  let supported = 0;
+
+  for (const file of files) {
+    const ext = extname(basename(file)).toLowerCase();
+    if (ext === "") {
+      total++;
+      continue;
+    }
+    if (SKIP_EXTENSIONS.has(ext)) continue;
+    total++;
+    if (SUPPORTED_EXTENSIONS.has(ext)) supported++;
+  }
+
+  const ratio = total === 0 ? 0 : supported / total;
+  return { total, supported, ratio };
+}
+
+/**
  * Walk source files via `git ls-files` and compute the fraction that map to a
  * CodeGraph-supported language.
  *
@@ -82,24 +115,7 @@ async function calculateSupportedLanguageRatio(projectRoot: string): Promise<num
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  let total = 0;
-  let supported = 0;
-
-  for (const file of files) {
-    const dotIdx = file.lastIndexOf(".");
-    if (dotIdx === -1) {
-      // No extension — count as unsupported source file
-      total++;
-      continue;
-    }
-    const ext = file.slice(dotIdx).toLowerCase();
-    if (SKIP_EXTENSIONS.has(ext)) continue;
-    total++;
-    if (SUPPORTED_EXTENSIONS.has(ext)) supported++;
-  }
-
-  if (total === 0) return 0;
-  return supported / total;
+  return computeLanguageRatio(files).ratio;
 }
 
 /**
@@ -145,9 +161,10 @@ export async function preflight(projectRoot: string): Promise<PreflightResult> {
     };
   }
 
+  let cg: CodeGraph | null = null;
   try {
     const initialized = CodeGraph.isInitialized(projectRoot);
-    const cg = initialized
+    cg = initialized
       ? await CodeGraph.open(projectRoot)
       : await CodeGraph.init(projectRoot);
 
@@ -164,7 +181,6 @@ export async function preflight(projectRoot: string): Promise<PreflightResult> {
 
     // spec says `cg.status()` — actual library method is `cg.getStats()` (sync)
     const stats = cg.getStats();
-    cg.close();
 
     return {
       codegraphHealthy: true,
@@ -190,5 +206,7 @@ export async function preflight(projectRoot: string): Promise<PreflightResult> {
       fileCount: 0,
       reasons,
     };
+  } finally {
+    if (cg !== null) cg.close();
   }
 }

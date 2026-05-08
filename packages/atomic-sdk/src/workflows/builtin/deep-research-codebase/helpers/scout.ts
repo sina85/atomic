@@ -16,6 +16,7 @@
 
 // Use Bun.spawnSync instead of node:child_process for consistency with the rest of the codebase.
 
+import type CodeGraph from "@colbymchenry/codegraph";
 import * as linguistLanguages from "linguist-languages";
 import type { Language } from "linguist-languages";
 import ignore, { type Ignore } from "ignore";
@@ -172,6 +173,12 @@ function walkWithIgnore(root: string): string[] {
 export type FileStats = { path: string; loc: number };
 
 /**
+ * Alias for FileStats. Used in the CodeGraph-aware `listSourceFiles` API so
+ * callers have a stable name that matches the RFC §5.5 contract.
+ */
+export type SourceFile = FileStats;
+
+/**
  * A "partition unit" is the atomic chunk of work that gets bin-packed into
  * an explorer. It is always one directory (possibly drilled down to depth 2)
  * with all of the code files that live anywhere underneath it.
@@ -212,6 +219,49 @@ export function getCodebaseRoot(): string {
     }
   } catch { /* git not on PATH — fall back to cwd */ }
   return process.cwd();
+}
+
+/**
+ * Legacy source-file listing: discovers files via git ls-files + rg + in-process
+ * walker, counts LOC via wc -l, and filters to code extensions.
+ *
+ * Called by `listSourceFiles` when no healthy CodeGraph instance is available.
+ */
+export async function listSourceFilesLegacy(
+  projectRoot: string,
+): Promise<SourceFile[]> {
+  const allPaths = listAllFiles(projectRoot);
+  const codePaths = allPaths.filter(isCodeFile);
+  const locMap = countLines(projectRoot, codePaths);
+  return codePaths.map((p) => ({ path: p, loc: locMap.get(p) ?? 0 }));
+}
+
+/**
+ * List all source files in the project.
+ *
+ * When `opts.graph` is a healthy CodeGraph instance, delegates to
+ * `graph.getFiles()` (the actual library method — spec referred to this as
+ * `cg.listFiles()` but @colbymchenry/codegraph@0.7.3 exposes `getFiles()`
+ * returning `FileRecord[]`; see Q-new-1 in issues.md).
+ *
+ * `FileRecord` has no `lineCount` field — `loc` is set to 0 for all
+ * CodeGraph-indexed files. Downstream bin-packing still works because units
+ * balance on file counts when LOC is uniform.
+ *
+ * Falls back to `listSourceFilesLegacy` (git ls-files + rg + wc -l) when
+ * CodeGraph is unavailable.
+ */
+export async function listSourceFiles(
+  projectRoot: string,
+  opts: { graph: CodeGraph | null },
+): Promise<SourceFile[]> {
+  if (opts.graph !== null) {
+    // Q-new-1 deviation: spec names cg.listFiles() but library exposes getFiles().
+    // FileRecord has no lineCount; use 0 (loc field is not available from CodeGraph).
+    const indexed = opts.graph.getFiles();
+    return indexed.map((f) => ({ path: f.path, loc: 0 }));
+  }
+  return listSourceFilesLegacy(projectRoot);
 }
 
 function isCodeFile(p: string): boolean {
