@@ -58,7 +58,7 @@ export const BACKGROUND_TASKS_OPTION = "bg-tasks";
 export function backgroundTasksValue(count: number, theme: GraphTheme): string {
   if (count <= 0) return "";
   const bg = theme.backgroundElement;
-  return ` #[fg=${theme.textDim} bg=${bg}]${DOT}#[fg=${theme.warning} bg=${bg}] ◆ #[fg=${theme.textMuted} bg=${bg}]${count} background`;
+  return ` #[fg=${theme.warning} bg=${bg}]◆ #[fg=${theme.textMuted} bg=${bg}]${count} background`;
 }
 
 /**
