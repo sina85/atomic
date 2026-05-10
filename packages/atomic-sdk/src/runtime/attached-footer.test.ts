@@ -193,7 +193,7 @@ describe("attachedStatusline (chat variant)", () => {
     expect(compile(left)).toContain("#[bg=#cc66ff]");
   });
 
-  test("Footer.Right shows the agent name and detach hint", () => {
+  test("Footer.Right shows the /atomic help hint and detach hint", () => {
     const tree = attachedStatusline({
       name: "atomic-chat-opencode-foo",
       theme: THEME,
@@ -201,8 +201,12 @@ describe("attachedStatusline (chat variant)", () => {
     });
     const { right } = slots(tree);
     const compiled = compile(right);
-    expect(compiled).toContain("atomic-chat-opencode-foo");
+    expect(compiled).toContain("/atomic <question>");
     expect(compiled).toContain("ctrl+b d");
     expect(compiled).toContain("detach");
+    // Auto-generated session ID is no longer surfaced — it was dead
+    // weight for users (not memorable, not actionable). Ensure it
+    // doesn't sneak back in.
+    expect(compiled).not.toContain("atomic-chat-opencode-foo");
   });
 });

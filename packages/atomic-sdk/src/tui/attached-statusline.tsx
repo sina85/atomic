@@ -108,7 +108,8 @@ export function attachedStatusline(args: {
         </Footer.Left>
         <Footer.Right>
           <Box paddingRight={2}>
-            <Text fg={theme.textMuted}>{name}</Text>
+            <Text fg={theme.textMuted}>?  </Text>
+            <Text fg={theme.text}>{`/atomic <question>`}</Text>
             <Text fg={theme.textDim}>{` ${DOT} `}</Text>
             <Text fg={theme.text}>ctrl+b d</Text>
             <Text fg={theme.textMuted}> detach</Text>
