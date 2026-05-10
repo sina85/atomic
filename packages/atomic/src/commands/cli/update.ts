@@ -153,21 +153,23 @@ async function runBinaryUpdate(opts: UpdateOptions, target: string): Promise<num
             "Downloaded binary",
             "Download failed",
             () => {
-                let lastTick = -1;
+                // Tracks pct (0-100) when total is known, otherwise MB. Mutually
+                // exclusive per call because total is constant for the closure's lifetime.
+                let lastTickValue = -1;
                 return downloadAssetFromUrl(
                     binaryAsset.browser_download_url,
                     assetDest,
                     (received, total) => {
                         if (total !== null && total > 0) {
                             const pct = Math.floor((received / total) * 100);
-                            if (pct !== lastTick) {
-                                lastTick = pct;
+                            if (pct !== lastTickValue) {
+                                lastTickValue = pct;
                                 s.message(`Downloading ${assetName}... ${pct}%`);
                             }
                         } else {
                             const mb = Math.floor(received / 1024 / 1024);
-                            if (mb !== lastTick) {
-                                lastTick = mb;
+                            if (mb !== lastTickValue) {
+                                lastTickValue = mb;
                                 s.message(`Downloading ${assetName}... ${mb} MB`);
                             }
                         }

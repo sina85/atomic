@@ -56,6 +56,28 @@ function fakeStreamResponse(bytes: Uint8Array, status = 200): Response {
     return new Response(bytes.buffer as ArrayBuffer, { status });
 }
 
+// Builds a Response whose body is a ReadableStream emitting the given chunks
+// in order. Used to exercise downloadAssetFromUrl's streaming branch where
+// res.body is iterated with `for await`.
+function fakeChunkedResponse(
+    chunks: Uint8Array[],
+    opts: { contentLength?: number | "malformed" } = {},
+): Response {
+    const stream = new ReadableStream({
+        start(controller) {
+            for (const chunk of chunks) controller.enqueue(chunk);
+            controller.close();
+        },
+    });
+    const headers: Record<string, string> = {};
+    if (opts.contentLength === "malformed") {
+        headers["Content-Length"] = "not-a-number";
+    } else if (typeof opts.contentLength === "number") {
+        headers["Content-Length"] = String(opts.contentLength);
+    }
+    return new Response(stream, { status: 200, headers });
+}
+
 // ── setup / teardown ──────────────────────────────────────────────────────────
 
 let fetchSpy: Mock<typeof fetch>;
@@ -364,6 +386,100 @@ describe("downloadAssetFromUrl", () => {
             const headers = init.headers as Record<string, string>;
             expect(headers["Authorization"]).toBe("Bearer ghp_testtoken");
             expect(headers["Accept"]).toBe("application/vnd.github+json");
+        });
+    });
+
+    // ── streaming progress branch ─────────────────────────────────────────────
+    // Exercises the opt-in `onProgress` path: res.body is iterated chunk-by-chunk,
+    // bytes are forwarded to a Bun.file().writer(), and the callback is invoked
+    // with cumulative byte counts plus the parsed Content-Length (or null).
+    describe("streaming onProgress branch", () => {
+        test("invokes onProgress with cumulative received and total when Content-Length is set", async () => {
+            const chunks = [
+                new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+                new Uint8Array([11, 12, 13, 14, 15]),
+                new Uint8Array([16, 17, 18]),
+            ];
+            const total = 18;
+            fetchSpy.mockResolvedValueOnce(fakeChunkedResponse(chunks, { contentLength: total }));
+
+            const dir = mkdtempSync(join(tmpdir(), "release-fetch-stream-"));
+            const destPath = join(dir, "asset");
+
+            try {
+                const calls: Array<[number, number | null]> = [];
+                await downloadAssetFromUrl(
+                    "https://example.com/asset",
+                    destPath,
+                    (received, t) => calls.push([received, t]),
+                );
+
+                expect(calls).toEqual([
+                    [10, total],
+                    [15, total],
+                    [18, total],
+                ]);
+
+                // Bytes on disk match the concatenated stream (regression guard
+                // against writer.end() not flushing).
+                const written = await Bun.file(destPath).bytes();
+                expect(Array.from(written)).toEqual([
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                ]);
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
+        });
+
+        test("passes total === null when Content-Length is absent (chunked transfer)", async () => {
+            // This is the production path: GitHub's CDN serves binaries via
+            // chunked transfer encoding without advertising Content-Length.
+            const chunks = [new Uint8Array([0xaa, 0xbb]), new Uint8Array([0xcc])];
+            fetchSpy.mockResolvedValueOnce(fakeChunkedResponse(chunks));
+
+            const dir = mkdtempSync(join(tmpdir(), "release-fetch-stream-"));
+            const destPath = join(dir, "asset");
+
+            try {
+                const totals: Array<number | null> = [];
+                await downloadAssetFromUrl(
+                    "https://example.com/asset",
+                    destPath,
+                    (_received, t) => totals.push(t),
+                );
+
+                expect(totals).toEqual([null, null]);
+
+                const written = await Bun.file(destPath).bytes();
+                expect(Array.from(written)).toEqual([0xaa, 0xbb, 0xcc]);
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
+        });
+
+        test("malformed Content-Length resolves to total === null (parseInt guard)", async () => {
+            // Locks in the Number.isFinite/>0 guard so a future refactor can't
+            // accidentally pass NaN to Math.floor((received / NaN) * 100).
+            const chunks = [new Uint8Array([0x01, 0x02])];
+            fetchSpy.mockResolvedValueOnce(
+                fakeChunkedResponse(chunks, { contentLength: "malformed" }),
+            );
+
+            const dir = mkdtempSync(join(tmpdir(), "release-fetch-stream-"));
+            const destPath = join(dir, "asset");
+
+            try {
+                const totals: Array<number | null> = [];
+                await downloadAssetFromUrl(
+                    "https://example.com/asset",
+                    destPath,
+                    (_received, t) => totals.push(t),
+                );
+
+                expect(totals).toEqual([null]);
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
         });
     });
 

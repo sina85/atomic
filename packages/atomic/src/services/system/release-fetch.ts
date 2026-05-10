@@ -101,9 +101,13 @@ export async function downloadAssetFromUrl(
 
     const tmpPath = `${destPath}.tmp.${pid}.${Date.now()}`;
     try {
+        // Streaming path: opt-in via onProgress so callers wanting live byte counts
+        // get them. The Bun.write fast-path below is preferred when progress isn't
+        // needed — it lets the runtime handle buffering/backpressure natively.
         if (onProgress && res.body) {
             const lenHeader = res.headers.get("content-length");
-            const total = lenHeader ? parseInt(lenHeader, 10) : null;
+            const parsed = lenHeader ? parseInt(lenHeader, 10) : NaN;
+            const total = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
             const writer = Bun.file(tmpPath).writer();
             let received = 0;
             try {
