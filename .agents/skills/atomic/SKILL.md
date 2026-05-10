@@ -144,7 +144,7 @@ Deterministic multi-stage pipelines that wrap your coding agent. Three built-ins
 | Workflow | What it does |
 |---|---|
 | **`deep-research-codebase`** | Crawls the full repo and writes a grounded research file for one big question (auth flow, migration planning, end-to-end traces) |
-| **`ralph`** | Plan → orchestrate → review → simplify, looped with bounded iteration — the per-pass simplification prevents context and code drift, which is what lets long-running tasks finish reliably |
+| **`ralph`** | Plan → orchestrate → review → simplify code — the loop prevents context and code drift, which is what lets long-running tasks finish reliably |
 | **`open-claude-design`** | Discover design system → generate → refine → export; produces high-fidelity designs that follow your existing design system |
 
 **Three ways to invoke a workflow:**
@@ -262,7 +262,7 @@ For example: a workflow that takes your open GitHub issues, generates a PR for e
 | Workflow | What it does |
 |---|---|
 | **`deep-research-codebase`** | Crawls the full repo and writes a grounded research file for one big question (migrations, audits, traces). |
-| **`ralph`** | Plan → orchestrate → review → simplify, looped with bounded iteration — the per-pass simplification prevents context and code drift, which is what lets long-running tasks finish reliably. |
+| **`ralph`** | Plan → orchestrate → review → simplify code — the loop prevents context and code drift, which is what lets long-running tasks finish reliably |
 | **`open-claude-design`** | Discover design system → generate → refine → export; produces high-fidelity designs that follow your existing design system. |
 
 ## Three ways to invoke any workflow
@@ -440,7 +440,7 @@ Then render the cross-nudge close as plain paragraph text (not inside a fence):
 | Workflow | What it does |
 |---|---|
 | **`deep-research-codebase`** | Whole-repo crawl → grounded research file for one big question |
-| **`ralph`** | Plan → orchestrate → review → simplify; bounded iteration prevents drift on long-running tasks |
+| **`ralph`** | Plan → orchestrate → review → simplify code — the loop prevents context and code drift, which is what lets long-running tasks finish reliably |
 | **`open-claude-design`** | High-fidelity designs that follow your existing design system |
 
 Then render the cross-nudge close as plain paragraph text (not inside a fence):
