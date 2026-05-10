@@ -72,7 +72,7 @@ function slots(
 }
 
 describe("attachedStatusline (workflow variant)", () => {
-  const tree = attachedStatusline({ name: "agent-1", theme: THEME });
+  const tree = attachedStatusline({ theme: THEME });
   const { left, right, props } = slots(tree);
   const compiledLeft = compile(left);
   const compiledRight = compile(right);
@@ -159,9 +159,8 @@ describe("backgroundTasksValue", () => {
 });
 
 describe("attachedStatusline (chat variant)", () => {
-  test("claude renders a warning-color pill with literal agent name", () => {
+  test("claude renders a warning-color pill", () => {
     const tree = attachedStatusline({
-      name: "atomic-chat-claude-abcd",
       theme: THEME,
       agentType: "claude",
     });
@@ -175,7 +174,6 @@ describe("attachedStatusline (chat variant)", () => {
 
   test("copilot uses the success color", () => {
     const tree = attachedStatusline({
-      name: "atomic-chat-copilot-xyz",
       theme: THEME,
       agentType: "copilot",
     });
@@ -185,7 +183,6 @@ describe("attachedStatusline (chat variant)", () => {
 
   test("opencode uses the mauve color", () => {
     const tree = attachedStatusline({
-      name: "atomic-chat-opencode-foo",
       theme: THEME,
       agentType: "opencode",
     });
@@ -195,7 +192,6 @@ describe("attachedStatusline (chat variant)", () => {
 
   test("Footer.Right shows the /atomic help hint and detach hint", () => {
     const tree = attachedStatusline({
-      name: "atomic-chat-opencode-foo",
       theme: THEME,
       agentType: "opencode",
     });
@@ -204,9 +200,5 @@ describe("attachedStatusline (chat variant)", () => {
     expect(compiled).toContain("/atomic <question>");
     expect(compiled).toContain("ctrl+b d");
     expect(compiled).toContain("detach");
-    // Auto-generated session ID is no longer surfaced — it was dead
-    // weight for users (not memorable, not actionable). Ensure it
-    // doesn't sneak back in.
-    expect(compiled).not.toContain("atomic-chat-opencode-foo");
   });
 });

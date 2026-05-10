@@ -85,11 +85,10 @@ function whenOrchestrator(orch: ReactNode, agent: ReactNode): ReactNode {
 }
 
 export function attachedStatusline(args: {
-  name: string;
   theme: GraphTheme;
   agentType?: AgentType;
 }): ReactNode {
-  const { name, theme, agentType } = args;
+  const { theme, agentType } = args;
 
   if (agentType) {
     const pillBg = theme[AGENT_PILL_COLOR[agentType]];
