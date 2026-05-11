@@ -29,7 +29,6 @@
  */
 
 import { defineWorkflow } from "../../../index.ts";
-import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -39,6 +38,7 @@ import {
   scoutCodebase,
 } from "../helpers/scout.ts";
 import {
+  aggregatorOutputComplete,
   calculateExplorerCount,
   explainHeuristic,
 } from "../helpers/heuristic.ts";
@@ -525,7 +525,7 @@ export default defineWorkflow({
           ],
         });
         let lastResult = result;
-        if (!existsSync(finalPath)) {
+        if (!aggregatorOutputComplete(finalPath)) {
           lastResult = await s.client.session.prompt({
             sessionID: s.session.id,
             parts: [
@@ -533,12 +533,14 @@ export default defineWorkflow({
             ],
           });
         }
-        if (!existsSync(finalPath)) {
+        if (!aggregatorOutputComplete(finalPath)) {
           throw new Error(
-            `aggregator did not produce ${finalPath} after 2 attempts`,
+            `aggregator did not produce a usable ${finalPath} after 2 attempts`,
           );
         }
-        s.save(lastResult.data!);
+        // Retry's response may carry no data even when it wrote the file —
+        // fall back to the first response so we never persist `undefined`.
+        s.save(lastResult.data ?? result.data!);
       },
     );
   })

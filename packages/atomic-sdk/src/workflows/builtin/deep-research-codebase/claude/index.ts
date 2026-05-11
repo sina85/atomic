@@ -73,7 +73,6 @@
  */
 
 import { defineWorkflow, extractAssistantText } from "../../../index.ts";
-import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -83,6 +82,7 @@ import {
   scoutCodebase,
 } from "../helpers/scout.ts";
 import {
+  aggregatorOutputComplete,
   calculateExplorerCount,
   explainHeuristic,
 } from "../helpers/heuristic.ts";
@@ -563,12 +563,12 @@ export default defineWorkflow({
             historyOverview,
           }),
         );
-        if (!existsSync(finalPath)) {
+        if (!aggregatorOutputComplete(finalPath)) {
           await s.session.query(buildAggregatorRetryPrompt(finalPath));
         }
-        if (!existsSync(finalPath)) {
+        if (!aggregatorOutputComplete(finalPath)) {
           throw new Error(
-            `aggregator did not produce ${finalPath} after 2 attempts`,
+            `aggregator did not produce a usable ${finalPath} after 2 attempts`,
           );
         }
         s.save(s.sessionId);
