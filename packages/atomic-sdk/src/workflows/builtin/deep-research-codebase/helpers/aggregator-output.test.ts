@@ -2,7 +2,7 @@ import { test, expect, describe } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { aggregatorOutputComplete } from "./heuristic.ts";
+import { aggregatorOutputComplete } from "./aggregator-output.ts";
 
 function tmpFile(contents: string): string {
   const dir = mkdtempSync(join(tmpdir(), "agg-output-"));

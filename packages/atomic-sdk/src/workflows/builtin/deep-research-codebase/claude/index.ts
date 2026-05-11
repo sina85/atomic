@@ -82,10 +82,10 @@ import {
   scoutCodebase,
 } from "../helpers/scout.ts";
 import {
-  aggregatorOutputComplete,
   calculateExplorerCount,
   explainHeuristic,
 } from "../helpers/heuristic.ts";
+import { aggregatorOutputComplete } from "../helpers/aggregator-output.ts";
 import {
   buildAggregatorPrompt,
   buildAggregatorRetryPrompt,
