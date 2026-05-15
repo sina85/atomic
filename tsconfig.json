@@ -1,33 +1,41 @@
 {
   "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext", "DOM"],
     "target": "ESNext",
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
-
-    // Bundler mode
-    "jsxImportSource": "@opentui/react",
+    "module": "ESNext",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-
-    "types": ["bun"],
-
-    // Best practices
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-
-    // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "types": ["bun"],
+    "typeRoots": ["./node_modules/@types"],
+    "lib": ["ESNext"],
+    "allowImportingTsExtensions": true,
+    "allowArbitraryExtensions": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@bastani/atomic": ["./packages/coding-agent/src/index.ts"],
+      "@bastani/workflows": ["./packages/workflows/src/index.ts"],
+      "@bastani/workflows/*": ["./packages/workflows/src/*"],
+      "@bastani/subagents": ["./packages/subagents/src/extension/index.ts"],
+      "@bastani/subagents/*": ["./packages/subagents/src/*"],
+      "@bastani/mcp": ["./packages/mcp/index.ts"],
+      "@bastani/mcp/*": ["./packages/mcp/*"],
+      "@bastani/web-access": ["./packages/web-access/index.ts"],
+      "@bastani/web-access/*": ["./packages/web-access/*"],
+      "@bastani/intercom": ["./packages/intercom/index.ts"],
+      "@bastani/intercom/*": ["./packages/intercom/*"]
+    }
   },
-  "include": ["packages/*/src/**/*", "tests/**/*", "examples/**/*.ts"]
+  "include": ["packages/workflows/**/*", "test/**/*", "examples/**/*"],
+  "exclude": [
+    "node_modules",
+    "packages/coding-agent",
+    "packages/subagents",
+    "packages/mcp",
+    "packages/web-access",
+    "packages/intercom"
+  ]
 }

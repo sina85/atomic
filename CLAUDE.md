@@ -1,42 +1,45 @@
-# Atomic CLI
+# Atomic Monorepo
 
 ## Overview
 
-This project is a TUI application built on OpenTUI and powered in the backend by coding agent SDKs: OpenCode SDK, Claude Agent SDK, and Copilot SDK.
+This repo is the private `atomic-monorepo` Bun workspace. It currently houses:
 
-It works out of the box by reading and configuring `.claude`, `.opencode`, `.github` configurations for the Claude Code, OpenCode, and Copilot CLI coding agents and allowing users to build powerful agent workflows defined by TypeScript files.
+- `@bastani/atomic` in `packages/coding-agent` — the Atomic-branded fork of pi's coding-agent CLI.
+- `@bastani/workflows` in `packages/workflows` — a first-party extension for Atomic/pi that brings multi-stage, DAG-driven workflow execution to agent sessions.
+
+`@bastani/workflows` ships as **raw TypeScript** (no compile step) and is loaded directly by the host. The coding-agent package follows upstream pi's compiled-package layout.
 
 ## Tech Stack
 
-- bun.js for the runtime
-- TypeScript
-- @clack/prompts for CLI prompts
-- figlet for ASCII art
-- OpenTUI for tui components
-- OpenCode SDK
-- Claude Agent SDK
-- Copilot SDK
+- **[Bun](https://bun.sh) ≥ 1.3.14** for the runtime, package manager, and test runner
+- TypeScript ≥ 5.x (strict, `noUnusedLocals`, `noUnusedParameters`)
+- `bun:test` + `node:assert/strict` for tests
+- `@sinclair/typebox` for schema definitions
+- `jiti` for runtime TS loading where needed
 
 ## Quick Reference
 
-### Commands by Workspace
+### Commands
 
-Default to using Bun instead of Node.js.
+Default to using **Bun**, not Node/npm/yarn/pnpm.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun test:coverage` instead of `jest --coverage` or `vitest --coverage`
-- Use `bun lint` to run the linters
-- Use `bun typecheck` to run TypeScript type checks
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
+- Use `bun <file.ts>` instead of `node --experimental-strip-types <file.ts>` or `ts-node <file>`
+- Use `bun test <path>` instead of `node --test` or Jest/Vitest CLIs
+- Use `bun run typecheck` to run TypeScript type checks (`tsc --noEmit`)
+- Use `bun install` instead of `npm install`, `yarn install`, or `pnpm install`
+- Use `bun run <script>` instead of `npm run <script>`
 - Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads `.env`, so don't use `dotenv`.
+- Repo commands: `bun run test:unit`, `bun run test:integration`, `bun run test:all`, `bun run typecheck`, `bun run lint`, `bun run hooks:install`, `bun run hooks:run`
+- Git hooks are configured in `prek.toml`; `bun install` runs the root `prepare` script to install hooks with `prek install --prepare-hooks` using `default_install_hook_types`.
+
+**Exception — publishing:** `npm publish --provenance` is still the registry publish tool because npm's OIDC-signed provenance lives in the npm CLI. Everything else is Bun.
 
 ## Best Practices
 
 - Avoid ambiguous types like `any` and `unknown`. Use specific types instead.
+- Source files use `.js` import extensions (TypeScript ESM convention). The repo ships as `.ts` files; Bun resolves `.js` specifiers to the underlying `.ts` source directly — no loader hook required. pi's loader follows the same convention.
+- Do not add a build step (`dist/`, `tsconfig.build.json`, etc.) to `packages/workflows`; it distributes raw TypeScript and the host loads it directly. `packages/coding-agent` is copied from upstream pi and keeps its existing build setup.
+- When using skills, if you see a frontmatter of `metadata: internal` set to `true` (if missing assume `false`), that means the skill is for internal developers of this package. If this flag is omitted, the skill is meant for consumers/everyday users. 
 
 ## Design Context
 
@@ -44,15 +47,20 @@ Refer to `.impeccable.md`
 
 ## Testing
 
-Use `bun test` to run tests and make use of your tdd skill to write high quality tests. Here's an example of a simple test file:
+Use `bun run test:unit` (or `test:integration`, `test:all`) and make use of your tdd skill to write high quality tests. Tests use `bun:test` + `node:assert/strict`:
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
+```ts#test/unit/index.test.ts
+import { test } from "bun:test";
+import assert from "node:assert/strict";
 
 test("hello world", () => {
-  expect(1).toBe(1);
+  assert.equal(1, 1);
 });
 ```
+
+### Hook name compatibility
+
+Bun's `bun:test` exports `beforeAll`/`afterAll` (not `before`/`after`). Use `beforeAll`/`afterAll` for once-per-suite setup/teardown and `beforeEach`/`afterEach` for per-test hooks.
 
 ### AI Agent Integration
 
@@ -67,65 +75,39 @@ Set any of the following environment variables to enable AI-friendly output:
 
 ### Code Quality
 
-- Frequently run linters and type checks using `bun lint` and `bun typecheck`.
-- Avoid Any and Unknown types.
+- Frequently run linters and type checks using `bun run lint` and `bun run typecheck` (both are `tsc --noEmit`).
+- Avoid `any` and `unknown` types.
 - Modularize code and avoid re-inventing the wheel. Use functionality of libraries and SDKs whenever possible.
 
 ## Debugging
 
-You are bound to run into errors when testing. As you test and run into issues/edges cases, address issues in a file you create called `issues.md` to track progress and support future iterations. Delegate to the debugging sub-agent for support. Delete the file when all issues are resolved to keep the repository clean.
+You are bound to run into errors when testing. As you test and run into issues/edge cases, address issues in a file you create called `issues.md` to track progress and support future iterations. Delegate to the debugging sub-agent for support. Delete the file when all issues are resolved to keep the repository clean.
 
 ## Docs
 
 Relevant resources (use your `playwright-cli` skill if the information is not available in the local docs):
 
-1. Bun (runtime) repo: `oven-sh/bun`
-2. OpenCode:
-   1. SDK repo: `anomalyco/opencode`
-        1. [Docs](docs/opencode/sdk.md)
-        2. [Server](docs/opencode/server.md)
-   2. CLI repo: `anomalyco/opencode`
-3. Copilot:
-    1. SDK repo: `github/copilot-sdk`
-        1. [Docs](docs/copilot-cli/sdk.md)
-    2. CLI repo: `github/copilot-cli`
-        1. [Usage](docs/copilot-cli/usage.md)
-        2. [Hooks](docs/copilot-cli/hooks.md)
-        3. [Skills](docs/copilot-cli/skills.md)
-        4. [Subagents](docs/copilot-cli/subagents.md)
-4. Claude Code:
-   1. SDK repo: `anthropics/claude-agent-sdk-typescript`
-      1. [Docs](docs/claude-code/agent-sdk)
-   2. CLI repo: `anthropics/claude-code`
-      1. [Hooks](docs/claude-code/cli/hooks.md)
-      2. [Permissions](docs/claude-code/cli/permissions.md)
-      3. [Skills](docs/claude-code/cli/skills.md)
-      4. [Subagents](docs/claude-code/cli/subagents.md)
-      5. [Tools](docs/claude-code/cli/tools.md)
-5. OpenTUI repo: `anomalyco/opentui`
-   1. [Docs](https://opentui.com/docs/getting-started/)
-   2. Agent Skill: `opentui` skill for usage patterns and avoiding anti-patterns
+1. Bun (runtime + test runner): `oven-sh/bun`
+    1. [`bun:test`](https://bun.sh/docs/cli/test)
+    2. [Bun + TypeScript](https://bun.sh/docs/runtime/typescript)
+    3. [`bunfig.toml`](https://bun.sh/docs/runtime/bunfig)
+2. pi: `can1357/pi`
+    1. Extension loading + SDK docs under `docs/`
+3. TypeScript: `microsoft/TypeScript`
+    1. [Module resolution](https://www.typescriptlang.org/docs/handbook/module-resolution.html)
+    2. [`paths`](https://www.typescriptlang.org/tsconfig#paths)
+4. Schema tooling:
+    1. `@sinclair/typebox` for runtime-validated schemas
+    2. `jiti` for on-demand TS loading
 
-### Coding Agent Configuration Locations
+### Coding Agent Configuration Location
 
-Note: There are three main coding agents used in this repository: OpenCode, Claude Code, and GitHub Copilot CLI. Each has specific configuration file locations. Their configurations may also differ in syntax and structure, so be sure to refer to the respective documentation for each agent when making changes:
-
-1. OpenCode:
-    - global:
-        - Linux/MacOS: `$XDG_CONFIG_HOME/.opencode` AND `~/.opencode`
-        - Windows: `%HOMEPATH%\\.opencode`
-
-2. Claude Code:
-    - global:
-        - Linux/MacOS: `~/.claude`
-        - Windows: `%HOMEPATH%\\.claude`
-    - local: `.claude` in the project directory
-
-3. Copilot CLI:
-    - global:
-        - Linux/MacOS: `$XDG_CONFIG_HOME/.copilot` AND `~/.copilot`
-        - Windows: `%HOMEPATH%\\.copilot`
-    - local: `.github` in the project directory
+pi:
+ - global:
+     - Linux/MacOS: `~/.pi/agent/`
+     - Windows: `%HOMEPATH%\.pi\agent\\`
+ - extensions: `~/.pi/agent/extensions/<name>/`
+ - local: `.pi/` in the project directory
 
 **Agent Skill Locations**
     - local:
@@ -136,33 +118,36 @@ Note: There are three main coding agents used in this repository: OpenCode, Clau
 
 ## Releasing
 
-### Branch Naming Convention
-
-- **Release branches**: `release/v<major>.<minor>.<patch>` (e.g. `release/v0.4.47`)
-- **Prerelease branches**: `prerelease/v<major>.<minor>.<patch>-<prerelease>` (e.g. `prerelease/v0.4.47-0`)
+Atomic mirrors pi's tag-driven release flow: bump versions locally, commit, push a `v<version>` git tag, and CI publishes to npm with OIDC provenance and creates the GitHub Release with cross-compiled binaries attached.
 
 ### Bumping Versions
 
-Use the `bump-version.ts` script to update the version across all tracked files (`package.json`):
+Use the top-level `scripts/bump-version.ts` script to update every `packages/*/package.json` version and package README badge:
 
 ```sh
 # Explicit version
-bun run packages/atomic/script/bump-version.ts 0.4.47
-bun run packages/atomic/script/bump-version.ts 0.4.47-0
-
-# Auto-detect version from current branch name
-bun run packages/atomic/script/bump-version.ts --from-branch
+bun run scripts/bump-version.ts 0.1.0
+bun run scripts/bump-version.ts 0.1.0-0
 ```
 
-The `--from-branch` flag extracts the version from the current branch name, so check out the release or prerelease branch first.
+Run `bun install` afterward to refresh `bun.lock`.
 
 ### Workflow
 
-1. Create a branch following the naming convention above.
-2. Run the bump-version script (prefer `--from-branch`).
-3. Commit with the message `chore(release): bump version to v<version>`.
-4. Open a PR to `main`.
-5. Once the PR is approved and merged, a GitHub Release will automatically be created based on the branch name, and the version will be published to npm.
+1. Bump versions with `bun run scripts/bump-version.ts <version>`, then `bun install`.
+2. Move the `[Unreleased]` section in `packages/coding-agent/CHANGELOG.md` to a new `## [<version>] - <YYYY-MM-DD>` section. The publish workflow extracts release notes from this section.
+3. Run `bun run typecheck`, `cd packages/coding-agent && bun run build`, and the relevant tests.
+4. Commit with `chore(release): bump to v<version>`.
+5. Tag with `git tag v<version>` and push both branch and tag: `git push && git push origin v<version>`.
+6. The `v*` tag push triggers `.github/workflows/publish.yml`, which validates the tag matches `packages/coding-agent/package.json`, runs typecheck/tests, cross-compiles binaries via `scripts/build-binaries.sh`, publishes `@bastani/atomic@<version>` to npm with OIDC provenance, and creates the GitHub Release with binaries attached.
+
+Release automation behavior:
+
+- A `v<version>` tag (e.g. `v0.8.0`) publishes `@bastani/atomic@<version>` to npm with the `latest` tag and creates a non-prerelease GitHub Release marked as latest.
+- A prerelease tag like `v0.8.0-0` publishes with the `next` npm tag and creates a prerelease GitHub Release that is **not** marked latest.
+- `packages/workflows` and companion pi packages are bundled into `@bastani/atomic` at build time; they are not independently published.
+- GitHub Release uses `softprops/action-gh-release@v3` with release notes extracted from `packages/coding-agent/CHANGELOG.md` (pi-style awk extraction). Six binary archives are attached: `atomic-{darwin-arm64,darwin-x64,linux-x64,linux-arm64}.tar.gz` and `atomic-{windows-x64,windows-arm64}.zip`.
+- For recovery, `workflow_dispatch` accepts an explicit `tag` input.
 
 ## CI
 
@@ -172,17 +157,18 @@ Note: Remember that npm publishing with provenance does NOT require a token. Tha
 
 ## Tips
 
-1. Note: for the `.github` config for GitHub Copilot CLI, ignore the `.github/workflows` and `.github/dependabot.yml` files as they are NOT for Copilot CLI.
+1. The workflows extension is bundled into `@bastani/atomic`. For local development against upstream pi, symlink `packages/workflows` into `~/.pi/agent/extensions/workflows` if you want host-level discovery outside Atomic.
 2. Rely on agent skills to provide information on best practices during implementation. Here is a short list of Agent Skills that are incredibly relevant to this project that you should try to use when applicable:
-   - bun
    - typescript-advanced-types
    - typescript-expert
    - typescript-react-reviewer
-   - opentui
-   - impeccable
    - tdd
-3. Ask for clarity if you unsure about a change. The developer is your best friend and oftentimes can clarify intent.
+   - impeccable
+3. Ask for clarity if you are unsure about a change. The developer is your best friend and oftentimes can clarify intent.
+4. When modifying this extension, follow pi's extension and SDK conventions.
 
 <EXTREMELY_IMPORTANT>
-This is a `bun` project. Do NOT use `node`, `npm`, `npx`, `yarn`, or `pnpm` commands. Always use `bun` commands.
+This repo uses **Bun (≥ 1.3.14)** for development, scripts, and tests. Do NOT use `node`, `npm`, `npx`, `yarn`, or `pnpm` for development commands. Always use `bun`, `bunx`, and `bun run`. The only acceptable exception is `npm publish --provenance` for the release flow (OIDC provenance is npm-CLI-specific).
+
+`@bastani/workflows` ships raw `.ts` files with no build step — do NOT introduce `dist/`, `tsconfig.build.json`, `outDir`, or any bundling. Tests run via Bun's built-in `bun:test` runner.
 </EXTREMELY_IMPORTANT>

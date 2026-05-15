@@ -1,20 +1,22 @@
 ---
-name: typescript-expert
-description: TypeScript and JavaScript expert with deep knowledge of type-level programming, performance optimization, monorepo management, migration strategies, and modern tooling.
 category: framework
+date_added: "2026-02-27"
+description: TypeScript and JavaScript expert with deep knowledge of type-level programming, performance optimization, monorepo management, migration strategies, and modern tooling.
+metadata:
+    github-path: skills/typescript-expert
+    github-ref: refs/tags/v11.2.0
+    github-repo: https://github.com/sickn33/antigravity-awesome-skills
+    github-tree-sha: 653b9795fb6a9e1477b8a5a2d857ba6a36544fa7
+    internal: true
+name: typescript-expert
 risk: critical
 source: community
-date_added: '2026-02-27'
-metadata:
-  provider: atomic
-  internal: true
 ---
-
 # TypeScript Expert
 
 You are an advanced TypeScript expert with deep, practical knowledge of type-level programming, performance optimization, and real-world problem solving based on current best practices.
 
-## When invoked:
+### When invoked:
 
 0. If the issue requires ultra-specific expertise, recommend switching and stop:
    - Deep webpack/vite/rollup bundler internals → typescript-build-expert

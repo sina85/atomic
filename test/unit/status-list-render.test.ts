@@ -1,0 +1,206 @@
+/**
+ * Unit tests for the canonical status-list renderer (`src/tui/status-list.ts`).
+ *
+ * Visual contract from ui/mockups.html §2:
+ *   - one full-width `[ BACKGROUND ]` band line
+ *   - one two-row card per run (replaces the indented per-stage rows)
+ *   - per-card row 1: tag (short id) + bold workflow name + state badge
+ *   - per-card row 2: mode + progress strip + meta
+ *   - trailing hint pointing at `/workflow status <id>`
+ *
+ * Plain mode preserves shape with `▎ [ BACKGROUND ]` band and `│ [tag] …`
+ * cards; no ANSI escapes.
+ *
+ * cross-ref: src/tui/status-list.ts · src/tui/chat-surface.ts
+ */
+
+import { describe, test } from "bun:test";
+import assert from "node:assert/strict";
+import { renderStatusList } from "../../packages/workflows/src/tui/status-list.js";
+import { deriveGraphTheme } from "../../packages/workflows/src/tui/graph-theme.js";
+import type { RunSnapshot, StageSnapshot } from "../../packages/workflows/src/shared/store-types.js";
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const stripAnsi = (s: string) => s.replace(ANSI_RE, "");
+
+function makeStage(
+  id: string,
+  name: string,
+  status: StageSnapshot["status"],
+  extras: Partial<StageSnapshot> = {},
+): StageSnapshot {
+  return {
+    id,
+    name,
+    status,
+    parentIds: [],
+    toolEvents: [],
+    ...extras,
+  };
+}
+
+function makeRun(over: Partial<RunSnapshot>): RunSnapshot {
+  return {
+    id: over.id ?? "abc123uuid",
+    name: over.name ?? "refactor-auth",
+    inputs: over.inputs ?? {},
+    status: over.status ?? "running",
+    stages: over.stages ?? [],
+    startedAt: over.startedAt ?? Date.now() - 5000,
+    endedAt: over.endedAt,
+    durationMs: over.durationMs,
+    result: over.result,
+    error: over.error,
+  };
+}
+
+describe("renderStatusList — empty", () => {
+  test("emits the flat band header + empty-state copy when no runs", () => {
+    const out = renderStatusList([], { theme: deriveGraphTheme({}), width: 120 });
+    const plain = stripAnsi(out);
+    assert.match(plain, /\[ BACKGROUND \]/);
+    assert.match(plain, /0 runs/);
+    assert.match(plain, /no in-flight runs/);
+  });
+});
+
+describe("renderStatusList — populated", () => {
+  test("multi-run snapshot renders header counts, cards, and a drill-down hint — without listing every stage", () => {
+    const now = 1_000_000;
+    const runs: RunSnapshot[] = [
+      makeRun({
+        id: "abc123uuid",
+        name: "refactor-auth",
+        status: "running",
+        startedAt: now - 117_000,
+        stages: [
+          makeStage("s1", "scout", "completed", { startedAt: now - 117_000, endedAt: now - 72_000, durationMs: 45_000 }),
+          makeStage("s2", "planner", "running", { startedAt: now - 72_000 }),
+          makeStage("s3", "worker", "pending"),
+        ],
+      }),
+      makeRun({
+        id: "def456uuid",
+        name: "doc-update",
+        status: "running",
+        startedAt: now - 42_000,
+        stages: [makeStage("w1", "writer", "running", { startedAt: now - 42_000 })],
+      }),
+      makeRun({
+        id: "ghi789uuid",
+        name: "scan-deps",
+        status: "completed",
+        startedAt: now - 16_000,
+        endedAt: now - 8_000,
+        durationMs: 8_000,
+        stages: [makeStage("z1", "primer", "completed", { durationMs: 8_000 })],
+      }),
+    ];
+    const out = renderStatusList(runs, { theme: deriveGraphTheme({}), now, width: 120 });
+    const plain = stripAnsi(out);
+
+    // Band — chrome + subtitle + count badges.
+    assert.match(plain, /\[ BACKGROUND \]/);
+    assert.match(plain, /3 runs/);
+    assert.match(plain, /● 2/, "two active runs");
+    assert.match(plain, /✓ 1/, "one completed run");
+
+    // One card per run — tag + bold workflow + state badge.
+    assert.match(plain, /abc123\s+refactor-auth/);
+    assert.match(plain, /def456\s+doc-update/);
+    assert.match(plain, /ghi789\s+scan-deps/);
+    assert.match(plain, /● running/);
+    assert.match(plain, /✓ completed/);
+
+    // Row 2 — mode + progress strip + meta.
+    assert.match(plain, /chain\s+\[✓\]\[●\]\[○\]/);
+    assert.match(plain, /1\/3/, "chain progress fraction renders in meta");
+    assert.match(plain, /single\s+\[●\]/);
+    assert.match(plain, /single\s+\[✓\]/);
+
+    // Cards are two rows each, not seven — no per-stage expansion in list view.
+    // Card lines now start with " ▎" (1-cell leading space + stripe) so
+    // they share the same left edge as the band label and hint arrow.
+    const cardRows = plain.split("\n").filter((l) => l.startsWith(" ▎"));
+    assert.equal(cardRows.length, 6, "3 runs × 2 rows = 6 card rows");
+
+    // Trailing hint references the most-recently-active run (def456, 42s ago).
+    assert.match(plain, /▸ \/workflow status def456/);
+    assert.match(plain, /drill into a run/);
+  });
+
+  test("active runs sort ahead of ended runs", () => {
+    const now = 1_000_000;
+    const ended = makeRun({
+      id: "endedrun",
+      name: "old-run",
+      status: "completed",
+      startedAt: now - 60_000,
+      endedAt: now - 10_000,
+    });
+    const active = makeRun({
+      id: "activerun",
+      name: "fresh-run",
+      status: "running",
+      startedAt: now - 30_000,
+    });
+    const out = renderStatusList([ended, active], { theme: deriveGraphTheme({}), now, width: 120 });
+    const plain = stripAnsi(out);
+    const activeIdx = plain.indexOf("fresh-run");
+    const endedIdx = plain.indexOf("old-run");
+    assert.ok(activeIdx >= 0 && endedIdx >= 0);
+    assert.ok(activeIdx < endedIdx, "active runs render above ended runs");
+  });
+
+  test("plain mode (no theme) preserves the band + card shape and emits no ANSI escapes", () => {
+    const run = makeRun({
+      id: "xyz000aaaa",
+      name: "scratch",
+      status: "running",
+      startedAt: Date.now() - 1000,
+      stages: [makeStage("x", "worker", "running")],
+    });
+    const out = renderStatusList([run], { width: 80 });
+    assert.doesNotMatch(out, /\x1b\[/);
+    assert.match(out, /^ ▎ \[ BACKGROUND \]/, "plain band has ▎ marker");
+    assert.match(out, /│\s+\[xyz000\]/, "plain card has │ stripe + bracketed tag");
+    assert.match(out, /scratch/);
+    assert.match(out, /single\s+\[●\]/);
+    assert.match(out, /▸ \/workflow status xyz000/);
+  });
+
+  test("failed run carries the killed/failed-at-stage meta", () => {
+    const now = 1_000_000;
+    const run = makeRun({
+      id: "kill0aaa",
+      name: "deep-research-codebase",
+      status: "killed",
+      startedAt: now - 4_000,
+      endedAt: now - 1_000,
+      stages: [
+        makeStage("s1", "scout", "completed", { durationMs: 22_000 }),
+        makeStage("s2", "partition", "failed", { durationMs: 0 }),
+      ],
+    });
+    const out = renderStatusList([run], { theme: deriveGraphTheme({}), now, width: 120 });
+    const plain = stripAnsi(out);
+    assert.match(plain, /⊘ killed/);
+    assert.match(plain, /failed at partition/);
+  });
+
+  test("narrow width truncates progress strip with …", () => {
+    const now = 1_000_000;
+    const stages = Array.from({ length: 12 }, (_, i) => makeStage(`s${i}`, `stage-${i}`, i < 3 ? "completed" : i === 3 ? "running" : "pending"));
+    const run = makeRun({
+      id: "7c4a91xx",
+      name: "ent-deep-research",
+      status: "running",
+      startedAt: now - 60_000,
+      stages,
+    });
+    const out = renderStatusList([run], { theme: deriveGraphTheme({}), now, width: 60 });
+    const plain = stripAnsi(out);
+    // Strip must truncate to fit the 60-column width.
+    assert.match(plain, /\[…\]|\]…|…/, "ellipsis present on narrow strip");
+  });
+});

@@ -1,10 +1,13 @@
 ---
-name: skill-creator
 description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
 metadata:
-  provider: atomic
+    github-path: skills/skill-creator
+    github-ref: refs/heads/main
+    github-repo: https://github.com/anthropics/skills
+    github-tree-sha: 3cf9a8db32597ba3e24b584a3d696f4e11c7d7b6
+    internal: true
+name: skill-creator
 ---
-
 # Skill Creator
 
 A skill for creating new skills and iteratively improving them.

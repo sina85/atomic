@@ -1,11 +1,10 @@
 ---
-name: Bun
+name: bun
 description: Use when building, testing, and deploying JavaScript/TypeScript applications. Reach for Bun when you need to run scripts, manage dependencies, bundle code, or test applications with a single unified tool.
 metadata:
-    provider: atomic
-    mintlify-proj: bun
-    version: "1.0"
-    internal: true
+  mintlify-proj: bun
+  version: "1.0"
+  internal: true
 ---
 
 # Bun Skill Reference
@@ -17,6 +16,7 @@ Bun is a unified JavaScript runtime, package manager, bundler, and test runner w
 ## When to Use
 
 Use Bun when:
+
 - **Running scripts**: Execute TypeScript/JavaScript files directly without compilation steps (`bun run file.ts`)
 - **Managing dependencies**: Install, add, remove, or update packages faster than npm/yarn/pnpm (`bun install`, `bun add`)
 - **Bundling code**: Build JavaScript/TypeScript for browser or server targets with `bun build`
@@ -118,26 +118,33 @@ Set in `bunfig.toml`: `linker = "isolated"` or via CLI: `bun install --linker is
 ## Workflow
 
 ### 1. Initialize a Project
+
 ```bash
 bun init my-app
 cd my-app
 ```
+
 Choose template: Blank, React, or Library. Creates `package.json`, `tsconfig.json`, `.gitignore`.
 
 ### 2. Install Dependencies
+
 ```bash
 bun install
 ```
+
 Reads `package.json`, downloads packages, creates `bun.lock`. Much faster than npm.
 
 ### 3. Add Packages
+
 ```bash
 bun add react
 bun add -d @types/react typescript
 ```
+
 Updates `package.json` and `bun.lock` automatically.
 
 ### 4. Write and Run Code
+
 ```bash
 # Create index.ts
 echo "console.log('Hello Bun!')" > index.ts
@@ -145,9 +152,11 @@ echo "console.log('Hello Bun!')" > index.ts
 # Run it
 bun run index.ts
 ```
+
 Bun transpiles TypeScript on-the-fly; no build step needed.
 
 ### 5. Create HTTP Server
+
 ```typescript
 // server.ts
 const server = Bun.serve({
@@ -158,11 +167,13 @@ const server = Bun.serve({
 });
 console.log(`Listening on ${server.url}`);
 ```
+
 ```bash
 bun run server.ts
 ```
 
 ### 6. Write Tests
+
 ```typescript
 // math.test.ts
 import { test, expect } from "bun:test";
@@ -171,22 +182,28 @@ test("2 + 2 = 4", () => {
   expect(2 + 2).toBe(4);
 });
 ```
+
 ```bash
 bun test
 ```
+
 Finds and runs all `*.test.ts` files automatically.
 
 ### 7. Bundle for Production
+
 ```bash
 bun build ./src/index.ts --outdir ./dist --minify
 ```
+
 Outputs optimized bundle to `dist/`. Use `--target browser|node|bun` to control output format.
 
 ### 8. Create Standalone Executable
+
 ```bash
 bun build ./cli.ts --outfile mycli --compile
 ./mycli
 ```
+
 Bundles code + Bun runtime into single executable; no dependencies needed.
 
 ## Common Gotchas
@@ -222,6 +239,7 @@ Before submitting work with Bun:
 **Comprehensive navigation**: https://bun.com/docs/llms.txt — Page-by-page listing of all Bun documentation.
 
 **Critical pages**:
+
 1. [Bun Runtime](https://bun.com/docs/runtime) — Execute files, scripts, and manage the runtime
 2. [Package Manager](https://bun.com/docs/pm/cli/install) — Install, add, remove packages and manage dependencies
 3. [Bundler](https://bun.com/docs/bundler) — Bundle JavaScript/TypeScript for production

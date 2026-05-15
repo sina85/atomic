@@ -1,0 +1,21 @@
+default_install_hook_types = ["pre-commit"]
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "check-added-large-files" },
+  { id = "check-case-conflict" },
+  { id = "check-illegal-windows-names" },
+  { id = "check-json", exclude = "^\\.agents/skills/.*\\.json$" },
+  { id = "check-merge-conflict" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+  { id = "detect-private-key" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "bun-lint", name = "bun run lint", entry = "bun run lint", language = "system", pass_filenames = false },
+  { id = "bun-test-unit", name = "bun run test:unit", entry = "bun run test:unit", language = "system", pass_filenames = false },
+]

@@ -17,20 +17,20 @@ Developers and engineering teams who orchestrate AI coding agents (Claude Code, 
 **Primary theme:** Catppuccin Mocha as the canonical dark palette, with Tokyo Night as secondary fallback. Terminal-adaptive color derivation remains for edge cases where OSC queries succeed.
 
 **Catppuccin Mocha reference palette:**
-| Role        | Color   | Hex       |
-|-------------|---------|-----------|
-| Base (bg)   | Base    | `#1e1e2e` |
-| Surface     | Surface0| `#313244` |
-| Selection   | Surface1| `#45475a` |
-| Border      | Overlay0| `#6c7086` |
-| Border dim  | Surface2| `#585b70` |
-| Accent      | Blue    | `#89b4fa` |
-| Text        | Text    | `#cdd6f4` |
-| Dim text    | Subtext0| `#a6adc8` |
-| Success     | Green   | `#a6e3a1` |
-| Error       | Red     | `#f38ba8` |
-| Warning     | Yellow  | `#f9e2af` |
-| Info        | Mauve   | `#cba6f7` |
+| Role       | Color    | Hex       |
+| ---------- | -------- | --------- |
+| Base (bg)  | Base     | `#1e1e2e` |
+| Surface    | Surface0 | `#313244` |
+| Selection  | Surface1 | `#45475a` |
+| Border     | Overlay0 | `#6c7086` |
+| Border dim | Surface2 | `#585b70` |
+| Accent     | Blue     | `#89b4fa` |
+| Text       | Text     | `#cdd6f4` |
+| Dim text   | Subtext0 | `#a6adc8` |
+| Success    | Green    | `#a6e3a1` |
+| Error      | Red      | `#f38ba8` |
+| Warning    | Yellow   | `#f9e2af` |
+| Info       | Mauve    | `#cba6f7` |
 
 **References:**
 - **Neovim + Tokyo Night** — dark, clean, syntax-highlighted, keyboard-first programmer aesthetic
