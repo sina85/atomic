@@ -14,15 +14,16 @@
  *   ctrl+u              — delete to logical line start
  *   ctrl+k              — delete to logical line end
  *   space               — boolean toggle
- *   enter               — newline (text) | choose Run action | otherwise next field
+ *   enter               — newline (text) | otherwise next field
  *   printable ASCII     — insert at caret (text/string/number)
+ *   ctrl+enter          — submit form (if valid)
  *   esc / ctrl+c        — cancel form
  *
  * Editor-mode keys (cursor movement, word jumps, deletions) route through
  * the Pi `KeybindingsManager` injected by the host at factory time, so any
  * user-configured keybinding overrides surfaces here as well. Form-level
- * keys (tab/shift+tab/esc/ctrl+c) stay as raw byte checks because they are
- * workflow form contract, not Pi-configurable actions.
+ * keys (tab/shift+tab/ctrl+enter/esc/ctrl+c) stay as raw byte checks because
+ * they are workflow form contract, not Pi-configurable actions.
  *
  * On submit/cancel the editor calls back to the orchestrator which:
  *   1. Marks the form state finalized (renderer flips to frozen view)
@@ -63,7 +64,7 @@ export type FormEditorOutcome = "submit" | "cancel";
 export interface InlineFormEditorOpts {
   formId: string;
   theme: GraphTheme;
-  /** Called when the focused Run action passes validation or cancel fires. */
+  /** Called when Ctrl+Enter passes validation or cancel fires. */
   onExit: (outcome: FormEditorOutcome) => void;
   /**
    * Pi's `KeybindingsManager` injected as the third arg of the editor
@@ -373,12 +374,18 @@ export class InlineFormEditor implements PiEditorComponent {
   private routeKey(data: string, state: InlineFormState): boolean {
     // Globals first. Workflow form contract — these are NOT Pi-configurable
     // editor actions, so they stay as raw byte checks:
-    //   esc       (\x1b)         — cancel form
-    //   ctrl+c    (\x03)         — cancel form
-    //   tab       (\t)           — focus next field
-    //   shift+tab (\x1b[Z)       — focus previous field
+    //   esc        (\x1b)        — cancel form
+    //   ctrl+c     (\x03)        — cancel form
+    //   ctrl+enter                — submit form
+    //   tab        (\t)          — focus next field
+    //   shift+tab  (\x1b[Z)      — focus previous field
     if (data === "\x03" || matchesKey(data, "escape")) {
       this.opts.onExit("cancel");
+      return true;
+    }
+    if (matchesKey(data, "ctrl+enter")) {
+      if (this.allValid(state)) this.opts.onExit("submit");
+      else this.focusFirstInvalid(state);
       return true;
     }
     if (matchesKey(data, "tab")) {
@@ -388,19 +395,6 @@ export class InlineFormEditor implements PiEditorComponent {
     if (matchesKey(data, "shift+tab")) {
       this.moveFocus(state, -1);
       return true;
-    }
-
-    if (state.focusedIdx === state.fields.length) {
-      if (matchesAction(this.kb, data, "tui.input.submit") || matchesKey(data, "enter")) {
-        if (this.allValid(state)) this.opts.onExit("submit");
-        else this.focusFirstInvalid(state);
-        return true;
-      }
-      if (matchesAction(this.kb, data, "tui.editor.cursorUp") || matchesAction(this.kb, data, "tui.editor.cursorLeft")) {
-        this.moveFocus(state, -1);
-        return true;
-      }
-      return false;
     }
 
     const field = state.fields[state.focusedIdx];
@@ -615,12 +609,9 @@ export class InlineFormEditor implements PiEditorComponent {
   }
 
   private moveFocus(state: InlineFormState, delta: number): void {
-    const n = state.fields.length + 1;
+    const n = state.fields.length;
+    if (n === 0) return;
     state.focusedIdx = (state.focusedIdx + delta + n) % n;
-    if (state.focusedIdx === state.fields.length) {
-      state.caret = 0;
-      return;
-    }
     const next = state.fields[state.focusedIdx]!;
     state.caret = (state.rawText[next.name] ?? "").length;
   }

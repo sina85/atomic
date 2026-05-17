@@ -112,6 +112,8 @@ export interface InternalStageContext extends StageContext {
    * `undefined` keys when the session has not yet been created.
    */
   __sessionMeta(): { sessionId: string | undefined; sessionFile: string | undefined };
+  /** Internal: live coding-agent session when the adapter returned one. */
+  __agentSession(): AgentSession | undefined;
   /** Internal: selected/effective model and fallback attempt metadata. */
   __modelFallbackMeta(): StageModelFallbackMeta;
   /**
@@ -190,6 +192,20 @@ function lastAssistantTextFromMessages(messages: AgentSession["messages"]): stri
     if (!message || message.role !== "assistant") continue;
     const text = extractAssistantText(message).trim();
     if (text) return text;
+  }
+  return undefined;
+}
+
+function asAgentSession(activeSession: StageSessionRuntime | undefined): AgentSession | undefined {
+  if (!activeSession) return undefined;
+  const candidate = activeSession as StageSessionRuntime & Partial<Pick<AgentSession, "state" | "sessionManager" | "modelRegistry" | "getContextUsage">>;
+  if (
+    candidate.state !== undefined &&
+    candidate.sessionManager !== undefined &&
+    candidate.modelRegistry !== undefined &&
+    typeof candidate.getContextUsage === "function"
+  ) {
+    return candidate as AgentSession;
   }
   return undefined;
 }
@@ -667,6 +683,10 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
         sessionId: session?.sessionId,
         sessionFile: session?.sessionFile,
       };
+    },
+
+    __agentSession() {
+      return asAgentSession(session);
     },
 
     __modelFallbackMeta() {

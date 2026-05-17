@@ -48,13 +48,17 @@ function makeHandle(
     isStreaming: false,
   },
   messages: AgentSession["messages"] = [],
+  status: StageControlHandle["status"] = "running",
 ): { handle: StageControlHandle; state: HandleState; emit: (event: AgentSessionEvent) => void } {
   let listener: ((e: AgentSessionEvent) => void) | undefined;
+  let handleStatus = status;
   const handle: StageControlHandle = {
     runId: "run-1",
     stageId: "stage-a",
     stageName: "review-a",
-    status: "running",
+    get status() {
+      return handleStatus;
+    },
     sessionId: undefined,
     sessionFile: undefined,
     get isStreaming() {
@@ -73,9 +77,11 @@ function makeHandle(
     },
     async pause() {
       state.pauseCalls += 1;
+      handleStatus = "paused";
     },
     async resume(message?: string) {
       state.resumeCalls.push(message);
+      handleStatus = "running";
     },
     subscribe(l) {
       listener = l;
@@ -117,6 +123,44 @@ function setupRun(
 
 async function flush(): Promise<void> {
   return new Promise<void>((resolve) => queueMicrotask(resolve));
+}
+
+function fakeFooterAgentSession(): AgentSession {
+  return {
+    state: {
+      model: {
+        id: "gpt-5.5",
+        provider: "openai-codex",
+        reasoning: true,
+        contextWindow: 200000,
+      },
+      thinkingLevel: "high",
+    },
+    sessionManager: {
+      getCwd: () => "/home/alilavaee/Documents/projects/atomic",
+      getEntries: () => [
+        {
+          type: "message",
+          message: {
+            role: "assistant",
+            usage: {
+              input: 1200,
+              output: 3400,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 4600,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.123 },
+            },
+          },
+        },
+      ],
+    },
+    modelRegistry: {
+      isUsingOAuth: () => false,
+    },
+    getContextUsage: () => ({ tokens: 46800, contextWindow: 200000, percent: 23.4 }),
+    isStreaming: false,
+  } as unknown as AgentSession;
 }
 
 describe("StageChatView", () => {
@@ -293,6 +337,160 @@ describe("StageChatView", () => {
     await flush();
     assert.equal(state.pauseCalls, 1);
     assert.equal(view._isLocalPaused, true);
+    view.dispose();
+  });
+
+  test("Ctrl+P while paused resumes without a message", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    const { handle, state } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+    });
+    view.handleInput("\x10");
+    await flush();
+    await flush();
+    assert.equal(state.pauseCalls, 1);
+    assert.equal(view._isLocalPaused, true);
+    view.handleInput("\x10");
+    await flush();
+    await flush();
+    assert.equal(state.pauseCalls, 1);
+    assert.deepEqual(state.resumeCalls, [undefined]);
+    assert.equal(view._isLocalPaused, false);
+    view.dispose();
+  });
+
+  test("Ctrl+P on an initially paused stage resumes without a message", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "paused");
+    const { handle, state } = makeHandle(undefined, [], "paused");
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+    });
+    view.handleInput("\x10");
+    await flush();
+    await flush();
+    assert.equal(state.pauseCalls, 0);
+    assert.deepEqual(state.resumeCalls, [undefined]);
+    view.dispose();
+  });
+
+  test("Enter on an initially paused stage resumes with the typed message", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "paused");
+    const { handle, state } = makeHandle(undefined, [], "paused");
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+    });
+    for (const ch of "go on") view.handleInput(ch);
+    view.handleInput("\r");
+    await flush();
+    await flush();
+    assert.deepEqual(state.resumeCalls, ["go on"]);
+    assert.deepEqual(state.promptCalls, []);
+    assert.deepEqual(state.steerCalls, []);
+    view.dispose();
+  });
+
+  test("idle attached stage renders no welcome panel and keeps guidance in the editor", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "pending");
+    const { handle } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+    });
+    const rendered = view.render(96).join("\n");
+    assert.doesNotMatch(rendered, /Attached to/);
+    assert.doesNotMatch(rendered, /This stage is idle/);
+    assert.match(rendered, /type a message to start this stage/i);
+    view.dispose();
+  });
+
+  test("live pi editor path shows placeholder before typing", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "pending");
+    const { handle } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+      piTui: {
+        requestRender: () => {},
+        terminal: { rows: 40, columns: 96 },
+      } as never,
+      piKeybindings: makeFakeKeybindings(),
+    });
+    assert.match(view.render(96).join("\n"), /type a message to start this stage/i);
+    for (const ch of "hello") view.handleInput(ch);
+    const rendered = view.render(96).join("\n");
+    assert.match(rendered, /hello/);
+    assert.doesNotMatch(rendered, /type a message to start this stage/i);
+    view.dispose();
+  });
+
+  test("attached live sessions render the core coding-agent usage and footer", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "running");
+    const { handle } = makeHandle();
+    const handleWithSession: StageControlHandle = {
+      ...handle,
+      agentSession: fakeFooterAgentSession(),
+    };
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle: handleWithSession,
+      footerData: {
+        getGitBranch: () => "main",
+        getExtensionStatuses: () => new Map(),
+        getAvailableProviderCount: () => 2,
+        onBranchChange: () => () => {},
+      },
+      onDetach: () => {},
+      onClose: () => {},
+    });
+    const rendered = view.render(120).join("\n");
+    assert.match(rendered, /\$0\.123/);
+    assert.match(rendered, /23\.4%\/200k/);
+    assert.match(rendered, /\(openai-codex\) gpt-5\.5 high/);
+    assert.match(rendered, /~\/Documents\/projects\/atomic/);
     view.dispose();
   });
 

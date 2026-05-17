@@ -102,9 +102,9 @@ test("tab and shift+tab move focus, wrapping", () => {
   assert.equal(s.focusedIdx, 1);
   handleInputsPickerInput("\x1b[Z", s, FIELDS, KB);
   assert.equal(s.focusedIdx, 0);
-  // Wrap backward from 0 → focused Run action
+  // Wrap backward from 0 → last field.
   handleInputsPickerInput("\x1b[Z", s, FIELDS, KB);
-  assert.equal(s.focusedIdx, FIELDS.length);
+  assert.equal(s.focusedIdx, FIELDS.length - 1);
 });
 
 test("select field: arrows cycle through choices", () => {
@@ -137,21 +137,21 @@ test("esc variants and ctrl+c cancel from form mode", () => {
   }
 });
 
-test("enter on focused Run with missing required fields opens no modal and focuses invalid", () => {
+test("ctrl+enter with missing required fields opens no modal and focuses invalid", () => {
   const s = createInputsPickerState(FIELDS);
-  s.focusedIdx = FIELDS.length;
+  s.focusedIdx = 2;
   // prompt is empty (required) — submit should be blocked.
-  const a = handleInputsPickerInput("\r", s, FIELDS, KB);
+  const a = handleInputsPickerInput("\x1b[13;5u", s, FIELDS, KB);
   assert.deepEqual(a, { kind: "noop" });
   assert.equal(s.confirmOpen, false);
   assert.equal(s.focusedIdx, 0); // jumped to first invalid field
   assert.deepEqual(s.invalidIndices, [0]);
 });
 
-test("enter on focused Run with all required filled opens confirm modal", () => {
+test("ctrl+enter with all required filled opens confirm modal", () => {
   const s = createInputsPickerState(FIELDS, { prompt: "build something" });
-  s.focusedIdx = FIELDS.length;
-  handleInputsPickerInput("\r", s, FIELDS, KB);
+  s.focusedIdx = 0;
+  handleInputsPickerInput("\x1b[13;5u", s, FIELDS, KB);
   assert.equal(s.confirmOpen, true);
 });
 
@@ -159,16 +159,15 @@ test("confirm modal: y returns coerced values; n returns to form", () => {
   const s = createInputsPickerState(FIELDS, { prompt: "hi", focus: "minimal" });
   s.rawText.iters = "8";
   s.rawText.verbose = "true";
-  s.focusedIdx = FIELDS.length;
-  handleInputsPickerInput("\r", s, FIELDS, KB);
+  s.focusedIdx = 1;
+  handleInputsPickerInput("\x1b[13;5u", s, FIELDS, KB);
   assert.equal(s.confirmOpen, true);
   // n returns to form
   const back = handleInputsPickerInput("n", s, FIELDS, KB);
   assert.deepEqual(back, { kind: "noop" });
   assert.equal(s.confirmOpen, false);
   // Reopen and confirm
-  s.focusedIdx = FIELDS.length;
-  handleInputsPickerInput("\r", s, FIELDS, KB);
+  handleInputsPickerInput("\x1b[13;5u", s, FIELDS, KB);
   const run = handleInputsPickerInput("y", s, FIELDS, KB);
   assert.equal(run.kind, "run");
   if (run.kind === "run") {
@@ -235,16 +234,16 @@ test("renderInputsPicker emits header, section label, fields, and hints", () => 
   assert.match(joined, /ralph/);
   assert.match(joined, /loop a thinker/);
   assert.match(joined, /INPUTS/);
-  assert.match(joined, /1 \/ 5/);
+  assert.match(joined, /1 \/ 4/);
   assert.match(joined, /prompt/);
   assert.match(joined, /iters/);
   assert.match(joined, /focus/);
   assert.match(joined, /verbose/);
-  assert.match(joined, /Run workflow/);
-  assert.match(joined, /tab/);
-  assert.match(joined, /enter/);
-  assert.doesNotMatch(joined, /ctrl\+s/);
-  assert.match(joined, /esc/);
+  assert.doesNotMatch(joined, /Run workflow/);
+  assert.match(joined, /Tab/);
+  assert.match(joined, /CTRL\+Enter/);
+  assert.doesNotMatch(joined, /CTRL\+S/);
+  assert.match(joined, /Escape/);
 });
 
 test("renderInputsPicker shows confirm card when modal is open", () => {
@@ -380,8 +379,8 @@ test("renderInputsPicker stays well-formed across a wide range of widths (resize
 test("renderInputsPicker footer degrades gracefully on narrow terminals", () => {
   // Wide: all 4 hints with labels.
   // Medium: keys with labels but shorter — `prev`/`cancel` drop out.
-  // Tight: keys only, including compact `⇧tab` / `↵`.
-  // Narrow: only the essentials — `↵` and `esc`.
+  // Tight: keys only, including compact `⇧tab` / `⌃↵`.
+  // Narrow: only the essentials — `⌃↵` and `esc`.
   const theme = deriveGraphTheme({});
   const state = createInputsPickerState(FIELDS);
   // eslint-disable-next-line no-control-regex
@@ -406,28 +405,28 @@ test("renderInputsPicker footer degrades gracefully on narrow terminals", () => 
 
   // Wide — labels visible.
   const wide = renderAt(120);
-  assert.match(wide, /tab next/);
-  assert.match(wide, /shift\+tab prev/);
-  assert.match(wide, /enter choose/);
-  assert.match(wide, /esc cancel/);
+  assert.match(wide, /Tab Next/);
+  assert.match(wide, /SHIFT\+Tab Prev/);
+  assert.match(wide, /CTRL\+Enter Run/);
+  assert.match(wide, /Escape Cancel/);
 
   // Medium — keys only, but full key names.
-  const medium = renderAt(40);
-  assert.match(medium, /shift\+tab/);
-  assert.doesNotMatch(medium, /shift\+tab prev/);
-  assert.doesNotMatch(medium, /esc cancel/);
+  const medium = renderAt(55);
+  assert.match(medium, /SHIFT\+Tab/);
+  assert.doesNotMatch(medium, /SHIFT\+Tab Prev/);
+  assert.doesNotMatch(medium, /Escape Cancel/);
 
   // Tight — compact glyphs.
-  const tight = renderAt(28);
-  assert.match(tight, /⇧tab/);
-  assert.match(tight, /↵/);
-  assert.match(tight, /esc/);
-  assert.doesNotMatch(tight, /shift\+tab/);
+  const tight = renderAt(35);
+  assert.match(tight, /⇧Tab/);
+  assert.match(tight, /⌃↵/);
+  assert.match(tight, /Escape/);
+  assert.doesNotMatch(tight, /SHIFT\+Tab/);
 
   // Narrow — essentials only.
   const narrow = renderAt(12);
-  assert.match(narrow, /↵/);
-  assert.match(narrow, /esc/);
+  assert.match(narrow, /⌃↵/);
+  assert.match(narrow, /Escape/);
   assert.doesNotMatch(narrow, /tab/);
 });
 

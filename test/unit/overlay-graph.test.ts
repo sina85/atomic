@@ -612,6 +612,18 @@ describe("GraphView keyboard navigation", () => {
     view.dispose();
   });
 
+  it("leaves unpainted top and bottom margin rows around the orchestrator panel", () => {
+    const stages = [makeStage("A"), makeStage("B", ["A"])];
+    const view = makeView(stages);
+    const lines = view.render(96);
+    assert.equal(lines.length, 32);
+    assert.equal(lines[0], " ".repeat(96));
+    assert.equal(lines.at(-1), " ".repeat(96));
+    assert.match(visibleText(lines.slice(1, 4)), /ORCHESTRATOR/);
+    assert.match(visibleText(lines.slice(-4, -1)), /GRAPH/);
+    view.dispose();
+  });
+
   it("expands overlay to the reported viewport row count", () => {
     // Full-screen overlay path: when the host surfaces terminal.rows
     // through `getViewportRows`, the renderer must paint that many

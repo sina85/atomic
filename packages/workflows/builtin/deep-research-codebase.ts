@@ -185,7 +185,7 @@ export default defineWorkflow("deep-research-codebase")
       codebaseLines,
     );
 
-    let noAskQuestionToolSet = ["read, bash, edit, write, todo"];
+    let noAskQuestionToolSet = ["read", "bash", "edit", "write", "todo"];
 
     let plannerModelConfig = {
       model: "openai/gpt-5.5",

@@ -211,6 +211,12 @@ const noOpUIContext: ExtensionUIContext = {
 	addAutocompleteProvider: () => {},
 	setEditorComponent: () => {},
 	getEditorComponent: () => undefined,
+	getFooterDataProvider: () => ({
+		getGitBranch: () => null,
+		getExtensionStatuses: () => new Map(),
+		getAvailableProviderCount: () => 1,
+		onBranchChange: () => () => {},
+	}),
 	get theme() {
 		return theme;
 	},

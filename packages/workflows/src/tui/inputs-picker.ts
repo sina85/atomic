@@ -22,7 +22,7 @@
  *   ╰──────────────────────────────────────────╯
  *     select  ·  required  ·  How aggressively to scope the work.
  *
- *   tab next  ·  shift+tab prev  ·  enter choose  ·  esc cancel
+ *   tab next  ·  shift+tab prev  ·  ctrl+enter run  ·  esc cancel
  *
  * Field-type renderers:
  *   - string / number : single-row text input with blinking cursor
@@ -75,8 +75,8 @@ export interface InputsPickerState {
   confirmOpen: boolean;
   /**
    * Set of field indices that failed validation on the most recent submit
-   * attempt. Used to dim the focused Run action and to highlight a field if
-   * the user retries with required fields still empty.
+   * attempt. Used to dim the run hint and to highlight a field if the user
+   * retries with required fields still empty.
    */
   invalidIndices: readonly number[];
   /** Cursor offset within the focused single-line text field. */
@@ -211,8 +211,8 @@ export function coerceValues(
 
 /**
  * Return the reason why `field` is invalid for `value`, or `null` if valid.
- * Used both to flag fields on submit and to drive the dim state of the
- * focused Run action.
+ * Used both to flag fields on submit and to drive the dim state of the run
+ * key hint.
  */
 export function invalidForField(
   field: WorkflowInputEntry,
@@ -469,7 +469,7 @@ export function renderInputsPicker(opts: InputsPickerRenderOpts): string[] {
   // Section label with field counter (1-based). When the terminal is too
   // narrow to hold both, the counter is the priority — drop "INPUTS" first
   // so the user always knows which field they're on.
-  const focusTargetCount = fields.length + 1;
+  const focusTargetCount = fields.length;
   const counter = `${Math.min(state.focusedIdx + 1, focusTargetCount)} / ${focusTargetCount}`;
   const labelLeft =
     paint("▎ ", theme.mauve) + paint("INPUTS", theme.textMuted, { bold: true });
@@ -500,13 +500,11 @@ export function renderInputsPicker(opts: InputsPickerRenderOpts): string[] {
   }
 
   const anyInvalid = computeInvalid(fields, state.rawText).length > 0;
-  lines.push(renderRunAction(width, theme, state.focusedIdx === fields.length, anyInvalid));
-  lines.push("");
 
   // Footer hints — tiered for narrow widths. The widest form ends up around
-  // 57 visible cells; we step down to keys-with-labels-tight, keys-only,
+  // 61 visible cells; we step down to keys-with-labels-tight, keys-only,
   // and finally essentials-only when the terminal cannot hold the row.
-  lines.push(renderFooterHints(width, theme));
+  lines.push(renderFooterHints(width, theme, anyInvalid));
 
   if (state.confirmOpen) {
     lines.push("");
@@ -518,39 +516,41 @@ export function renderInputsPicker(opts: InputsPickerRenderOpts): string[] {
 /**
  * Footer hint row, tier-degraded so it never wraps on resize. Tiers:
  *
- *   wide   (≥ widest):  tab next  ·  shift+tab prev  ·  enter choose  ·  esc cancel
- *   medium (≥ keys):    tab  ·  shift+tab  ·  enter  ·  esc
- *   tight  (≥ short):   tab  ·  ⇧tab  ·  ↵  ·  esc
- *   narrow (else):      ↵  ·  esc
+ *   wide   (≥ widest):  tab next  ·  shift+tab prev  ·  ctrl+enter run  ·  esc cancel
+ *   medium (≥ keys):    tab  ·  shift+tab  ·  ctrl+enter  ·  esc
+ *   tight  (≥ short):   tab  ·  ⇧tab  ·  ⌃↵  ·  esc
+ *   narrow (else):      ⌃↵  ·  esc
  */
-function renderFooterHints(width: number, theme: GraphTheme): string {
+function renderFooterHints(width: number, theme: GraphTheme, submitDisabled: boolean): string {
   const sep = dimSep(theme);
   const sepWidth = 5; // "  ·  "
-  const hint = (key: string, label: string): string =>
-    paint(key, theme.text) + " " + paint(label, theme.textMuted);
-  const keyOnly = (key: string): string => paint(key, theme.text);
+  const submitColor = submitDisabled ? theme.dim : theme.text;
+  const submitLabelColor = submitDisabled ? theme.dim : theme.textMuted;
+  const hint = (key: string, label: string, keyColor = theme.text, labelColor = theme.textMuted): string =>
+    paint(key, keyColor) + " " + paint(label, labelColor);
+  const keyOnly = (key: string, keyColor = theme.text): string => paint(key, keyColor);
 
   const wide = [
-    { width: 8, render: () => hint("tab", "next") },
-    { width: 14, render: () => hint("shift+tab", "prev") },
-    { width: 12, render: () => hint("enter", "choose") },
-    { width: 10, render: () => hint("esc", "cancel") },
+    { width: 8, render: () => hint("Tab", "Next") },
+    { width: 14, render: () => hint("SHIFT+Tab", "Prev") },
+    { width: 14, render: () => hint("CTRL+Enter", "Run", submitColor, submitLabelColor) },
+    { width: 10, render: () => hint("Escape", "Cancel") },
   ];
   const medium = [
-    { width: 3, render: () => keyOnly("tab") },
-    { width: 9, render: () => keyOnly("shift+tab") },
-    { width: 5, render: () => keyOnly("enter") },
-    { width: 3, render: () => keyOnly("esc") },
+    { width: 3, render: () => keyOnly("Tab") },
+    { width: 9, render: () => keyOnly("SHIFT+Tab") },
+    { width: 10, render: () => keyOnly("CTRL+Enter", submitColor) },
+    { width: 6, render: () => keyOnly("Escape") },
   ];
   const tight = [
-    { width: 3, render: () => keyOnly("tab") },
-    { width: 4, render: () => keyOnly("⇧tab") },
-    { width: 1, render: () => keyOnly("↵") },
-    { width: 3, render: () => keyOnly("esc") },
+    { width: 3, render: () => keyOnly("Tab") },
+    { width: 4, render: () => keyOnly("⇧Tab") },
+    { width: 2, render: () => keyOnly("⌃↵", submitColor) },
+    { width: 6, render: () => keyOnly("Escape") },
   ];
   const narrow = [
-    { width: 1, render: () => keyOnly("↵") },
-    { width: 3, render: () => keyOnly("esc") },
+    { width: 2, render: () => keyOnly("⌃↵", submitColor) },
+    { width: 6, render: () => keyOnly("Escape") },
   ];
 
   for (const tier of [wide, medium, tight, narrow]) {
@@ -559,30 +559,8 @@ function renderFooterHints(width: number, theme: GraphTheme): string {
       return tier.map((h) => h.render()).join(sep);
     }
   }
-  // Truly tiny terminal — show just the choose+cancel keys joined by a single space.
-  return paint("↵", theme.text) + " " + paint("esc", theme.text);
-}
-
-function renderRunAction(
-  width: number,
-  theme: GraphTheme,
-  focused: boolean,
-  disabled: boolean,
-): string {
-  const marker = focused ? "❯" : "○";
-  const markerColor = disabled ? theme.dim : focused ? theme.accent : theme.dim;
-  const labelColor = disabled ? theme.dim : focused ? theme.text : theme.textMuted;
-  const hintColor = disabled ? theme.dim : theme.textMuted;
-  const row =
-    paint(marker, markerColor, { bold: focused && !disabled }) +
-    " " +
-    paint("Run workflow", labelColor, { bold: focused && !disabled }) +
-    paint("  ·  ", theme.dim) +
-    paint("enter", hintColor) +
-    " " +
-    paint(disabled ? "fill required fields" : "submit", hintColor);
-  const pad = Math.max(0, Math.floor((width - visibleWidth(row)) / 2));
-  return " ".repeat(pad) + truncateToWidth(row, width, "…", true);
+  // Truly tiny terminal — show just the run+cancel keys joined by a single space.
+  return paint("⌃↵", submitColor) + " " + paint("Escape", theme.text);
 }
 
 /**
@@ -646,7 +624,8 @@ function shortVal(s: string): string {
  *   shift+tab / up   — previous field
  *   left / right     — select: cycle choices; boolean: flip; text: caret
  *   space            — boolean: flip
- *   enter            — text: newline; otherwise: next field; Run action submits
+ *   enter            — text: newline; otherwise: next field
+ *   ctrl+enter       — open confirm modal (if all required filled)
  *   backspace        — delete char left of caret
  *   esc / ctrl+c     — close picker without running
  *
@@ -679,23 +658,13 @@ function handleFormKey(
 ): InputsPickerAction {
   // ── Global navigation (workflow form contract, not Pi actions) ──
   if (isCancelKey(key)) return { kind: "cancel" };
+  if (matchesKey(key, "ctrl+enter")) return attemptPickerSubmit(state, fields);
   if (matchesKey(key, "tab")) {
     moveFocus(state, fields, +1);
     return { kind: "noop" };
   }
   if (matchesKey(key, "shift+tab")) {
     moveFocus(state, fields, -1);
-    return { kind: "noop" };
-  }
-
-  if (state.focusedIdx === fields.length) {
-    if (matchesKey(key, "enter") || matchesAction(kb, key, "tui.input.submit")) {
-      return attemptPickerSubmit(state, fields);
-    }
-    if (matchesAction(kb, key, "tui.editor.cursorUp") || matchesAction(kb, key, "tui.editor.cursorLeft")) {
-      moveFocus(state, fields, -1);
-      return { kind: "noop" };
-    }
     return { kind: "noop" };
   }
 
@@ -914,12 +883,9 @@ function moveFocus(
   fields: readonly WorkflowInputEntry[],
   delta: number,
 ): void {
-  const n = fields.length + 1;
+  const n = fields.length;
+  if (n === 0) return;
   state.focusedIdx = (state.focusedIdx + delta + n) % n;
-  if (state.focusedIdx === fields.length) {
-    state.caret = 0;
-    return;
-  }
   const next = fields[state.focusedIdx]!;
   state.caret = (state.rawText[next.name] ?? "").length;
 }

@@ -107,11 +107,11 @@ test("card (live): shows header pill, workflow chip, all fields, footer hints", 
   assert.match(txt, /iters/);
   assert.match(txt, /focus/);
   assert.match(txt, /verbose/);
-  assert.match(txt, /1 \/ 5/);
-  assert.match(txt, /Run workflow/);
+  assert.match(txt, /1 \/ 4/);
+  assert.doesNotMatch(txt, /Run workflow/);
   assert.match(txt, /EDIT/);
-  assert.match(txt, /tab/);
-  assert.match(txt, /enter/);
+  assert.match(txt, /Tab/);
+  assert.match(txt, /CTRL\+Enter/);
   assert.doesNotMatch(txt, /ctrl\+s/);
 });
 
@@ -120,8 +120,8 @@ test("card (live): hint row is anchored at the bottom of the widget", () => {
   const lines = renderInlineCard({ width: 80, state, theme: deriveGraphTheme({}) });
   // The footer band is the trailing 3 lines; hints live on the middle row.
   const tail = lines.slice(-3).map((l) => plain([l]));
-  assert.match(tail.join("\n"), /tab\s+next/);
-  assert.match(tail.join("\n"), /esc\s+cancel/);
+  assert.match(tail.join("\n"), /Tab\s+Next/);
+  assert.match(tail.join("\n"), /Escape\s+Cancel/);
 });
 
 test("card (live): each field title is centred inside its top border", () => {
@@ -269,22 +269,22 @@ test("editor: esc variants and ctrl+c fire onExit('cancel')", () => {
   }
 });
 
-test("editor: enter on focused Run with missing required is blocked and focuses invalid", () => {
+test("editor: ctrl+enter with missing required is blocked and focuses invalid", () => {
   const e = makeEditor(); // prompt is empty
-  e.state.focusedIdx = FIELDS.length;
-  e.editor.handleInput("\r");
+  e.state.focusedIdx = 2;
+  e.editor.handleInput("\x1b[13;5u");
   assert.equal(e.getExited(), null);
   assert.equal(e.state.focusedIdx, 0);
   e.dispose();
 });
 
-test("editor: enter on focused Run with all required filled fires onExit('submit')", () => {
+test("editor: ctrl+enter with all required filled fires onExit('submit')", () => {
   const state = makeState({
-    focusedIdx: FIELDS.length,
+    focusedIdx: 0,
     rawText: { prompt: "build", iters: "5", focus: "standard", verbose: "false" },
   });
   const e = makeEditor(state);
-  e.editor.handleInput("\r");
+  e.editor.handleInput("\x1b[13;5u");
   assert.deepEqual(e.getExited(), { outcome: "submit" });
   e.dispose();
 });
@@ -474,8 +474,7 @@ test("overlay: openInlineInputsForm emits a custom message and swaps editor", as
   // Fill required prompt and submit.
   editor.handleInput("h");
   editor.handleInput("i");
-  for (let i = 0; i < FIELDS.length; i += 1) editor.handleInput("\t");
-  editor.handleInput("\r");
+  editor.handleInput("\x1b[13;5u");
   const result = await pending;
   assert.equal(result.kind, "run");
   if (result.kind === "run") {
@@ -565,8 +564,7 @@ test("overlay: installed editor accepts pi setup before card render", async () =
   assert.equal(editor.getAutocompleteMaxVisible(), 20);
   editor.handleInput("o");
   editor.handleInput("k");
-  for (let i = 0; i < FIELDS.length; i += 1) editor.handleInput("\t");
-  editor.handleInput("\r");
+  editor.handleInput("\x1b[13;5u");
   const result = await pending;
   assert.equal(result.kind, "run");
 });
@@ -857,8 +855,8 @@ test("editor: up arrow on first logical line of text falls through to focus-prev
       caret: 3,
     }),
   );
-  e.editor.handleInput("\x1b[A"); // up — no previous logical line, focus wraps to Run
-  assert.equal(e.state.focusedIdx, FIELDS.length);
+  e.editor.handleInput("\x1b[A"); // up — no previous logical line, focus wraps to last field
+  assert.equal(e.state.focusedIdx, FIELDS.length - 1);
   e.dispose();
 });
 

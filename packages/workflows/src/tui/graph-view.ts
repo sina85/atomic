@@ -3,8 +3,9 @@
  *
  * Visual contract (DESIGN.md):
  *  - No manual ASCII frame. `pi.ui.custom({ overlay: true })` provides the
- *    popup chrome; this renderer paints content on the canvas (`bg`) with
- *    full-width chrome rows for the header (top) and hints (bottom).
+ *    popup chrome; this renderer leaves one unpainted row above and below
+ *    the panel, then paints content on the canvas (`bg`) with full-width
+ *    chrome rows for the header (top) and hints (bottom).
  *  - Section labels use the `▎ LABEL` pattern: mauve glyph + `textMuted`
  *    bold caps.
  *  - Hints follow `<key> <label>` separated by ` · ` in `dim`, active key
@@ -140,6 +141,7 @@ const MODE_PILL_LABEL = "GRAPH";
  * same number of lines per frame regardless of game state.
  */
 const OVERLAY_LINE_COUNT = 32;
+const OVERLAY_VERTICAL_MARGIN_ROWS = 1;
 
 /**
  * Animation tick period. Overlay re-renders fire on this cadence so
@@ -360,6 +362,26 @@ export class GraphView implements Component {
     return Math.max(1, lineCount - 3 /* header */ - 3 /* statusline */);
   }
 
+  private _overlayPanelLineCount(): number {
+    const margins = OVERLAY_VERTICAL_MARGIN_ROWS * 2;
+    return Math.max(7, this._overlayLineCount() - margins);
+  }
+
+  private _marginRow(width: number): string {
+    return " ".repeat(width);
+  }
+
+  private _withVerticalMargins(panelLines: string[], width: number): string[] {
+    const expected = this._overlayLineCount();
+    const panelTarget = this._overlayPanelLineCount();
+    const body = panelLines.slice(0, panelTarget);
+    while (body.length < panelTarget) body.push(this._blankRow(width));
+    const lines = [this._marginRow(width), ...body, this._marginRow(width)];
+    if (lines.length > expected) return lines.slice(0, expected);
+    while (lines.length < expected) lines.splice(lines.length - 1, 0, this._blankRow(width));
+    return lines;
+  }
+
   private _renderOverlay(width: number): string[] {
     const frameWidth = Math.max(40, width);
     const lines: string[] = [];
@@ -377,7 +399,7 @@ export class GraphView implements Component {
     // 2. Graph occupies the full body. No section labels, no focused-
     //    stage panel — status colour on each card carries that signal.
     const graphLines = this._renderGraph(frameWidth);
-    const bodyTarget = this._overlayBodyRows(this._overlayLineCount());
+    const bodyTarget = this._overlayBodyRows(this._overlayPanelLineCount());
     const visibleGraph = this._visibleGraphLines(
       graphLines,
       frameWidth,
@@ -453,7 +475,7 @@ export class GraphView implements Component {
     // 5. Three-row statusline pinned to the bottom.
     lines.push(...this._renderStatusline(frameWidth));
 
-    return lines;
+    return this._withVerticalMargins(lines, frameWidth);
   }
 
   private _renderEmptyState(width: number): string[] {
@@ -477,7 +499,7 @@ export class GraphView implements Component {
       `${chromeBg} ${RESET}${mid}${chromeBg}${idleLabel}${filler}${" ".repeat(2)}${RESET}`,
       `${chromeBg} ${RESET}${bot}${chromeBg}${" ".repeat(6 + fillerVisible)}${" ".repeat(2)}${RESET}`,
     ];
-    const bodyTarget = this._overlayBodyRows(this._overlayLineCount());
+    const bodyTarget = this._overlayBodyRows(this._overlayPanelLineCount());
     const body: string[] = [
       this._canvasRow(`  ${muted}No active workflow run.${RESET}`, width),
       this._canvasRow(
@@ -490,7 +512,7 @@ export class GraphView implements Component {
     for (const l of body) lines.push(l);
     while (lines.length < 3 + bodyTarget) lines.push(this._blankRow(width));
     lines.push(...this._renderStatusline(width));
-    return lines;
+    return this._withVerticalMargins(lines, width);
   }
 
   private _renderGraph(width: number): string[] {

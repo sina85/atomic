@@ -265,6 +265,9 @@ export interface ExtensionUIContext {
 	/** Get the currently configured custom editor factory, or undefined when using the default editor. */
 	getEditorComponent(): EditorFactory | undefined;
 
+	/** Get the built-in footer data provider so embedded extension UIs can reuse the core footer. */
+	getFooterDataProvider(): ReadonlyFooterDataProvider;
+
 	/** Get the current theme for styling. */
 	readonly theme: Theme;
 

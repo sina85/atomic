@@ -276,6 +276,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			return undefined;
 		},
 
+		getFooterDataProvider() {
+			return {
+				getGitBranch: () => null,
+				getExtensionStatuses: () => new Map(),
+				getAvailableProviderCount: () => 1,
+				onBranchChange: () => () => {},
+			};
+		},
+
 		get theme() {
 			return theme;
 		},

@@ -2425,6 +2425,7 @@ export class InteractiveMode {
       },
       setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
       getEditorComponent: () => this.editorComponentFactory,
+      getFooterDataProvider: () => this.footerDataProvider,
       get theme() {
         return theme;
       },

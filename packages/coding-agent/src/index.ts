@@ -343,6 +343,7 @@ export {
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
 	FooterComponent,
+	UsageMeterComponent,
 	keyHint,
 	keyText,
 	LoginDialogComponent,

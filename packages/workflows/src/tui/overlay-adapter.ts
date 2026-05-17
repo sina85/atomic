@@ -16,7 +16,7 @@
  */
 
 import type { Store } from "../shared/store.js";
-import type { ChatMessageRenderOptions } from "@bastani/atomic";
+import type { ChatMessageRenderOptions, ReadonlyFooterDataProvider } from "@bastani/atomic";
 import { WorkflowAttachPane } from "./workflow-attach-pane.js";
 import { deriveGraphThemeFromPiTheme } from "./graph-theme.js";
 import { killRun } from "../runs/background/status.js";
@@ -41,6 +41,7 @@ export interface OverlayUISurface {
   custom?: PiCustomOverlayFunction;
   getEditorComponent?: () => PiEditorFactory | undefined;
   getChatRenderSettings?: () => OverlayChatRenderSettings | undefined;
+  getFooterDataProvider?: () => ReadonlyFooterDataProvider;
 }
 
 export interface OverlayPiSurface {
@@ -239,6 +240,7 @@ export function buildGraphOverlayAdapter(
         piKeybindings: keybindings,
         piEditorFactory: ui?.getEditorComponent?.(),
         getChatRenderSettings: ui?.getChatRenderSettings,
+        footerData: ui?.getFooterDataProvider?.(),
         // Pi-tui owns terminal dimensions; thread its row count down
         // so the overlay frame fills the actual viewport rather than
         // a hard-coded 32-row rectangle. Returning `undefined` keeps

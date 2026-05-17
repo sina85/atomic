@@ -1301,7 +1301,7 @@ function factory(pi: ExtensionAPI): void {
       }
       overlay.open(resolved.runId, overlaySurfaceFromContext(ctx));
       print(
-        `Attached to ${resolved.runId.slice(0, 8)}. Press "h" or ctrl+d to hide, "q" to interrupt, esc to close.`,
+        `Attached to ${resolved.runId.slice(0, 8)}. H/CTRL+D Hide · Q Interrupt · Escape Close.`,
       );
       return true;
     }
@@ -1443,8 +1443,8 @@ function factory(pi: ExtensionAPI): void {
       overlay.open(runId, overlaySurfaceFromContext(ctx), stageId);
       print(
         stageId
-          ? `Attached to ${runId.slice(0, 8)} stage ${stageId.slice(0, 8)}. Ctrl+D returns to graph, Escape closes.`
-          : `Attached to ${runId.slice(0, 8)}. Press ↵ on a node to chat, Ctrl+D to detach.`,
+          ? `Attached to ${runId.slice(0, 8)} stage ${stageId.slice(0, 8)}. CTRL+D Return To Graph · Escape Close.`
+          : `Attached to ${runId.slice(0, 8)}. ↵ Chat · CTRL+D Detach.`,
       );
       return true;
     }

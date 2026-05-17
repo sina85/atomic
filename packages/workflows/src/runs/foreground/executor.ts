@@ -1194,6 +1194,9 @@ export async function run(
         get messages() {
           return innerCtx.messages;
         },
+        get agentSession() {
+          return innerCtx.__agentSession();
+        },
         async ensureAttached() {
           await innerCtx.__ensureSession();
           const meta = innerCtx.__sessionMeta();
@@ -1215,13 +1218,22 @@ export async function run(
           await innerCtx.followUp(text);
         },
         async pause() {
+          const statusBeforePause = stageSnapshot.status;
           const changed = activeStore.recordStagePaused(runId, stageId);
-          if (changed) await cascadePauseFrom(stageId);
-          await innerCtx.__requestPause();
+          if (changed) {
+            ensureReleaseBarrier(stageId);
+            await cascadePauseFrom(stageId);
+          }
+          if (statusBeforePause === "running" && innerCtx.isStreaming) {
+            await innerCtx.__requestPause();
+          }
         },
         async resume(message?: string) {
           const changed = activeStore.recordStageResumed(runId, stageId);
-          if (changed) cascadeResumeFrom(stageId);
+          if (changed) {
+            releaseStageBarrier(stageId);
+            cascadeResumeFrom(stageId);
+          }
           await innerCtx.__resume(message);
         },
         subscribe(listener: AgentSessionEventListener) {
@@ -1239,9 +1251,10 @@ export async function run(
       }
 
 
-      const runTrackedStageCall = async (call: () => Promise<string>): Promise<string> => {
-        const barrier = releaseBarriers.get(stageId);
-        if (barrier) {
+      const waitForStageRelease = async (): Promise<void> => {
+        while (true) {
+          const barrier = releaseBarriers.get(stageId);
+          if (!barrier) return;
           try {
             await barrier.promise;
           } catch (err) {
@@ -1251,9 +1264,20 @@ export async function run(
             throw err;
           }
         }
+      };
+
+      const runTrackedStageCall = async (call: () => Promise<string>): Promise<string> => {
+        await waitForStageRelease();
 
         // Block here until a concurrency slot is available for this run.
         await limiter.acquire();
+
+        try {
+          await waitForStageRelease();
+        } catch (err) {
+          limiter.release();
+          throw err;
+        }
 
         stageSnapshot.status = "running";
         stageSnapshot.startedAt = Date.now();

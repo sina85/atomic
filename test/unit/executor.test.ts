@@ -1618,8 +1618,23 @@ describe("executor.run — concurrency limiter", () => {
 // Stage-control registry + controlled pause integration
 // ---------------------------------------------------------------------------
 
+import { createCancellationRegistry } from "../../packages/workflows/src/runs/background/cancellation-registry.js";
+import { killRun, pauseRun, resumeRun } from "../../packages/workflows/src/runs/background/status.js";
 import { createStageControlRegistry } from "../../packages/workflows/src/runs/foreground/stage-control-registry.js";
 import type { StageSessionRuntime } from "../../packages/workflows/src/runs/foreground/stage-runner.js";
+
+function deferred<T = void>(): PromiseWithResolvers<T> {
+  return Promise.withResolvers<T>();
+}
+
+async function waitForMicrotasks(): Promise<void> {
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+  await new Promise<void>((resolve) => queueMicrotask(resolve));
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function mockSession(): StageSessionRuntime {
   const listeners = new Set<(e: { type: string; [k: string]: unknown }) => void>();
@@ -1691,6 +1706,103 @@ describe("executor — stage-control registry integration", () => {
     });
     void observedHandleCount;
     assert.equal(stageStartHandleCount, 1);
+  });
+
+  test("pausing a pending stage before prompt prevents adapter work until resume", async () => {
+    const registry = createStageControlRegistry();
+    const store = createStore();
+    const releasePrompt = deferred();
+    const sawStage = deferred<{ runId: string; stageId: string }>();
+    let sawStageResolved = false;
+    const promptCalls: string[] = [];
+    const def = defineWorkflow("pending-pause-wf")
+      .run(async (ctx) => {
+        const stage = ctx.stage("pending-before-prompt");
+        await releasePrompt.promise;
+        const text = await stage.prompt("go");
+        return { text };
+      })
+      .compile();
+
+    const runPromise = run(def, {}, {
+      adapters: {
+        prompt: {
+          async prompt(text) {
+            promptCalls.push(text);
+            return `done:${text}`;
+          },
+        },
+      },
+      store,
+      stageControlRegistry: registry,
+      onStageStart: (runId, stage) => {
+        if (stage.name !== "pending-before-prompt" || stage.startedAt !== undefined || sawStageResolved) return;
+        sawStageResolved = true;
+        sawStage.resolve({ runId, stageId: stage.id });
+      },
+    });
+
+    const { runId, stageId } = await sawStage.promise;
+    const pauseResult = pauseRun(runId, { store, stageControlRegistry: registry, stageId });
+    assert.equal(pauseResult.ok, true);
+    await waitForMicrotasks();
+    assert.equal(store.runs()[0]?.stages[0]?.status, "paused");
+
+    releasePrompt.resolve();
+    await sleep(20);
+    assert.deepEqual(promptCalls, []);
+    assert.equal(store.runs()[0]?.stages[0]?.status, "paused");
+    assert.equal(store.runs()[0]?.endedAt, undefined);
+
+    const resumeResult = resumeRun(runId, { store, stageControlRegistry: registry });
+    assert.equal(resumeResult.ok, true);
+    const result = await runPromise;
+    assert.equal(result.status, "completed");
+    assert.deepEqual(promptCalls, ["go"]);
+  });
+
+  test("killing a pending paused stage finalizes the run as killed without a pause-abort failure", async () => {
+    const registry = createStageControlRegistry();
+    const cancellation = createCancellationRegistry();
+    const store = createStore();
+    const releasePrompt = deferred();
+    const sawStage = deferred<{ runId: string; stageId: string }>();
+    let sawStageResolved = false;
+    const def = defineWorkflow("pending-pause-kill-wf")
+      .run(async (ctx) => {
+        const stage = ctx.stage("pending-before-kill");
+        await releasePrompt.promise;
+        await stage.prompt("go");
+        return { ok: true };
+      })
+      .compile();
+
+    const runPromise = run(def, {}, {
+      adapters: {
+        prompt: { prompt: async (text) => `done:${text}` },
+      },
+      store,
+      cancellation,
+      stageControlRegistry: registry,
+      onStageStart: (runId, stage) => {
+        if (stage.name !== "pending-before-kill" || stage.startedAt !== undefined || sawStageResolved) return;
+        sawStageResolved = true;
+        sawStage.resolve({ runId, stageId: stage.id });
+      },
+    });
+
+    const { runId, stageId } = await sawStage.promise;
+    assert.equal(pauseRun(runId, { store, stageControlRegistry: registry, stageId }).ok, true);
+    await waitForMicrotasks();
+    releasePrompt.resolve();
+    await waitForMicrotasks();
+    const killResult = killRun(runId, { store, cancellation });
+    assert.equal(killResult.ok, true);
+
+    const result = await runPromise;
+    assert.equal(result.status, "killed");
+    assert.equal(result.error, "workflow killed");
+    assert.notEqual(store.runs()[0]?.error, 'pi-workflows: stage "pending-before-kill" aborted while paused');
   });
 
   test("session metadata lands in stage snapshot after lazy attach", async () => {
