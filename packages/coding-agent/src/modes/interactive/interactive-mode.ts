@@ -9,6 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
+  type Api,
   type AssistantMessage,
   getProviders,
   type ImageContent,
@@ -250,7 +251,7 @@ function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
   return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
 }
 
-function isUnknownModel(model: Model<any> | undefined): boolean {
+function isUnknownModel(model: Model<Api> | undefined): boolean {
   return (
     !!model &&
     model.provider === "unknown" &&
@@ -940,7 +941,7 @@ export class InteractiveMode {
     if (extendedKeys === undefined) return undefined;
 
     if (extendedKeys !== "on" && extendedKeys !== "always") {
-      return "tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
+      return "tmux extended-keys is off. Modified enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
     }
 
     if (extendedKeysFormat === "xterm") {
@@ -3102,7 +3103,7 @@ export class InteractiveMode {
         if (command) {
           if (this.session.isBashRunning) {
             this.showWarning(
-              "A bash command is already running. Escape Cancel first.",
+              "A bash command is already running. esc cancel first.",
             );
             this.editor.setText(text);
             return;
@@ -4631,12 +4632,12 @@ export class InteractiveMode {
 
   private async findExactModelMatch(
     searchTerm: string,
-  ): Promise<Model<any> | undefined> {
+  ): Promise<Model<Api> | undefined> {
     const models = await this.getModelCandidates();
     return findExactModelReferenceMatch(searchTerm, models);
   }
 
-  private async getModelCandidates(): Promise<Model<any>[]> {
+  private async getModelCandidates(): Promise<Model<Api>[]> {
     if (this.session.scopedModels.length > 0) {
       return this.session.scopedModels.map((scoped) => scoped.model);
     }
@@ -4657,7 +4658,7 @@ export class InteractiveMode {
   }
 
   private async maybeWarnAboutAnthropicSubscriptionAuth(
-    model: Model<any> | undefined = this.session.model,
+    model: Model<Api> | undefined = this.session.model,
   ): Promise<void> {
     if (this.settingsManager.getWarnings().anthropicExtraUsage === false) {
       return;
@@ -5277,7 +5278,7 @@ export class InteractiveMode {
     providerId: string,
     providerName: string,
     authType: "oauth" | "api_key",
-    previousModel: Model<any> | undefined,
+    previousModel: Model<Api> | undefined,
   ): Promise<void> {
     this.session.modelRegistry.refresh();
 
@@ -5286,7 +5287,7 @@ export class InteractiveMode {
         ? `Logged in to ${providerName}`
         : `Saved API key for ${providerName}`;
 
-    let selectedModel: Model<any> | undefined;
+    let selectedModel: Model<Api> | undefined;
     let selectionError: string | undefined;
     if (isUnknownModel(previousModel)) {
       const availableModels = this.session.modelRegistry.getAvailable();
@@ -6086,7 +6087,7 @@ export class InteractiveMode {
 | Key | Action |
 |-----|--------|
 | \`${submit}\` | Send message |
-| \`${newLine}\` | New line${process.platform === "win32" ? " (CTRL+Enter On Windows Terminal)" : ""} |
+| \`${newLine}\` | New line${process.platform === "win32" ? " (ctrl+enter on Windows Terminal)" : ""} |
 | \`${deleteWordBackward}\` | Delete word backwards |
 | \`${deleteWordForward}\` | Delete word forwards |
 | \`${deleteToLineStart}\` | Delete to start of line |
