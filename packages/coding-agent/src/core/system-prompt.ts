@@ -5,6 +5,15 @@
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
+export interface SystemPromptModel {
+  /** Provider identifier for the selected model. */
+  provider: string;
+  /** Stable provider-specific model identifier. */
+  id: string;
+  /** Human-readable model name, when available. */
+  name?: string;
+}
+
 export interface BuildSystemPromptOptions {
   /** Custom system prompt (replaces default). */
   customPrompt?: string;
@@ -18,6 +27,8 @@ export interface BuildSystemPromptOptions {
   appendSystemPrompt?: string;
   /** Working directory. */
   cwd: string;
+  /** Currently selected model, used for model-aware prompt metadata. */
+  selectedModel?: SystemPromptModel;
   /** Pre-loaded context files. */
   contextFiles?: Array<{ path: string; content: string }>;
   /** Pre-loaded skills. */
@@ -33,6 +44,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     promptGuidelines,
     appendSystemPrompt,
     cwd,
+    selectedModel,
     contextFiles: providedContextFiles,
     skills: providedSkills,
   } = options;
@@ -46,6 +58,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const date = `${year}-${month}-${day}`;
 
   const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
+  const modelName = selectedModel?.name?.trim() || selectedModel?.id || "unknown";
 
   const contextFiles = providedContextFiles ?? [];
   const skills = providedSkills ?? [];
@@ -73,7 +86,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
       prompt += formatSkillsForPrompt(skills);
     }
 
-    // Add date and working directory last
+    // Add model name, date, and working directory last
+    prompt += `\nModel name (used for commit attribution): ${modelName}`;
     prompt += `\nCurrent date: ${date}`;
     prompt += `\nCurrent working directory: ${promptCwd}`;
 
@@ -197,7 +211,7 @@ Software engineering is fundamentally about **managing complexity** to prevent t
 Create **seams** in your software using interfaces and abstractions. This ensures code remains flexible, testable, and capable of evolving independently.
 </engineering_principles>`;
 
-  let prompt = `You are an expert coding assistant operating inside Atomic (users may also call you Pi), a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+  let prompt = `You are an expert coding assistant operating named Atomic (users may also refer to you as Pi), a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}
@@ -237,7 +251,8 @@ Atomic (users may also call you Pi) documentation (read only when the user asks 
     prompt += formatSkillsForPrompt(skills);
   }
 
-  // Add date and working directory last
+  // Add model name, date, and working directory last
+  prompt += `\nModel name (used for commit attribution): ${modelName}`;
   prompt += `\nCurrent date: ${date}`;
   prompt += `\nCurrent working directory: ${promptCwd}`;
 
