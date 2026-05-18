@@ -371,7 +371,7 @@ describe("buildGraphOverlayAdapter — open with pi.ui.custom", () => {
     assert.match(visibleText(component.render(96)), /stage-5/);
   });
 
-  test("mock pi switcher render preserves graph cells outside the panel", () => {
+  test("mock pi switcher render hides graph cells behind the panel", () => {
     const { ui, calls } = buildMockUi({ rows: 32 });
     const store = createStore();
     const runId = "switcher-run";
@@ -384,13 +384,13 @@ describe("buildGraphOverlayAdapter — open with pi.ui.custom", () => {
     assert.match(visibleText(component.render(200)), /╭──── branch-right/);
     component.handleInput?.("/");
     const withSwitcher = visibleText(component.render(200));
-    assert.match(withSwitcher, /stages/);
-    assert.match(withSwitcher, /^│ ○ root\s+│/m);
+    assert.match(withSwitcher, /STAGES/);
+    assert.match(withSwitcher, /│\s+○ root\s+pending\s+│/);
     assert.doesNotMatch(withSwitcher, /^│ ▸/m);
-    assert.match(withSwitcher, /╭──── branch-right/);
+    assert.doesNotMatch(withSwitcher, /╭──── branch-right/);
   });
 
-  test("mock pi switcher render keeps node-card graph for long workflows", () => {
+  test("mock pi switcher render hides node-card graph for long workflows", () => {
     const { ui, calls } = buildMockUi({ rows: 40 });
     const store = createStore();
     const runId = "long-switcher-run";
@@ -402,8 +402,9 @@ describe("buildGraphOverlayAdapter — open with pi.ui.custom", () => {
     const component = calls[0]!.component;
     component.handleInput?.("/");
     const withSwitcher = visibleText(component.render(160));
-    assert.match(withSwitcher, /stages/);
-    assert.match(withSwitcher, /╭.*stage-0/);
+    assert.match(withSwitcher, /STAGES/);
+    assert.match(withSwitcher, /│\s+○ stage-0\s+pending\s+│/);
+    assert.doesNotMatch(withSwitcher, /╭.*stage-0/);
     assert.doesNotMatch(withSwitcher, /^\s*○ stage-0\s+pending/m);
   });
 
