@@ -100,10 +100,20 @@ export const WorkflowParametersSchema = Type.Object({
     Type.Literal("inputs"),
     Type.Literal("status"),
     Type.Literal("interrupt"),
+    Type.Literal("kill"),
     Type.Literal("resume"),
   ])),
   runId: Type.Optional(Type.String({
-    description: "Run identifier for status/interrupt/resume.",
+    description: "Run identifier or unique prefix for status/interrupt/kill/resume. Use '--all' for interrupt/kill all.",
+  })),
+  all: Type.Optional(Type.Boolean({
+    description: "Apply supported run-control actions (interrupt/kill) to all in-flight runs.",
+  })),
+  stageId: Type.Optional(Type.String({
+    description: "Stage id, unique prefix, or stage name for stage-scoped resume.",
+  })),
+  message: Type.Optional(Type.String({
+    description: "Optional message forwarded when resuming paused work.",
   })),
   task: Type.Optional(Type.Union([
     DirectTaskSchema,

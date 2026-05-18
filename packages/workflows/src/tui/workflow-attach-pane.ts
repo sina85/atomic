@@ -253,6 +253,27 @@ export class WorkflowAttachPane implements Component {
     this._syncMouseScrollTracking();
   }
 
+  retarget(runId: string | null, stageId?: string): void {
+    if (this.chatView && this.runId && this.lastAttachedStageId) {
+      this.store.recordStageAttached(this.runId, this.lastAttachedStageId, false);
+    }
+    this.chatView?.dispose();
+    this.chatView = null;
+    this.graphView.dispose();
+    this.runId = runId;
+    this.lastAttachedStageId = null;
+    this.mode = "graph";
+    this.graphView = this._buildGraphView();
+
+    if (stageId !== undefined && runId) {
+      this._attachToStage(runId, stageId);
+      return;
+    }
+
+    this._setBaseStatus();
+    this._syncMouseScrollTracking();
+  }
+
   private _setBaseStatus(): void {
     const runId = this._resolveRunId();
     const name = runId ? `pi-workflows/${this._workflowName(runId)}` : "pi-workflows";
@@ -295,6 +316,9 @@ export class WorkflowAttachPane implements Component {
   }
 
   dispose(): void {
+    if (this.chatView && this.runId && this.lastAttachedStageId) {
+      this.store.recordStageAttached(this.runId, this.lastAttachedStageId, false);
+    }
     this.chatView?.dispose();
     this.chatView = null;
     this.graphView.dispose();
@@ -315,5 +339,8 @@ export class WorkflowAttachPane implements Component {
   }
   get _hasChatView(): boolean {
     return this.chatView !== null;
+  }
+  get _runId(): string | null {
+    return this.runId;
   }
 }

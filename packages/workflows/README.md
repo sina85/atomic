@@ -189,7 +189,8 @@ registry.get("alpha"); // compiled workflow definition | undefined
 | `/workflow connect [run-id]`          | Attach to a workflow run overlay                         |
 | `/workflow attach [run-id] [stage]`   | Open the attach/chat pane for a run or stage             |
 | `/workflow pause [run-id] [stage]`    | Pause a live run or stage                                |
-| `/workflow interrupt [run-id\|--all]` | Stop the active run, a named run, or all active runs     |
+| `/workflow interrupt [run-id\|--all]` | Pause active/named/all active runs so they can resume    |
+| `/workflow kill [run-id\|--all]`      | Kill and remove active/named/all active runs from status |
 | `/workflow resume <run-id>`           | Resume paused work or re-open a run snapshot             |
 | `/workflow inputs <name>`             | Print the input schema for a workflow                    |
 
@@ -206,7 +207,11 @@ Workflows always run as **background tasks** — the chat editor stays free whil
   "parameters": {
     "workflow": "string (optional) — workflow ID or normalized name",
     "inputs": "object (optional) — key/value map of workflow inputs",
-    "action": "'run' | 'list' | 'get' | 'inputs' | 'status' | 'interrupt' | 'resume'",
+    "action": "'run' | 'list' | 'get' | 'inputs' | 'status' | 'interrupt' | 'kill' | 'resume'",
+    "runId": "optional run id or unique prefix; interrupt/kill default to the active run; use '--all' or all:true for interrupt/kill all",
+    "stageId": "optional stage id, prefix, or name for resume",
+    "message": "optional resume message",
+    "all": "optional boolean for interrupt/kill all",
     "task/tasks/chain": "optional direct workflow-native orchestration modes"
   }
 }

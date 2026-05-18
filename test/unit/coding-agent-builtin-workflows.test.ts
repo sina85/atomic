@@ -39,7 +39,7 @@ describe("coding-agent builtin resources", () => {
     );
     writeFileSync(
       join(workflowsDir, "custom.ts"),
-      "export default { __piWorkflow: true, name: 'Custom', normalizedName: 'custom', inputs: {}, run: async () => ({}) };\n",
+      "export default { __piWorkflow: true, name: 'Custom', normalizedName: 'custom', inputs: {}, run: async (ctx) => { await ctx.task('validation-smoke', { prompt: 'validation smoke' }); return {}; } };\n",
       "utf-8",
     );
     writeFileSync(

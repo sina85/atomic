@@ -293,7 +293,7 @@ function writeWorkflowJs(
       `  normalizedName: "${normalizedName}",`,
       `  description: "${name} description",`,
       `  inputs: {},`,
-      `  run: async () => ({}),`,
+      `  run: async (ctx) => { await ctx.task("validation-smoke", { prompt: "validation smoke" }); return {}; },`,
       `};`,
     ].join("\n"),
     "utf-8",
@@ -305,6 +305,26 @@ function writeWorkflowJs(
 function writeInvalidWorkflowJs(dir: string, filename: string): string {
   const filePath = join(dir, filename);
   writeFileSync(filePath, `export default null;\n`, "utf-8");
+  return filePath;
+}
+
+/** Write an otherwise valid workflow file whose run body creates no stages. */
+function writeNoStageWorkflowJs(dir: string, filename: string): string {
+  const filePath = join(dir, filename);
+  writeFileSync(
+    filePath,
+    [
+      `export default {`,
+      `  __piWorkflow: true,`,
+      `  name: "No Stage Workflow",`,
+      `  normalizedName: "no-stage-workflow",`,
+      `  description: "Should be rejected because it has no workflow stages",`,
+      `  inputs: {},`,
+      `  run: async () => ({ ok: true }),`,
+      `};`,
+    ].join("\n"),
+    "utf-8",
+  );
   return filePath;
 }
 
@@ -609,6 +629,21 @@ describe("discoverWorkflows — INVALID_DEFINITION diagnostics", () => {
 
     const { registry } = await discoverWorkflows({ cwd, homeDir: makeTempDir("empty3"), includeBundled: false });
     assert.equal(registry.names().length, 0);
+  });
+
+  test("workflow with no stage-producing primitive is rejected and not registered", async () => {
+    const cwd = makeTempDir("invalid-no-stages");
+    const wfDir = join(cwd, ".atomic", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const fp = writeNoStageWorkflowJs(wfDir, "no-stage.js");
+
+    const { registry, errors } = await discoverWorkflows({ cwd, homeDir: makeTempDir("empty-no-stages"), includeBundled: false });
+
+    assert.equal(registry.has("no-stage-workflow"), false);
+    const inv = errors.filter((e) => e.code === "INVALID_DEFINITION");
+    assert.equal(inv.length, 1);
+    assert.equal(inv[0]!.source, fp);
+    assert.match(inv[0]!.message, /must create at least one workflow stage/i);
   });
 
   test("PATH_NOT_FOUND for configured path that does not exist", async () => {
