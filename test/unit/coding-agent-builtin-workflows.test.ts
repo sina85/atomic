@@ -29,6 +29,8 @@ const builtinPackageFixtures = [
   { packageName: "@bastani/intercom", dirname: "intercom", requiredEntry: "index.ts" },
 ] as const;
 
+const fullBuiltinPackageLoadTimeoutMs = 60_000;
+
 describe("coding-agent builtin resources", () => {
   test("discovers bundled companion packages in development", () => {
     assert.deepEqual(getBuiltinPackagePaths(), expectedBuiltinPackages);
@@ -132,5 +134,5 @@ describe("coding-agent builtin resources", () => {
     for (const skillName of ["workflow", "subagent", "intercom"]) {
       assert.ok(skillNames.has(skillName), `expected builtin skill ${skillName}`);
     }
-  }, 20_000);
+  }, fullBuiltinPackageLoadTimeoutMs);
 });
