@@ -391,26 +391,30 @@ describe("StageChatView", () => {
     view.dispose();
   });
 
-  test("ctrl+f sends a follow-up", async () => {
-    const store = createStore();
-    setupRun(store, "run-1", "stage-a");
-    const { handle, state } = makeHandle();
-    const view = new StageChatView({
-      store,
-      graphTheme: deriveGraphTheme({}),
-      runId: "run-1",
-      stageId: "stage-a",
-      workflowName: "test-wf",
-      handle,
-      onDetach: () => {},
-      onClose: () => {},
-    });
-    for (const ch of "afterwards") view.handleInput(ch);
-    view.handleInput("\x06");
-    await flush();
-    await flush();
-    assert.deepEqual(state.followUpCalls, ["afterwards"]);
-    view.dispose();
+  test("ctrl+f variants send a follow-up", async () => {
+    const ctrlFVariants = ["\x06", "\x1b[102;5u", "\x1b[102;5:1u", "\x1b[27;5;102~"];
+
+    for (const key of ctrlFVariants) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a");
+      const { handle, state } = makeHandle();
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {},
+        onClose: () => {},
+      });
+      for (const ch of "afterwards") view.handleInput(ch);
+      view.handleInput(key);
+      await flush();
+      await flush();
+      assert.deepEqual(state.followUpCalls, ["afterwards"], JSON.stringify(key));
+      view.dispose();
+    }
   });
 
   test("Escape interrupts a pending streaming stage without replacing the chat UI", async () => {
@@ -742,7 +746,7 @@ describe("StageChatView", () => {
     }
   });
 
-  test("Escape variants on settled stages and Ctrl+C call onClose", () => {
+  test("Escape variants and Ctrl+C variants on settled stages call onClose", () => {
     const store = createStore();
     setupRun(store, "run-1", "stage-a", "completed");
     let closed = 0;
@@ -757,10 +761,19 @@ describe("StageChatView", () => {
         closed += 1;
       },
     });
-    for (const key of ["\x1b", "\x1b[27u", "\x1b[27;1;27~", "\x03"]) {
+    const closeKeys = [
+      "\x1b",
+      "\x1b[27u",
+      "\x1b[27;1;27~",
+      "\x03",
+      "\x1b[99;5u",
+      "\x1b[99;5:1u",
+      "\x1b[27;5;99~",
+    ];
+    for (const key of closeKeys) {
       view.handleInput(key);
     }
-    assert.equal(closed, 4);
+    assert.equal(closed, closeKeys.length);
     view.dispose();
   });
 

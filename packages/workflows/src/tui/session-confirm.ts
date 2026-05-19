@@ -24,7 +24,7 @@ import { elapsedRunMs } from "../shared/timing.js";
 import type { GraphTheme } from "./graph-theme.js";
 import { fmtDuration } from "./status-helpers.js";
 import { hexToAnsi, hexBg, RESET, BOLD } from "./color-utils.js";
-import { truncateToWidth, visibleWidth } from "./text-helpers.js";
+import { matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
 
 export interface KillConfirmState {
   /** 0 = Cancel (focused by default), 1 = Kill. */
@@ -194,14 +194,14 @@ export function handleKillConfirmInput(
   // Direct shortcuts bypass focus.
   if (data === "y" || data === "Y") return { kind: "confirm" };
   if (data === "n" || data === "N") return { kind: "cancel" };
-  if (data === "\x1b") return { kind: "cancel" };
+  if (matchesKey(data, "escape")) return { kind: "cancel" };
 
   // Tab / arrows toggle focus.
-  if (data === "\t" || data === "\x1b[C" || data === "\x1b[D" || data === "h" || data === "l") {
+  if (matchesKey(data, "tab") || matchesKey(data, "right") || matchesKey(data, "left") || data === "h" || data === "l") {
     state.focusedButton = state.focusedButton === 0 ? 1 : 0;
     return { kind: "noop" };
   }
-  if (data === "\r" || data === "\n") {
+  if (matchesKey(data, "enter")) {
     return state.focusedButton === 1 ? { kind: "confirm" } : { kind: "cancel" };
   }
   return { kind: "noop" };

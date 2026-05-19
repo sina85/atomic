@@ -24,7 +24,7 @@ import type { GraphTheme } from "./graph-theme.js";
 import { keyText } from "@bastani/atomic";
 import { fmtDuration, statusIcon, statusColor } from "./status-helpers.js";
 import { hexToAnsi, hexBg, RESET, BOLD } from "./color-utils.js";
-import { truncateToWidth, visibleWidth } from "./text-helpers.js";
+import { matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
 
 // ---------------------------------------------------------------------------
 // State + filtering
@@ -342,15 +342,15 @@ export function handleSessionPickerInput(
 ): SessionPickerAction {
   // Filter mode — typed chars feed the query, Enter/Esc exit.
   if (state.filterFocused) {
-    if (data === "\x1b" || data === "\x1b\x1b") {
+    if (matchesKey(data, "escape") || data === "\x1b\x1b") {
       state.filterFocused = false;
       return { kind: "noop" };
     }
-    if (data === "\r" || data === "\n") {
+    if (matchesKey(data, "enter")) {
       state.filterFocused = false;
       return { kind: "noop" };
     }
-    if (data === "\x7f" || data === "\b") {
+    if (matchesKey(data, "backspace")) {
       state.query = state.query.slice(0, -1);
       state.selectedIndex = 0;
       return { kind: "noop" };
@@ -368,7 +368,7 @@ export function handleSessionPickerInput(
     state.filterFocused = true;
     return { kind: "noop" };
   }
-  if (data === "\x1b") return { kind: "close" };
+  if (matchesKey(data, "escape")) return { kind: "close" };
   if (data === "q" || data === "Q") return { kind: "close" };
   if (data === "a" || data === "A") {
     state.includeAll = !state.includeAll;
@@ -377,17 +377,17 @@ export function handleSessionPickerInput(
   }
 
   // Arrows + j/k.
-  if (data === "\x1b[B" || data === "j") {
+  if (matchesKey(data, "down") || data === "j") {
     state.selectedIndex = Math.min(state.selectedIndex + 1, Math.max(0, rows.length - 1));
     return { kind: "noop" };
   }
-  if (data === "\x1b[A" || data === "k") {
+  if (matchesKey(data, "up") || data === "k") {
     if (rows.length > 0 && state.selectedIndex === 0) return { kind: "noop" };
     state.selectedIndex = Math.max(state.selectedIndex - 1, 0);
     return { kind: "noop" };
   }
 
-  if (data === "\r" || data === "\n") {
+  if (matchesKey(data, "enter")) {
     const row = rows[state.selectedIndex];
     if (!row) return { kind: "noop" };
     return { kind: "connect", runId: row.run.id };

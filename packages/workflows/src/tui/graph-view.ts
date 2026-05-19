@@ -1050,13 +1050,13 @@ export class GraphView implements Component {
     // Vertical-graph navigation: up/down step between depth levels
     // (col), left/right step between siblings at the same depth (row).
     // j/k preserved as a flat-order fallback for muscle memory.
-    if (matchesKey(data, "down") || data === "\x1b[B")
+    if (matchesKey(data, "down"))
       return this._moveByDepth(+1);
-    if (matchesKey(data, "up") || data === "\x1b[A")
+    if (matchesKey(data, "up"))
       return this._moveByDepth(-1);
-    if (matchesKey(data, "right") || data === "\x1b[C")
+    if (matchesKey(data, "right"))
       return this._moveBySibling(+1);
-    if (matchesKey(data, "left") || data === "\x1b[D")
+    if (matchesKey(data, "left"))
       return this._moveBySibling(-1);
     if (matchesKey(data, "j")) {
       this._setFocusedIndex(Math.min(this.focusedIndex + 1, stageCount - 1));
@@ -1081,7 +1081,7 @@ export class GraphView implements Component {
       this.switcherState = { query: "", selectedIndex: 0 };
       return true;
     }
-    if (matchesKey(data, "enter") || data === "\r" || data === "\n") {
+    if (matchesKey(data, "enter")) {
       // Enter attaches the popup interior to the focused stage. The
       // attach shell swaps in the stage-chat view without remounting
       // the overlay; without a callback, fall back to the legacy
@@ -1114,7 +1114,7 @@ export class GraphView implements Component {
       this.onHide();
       return true;
     }
-    if (matchesKey(data, "escape") || data === "\x1b" || data === "\x03") {
+    if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
       this.onClose?.();
       return true;
     }
@@ -1125,11 +1125,11 @@ export class GraphView implements Component {
     const run = this._getCurrentRun();
     const stages = run?.stages ?? [];
 
-    if (matchesKey(data, "escape") || data === "\x1b") {
+    if (matchesKey(data, "escape")) {
       this.switcherOpen = false;
       return true;
     }
-    if (matchesKey(data, "enter") || data === "\r" || data === "\n") {
+    if (matchesKey(data, "enter")) {
       const filtered = filterStages(stages, this.switcherState.query);
       const selected = filtered[this.switcherState.selectedIndex];
       if (selected) {
@@ -1148,7 +1148,7 @@ export class GraphView implements Component {
       this.switcherOpen = false;
       return true;
     }
-    if (matchesKey(data, "down") || data === "\x1b[B") {
+    if (matchesKey(data, "down")) {
       const filtered = filterStages(stages, this.switcherState.query);
       this.switcherState = {
         ...this.switcherState,
@@ -1159,14 +1159,14 @@ export class GraphView implements Component {
       };
       return true;
     }
-    if (matchesKey(data, "up") || data === "\x1b[A") {
+    if (matchesKey(data, "up")) {
       this.switcherState = {
         ...this.switcherState,
         selectedIndex: Math.max(this.switcherState.selectedIndex - 1, 0),
       };
       return true;
     }
-    if (data === "\x7f" || data === "\b") {
+    if (matchesKey(data, "backspace")) {
       this.switcherState = {
         query: this.switcherState.query.slice(0, -1),
         selectedIndex: 0,

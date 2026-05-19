@@ -964,12 +964,12 @@ export class StageChatView implements Component, Focusable {
       }
       return true;
     }
-    if (data === "\x03") {
+    if (matchesKey(data, "ctrl+c")) {
       this.onClose();
       return true;
     }
     const blocked = this._isBlocked();
-    if (data === "\x06") {
+    if (matchesKey(data, "ctrl+f")) {
       if (blocked) return true;
       void this._submit("followUp");
       return true;
@@ -979,12 +979,12 @@ export class StageChatView implements Component, Focusable {
       this.editor.handleInput(data);
       return true;
     }
-    if (data === "\r" || data === "\n") {
+    if (matchesKey(data, "enter")) {
       if (blocked) return true;
       void this._submit("auto");
       return true;
     }
-    if (data === "\x7f" || data === "\b") {
+    if (matchesKey(data, "backspace")) {
       if (blocked) return true;
       this.inputBuffer = this.inputBuffer.slice(0, -1);
       return true;

@@ -276,8 +276,16 @@ test("editor: tab advances focus, shift+tab retreats", () => {
   e.dispose();
 });
 
-test("editor: esc variants and ctrl+c fire onExit('cancel')", () => {
-  for (const key of ["\x1b", "\x1b[27u", "\x1b[27;1;27~", "\x03"]) {
+test("editor: esc variants and ctrl+c variants fire onExit('cancel')", () => {
+  for (const key of [
+    "\x1b",
+    "\x1b[27u",
+    "\x1b[27;1;27~",
+    "\x03",
+    "\x1b[99;5u",
+    "\x1b[99;5:1u",
+    "\x1b[27;5;99~",
+  ]) {
     const e = makeEditor();
     e.editor.handleInput(key);
     assert.deepEqual(e.getExited(), { outcome: "cancel" }, `key=${JSON.stringify(key)}`);
