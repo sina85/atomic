@@ -436,7 +436,7 @@ export class InlineFormEditor implements PiEditorComponent {
     //   ctrl+x                — submit form
     //   tab        (\t)          — focus next field
     //   shift+tab  (\x1b[Z)      — focus previous field
-    if (data === "\x03" || matchesKey(data, "escape")) {
+    if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape")) {
       this.opts.onExit("cancel");
       return true;
     }
@@ -475,7 +475,7 @@ export class InlineFormEditor implements PiEditorComponent {
       state.rawText[field.name] = choices[(i - 1 + choices.length) % choices.length]!;
       return true;
     }
-    if (matchesAction(this.kb, data, "tui.editor.cursorRight") || data === " ") {
+    if (matchesAction(this.kb, data, "tui.editor.cursorRight") || matchesKey(data, "space")) {
       state.rawText[field.name] = choices[(i + 1) % choices.length]!;
       return true;
     }
@@ -499,7 +499,7 @@ export class InlineFormEditor implements PiEditorComponent {
     state: InlineFormState,
   ): boolean {
     if (
-      data === " " ||
+      matchesKey(data, "space") ||
       matchesAction(this.kb, data, "tui.editor.cursorLeft") ||
       matchesAction(this.kb, data, "tui.editor.cursorRight")
     ) {

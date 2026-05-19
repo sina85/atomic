@@ -1039,7 +1039,7 @@ function handleBooleanKey(
   kb: KeybindingsLike | undefined,
 ): InputsPickerAction {
   if (
-    key === " " ||
+    matchesKey(key, "space") ||
     matchesAction(kb, key, "tui.input.submit") ||
     matchesAction(kb, key, "tui.editor.cursorLeft") ||
     matchesAction(kb, key, "tui.editor.cursorRight")
@@ -1066,10 +1066,10 @@ function handleConfirmKey(
   // Confirm-modal answers are single-char prompts (`y`/`n`) plus the form's
   // raw esc/enter contract. These do not flow through Pi action ids because
   // they're a confirmation-modal contract, not an editor-mode action.
-  if (key === "y" || key === "Y" || key === "\r" || key === "\n") {
+  if (key === "y" || key === "Y" || matchesKey(key, "enter")) {
     return { kind: "run", values: coerceValues(fields, state.rawText) };
   }
-  if (key === "\x03") return { kind: "cancel" };
+  if (matchesKey(key, "ctrl+c")) return { kind: "cancel" };
   if (key === "n" || key === "N" || matchesKey(key, "escape")) {
     state.confirmOpen = false;
     return { kind: "noop" };
@@ -1078,7 +1078,7 @@ function handleConfirmKey(
 }
 
 function isCancelKey(key: string): boolean {
-  return key === "\x03" || matchesKey(key, "escape");
+  return matchesKey(key, "ctrl+c") || matchesKey(key, "escape");
 }
 
 function attemptPickerSubmit(

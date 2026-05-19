@@ -159,8 +159,16 @@ test("boolean field: space and arrows flip", () => {
   assert.equal(s.rawText.verbose, "false");
 });
 
-test("esc variants and ctrl+c cancel from form mode", () => {
-  for (const key of ["\x1b", "\x1b[27u", "\x1b[27;1;27~", "\x03"]) {
+test("esc variants and ctrl+c variants cancel from form mode", () => {
+  for (const key of [
+    "\x1b",
+    "\x1b[27u",
+    "\x1b[27;1;27~",
+    "\x03",
+    "\x1b[99;5u",
+    "\x1b[99;5:1u",
+    "\x1b[27;5;99~",
+  ]) {
     const state = createInputsPickerState(FIELDS);
     const action = handleInputsPickerInput(key, state, FIELDS, KB);
     assert.deepEqual(action, { kind: "cancel" }, `key=${JSON.stringify(key)}`);

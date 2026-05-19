@@ -66,6 +66,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import type { Store } from "../shared/store.js";
 import type { StageNotice, StageSnapshot } from "../shared/store-types.js";
+import { elapsedStageMs } from "../shared/timing.js";
 import type { GraphTheme } from "./graph-theme.js";
 import type { StageControlHandle } from "../runs/foreground/stage-control-registry.js";
 import { BOLD, RESET, hexBg, hexToAnsi, lerpColor } from "./color-utils.js";
@@ -950,7 +951,7 @@ export class StageChatView implements Component, Focusable {
     if (this.bodyViewport.handleInput(data)) {
       return true;
     }
-    if (data === "\x04") {
+    if (matchesKey(data, "ctrl+d")) {
       if (this._isPaused()) this.onClose();
       else this.onDetach();
       return true;
@@ -963,12 +964,12 @@ export class StageChatView implements Component, Focusable {
       }
       return true;
     }
-    if (data === "\x03") {
+    if (matchesKey(data, "ctrl+c")) {
       this.onClose();
       return true;
     }
     const blocked = this._isBlocked();
-    if (data === "\x06") {
+    if (matchesKey(data, "ctrl+f")) {
       if (blocked) return true;
       void this._submit("followUp");
       return true;
@@ -978,12 +979,12 @@ export class StageChatView implements Component, Focusable {
       this.editor.handleInput(data);
       return true;
     }
-    if (data === "\r" || data === "\n") {
+    if (matchesKey(data, "enter")) {
       if (blocked) return true;
       void this._submit("auto");
       return true;
     }
-    if (data === "\x7f" || data === "\b") {
+    if (matchesKey(data, "backspace")) {
       if (blocked) return true;
       this.inputBuffer = this.inputBuffer.slice(0, -1);
       return true;
@@ -1462,10 +1463,9 @@ function tailStreamingText(text: string): string {
 }
 
 function stageDurationText(stage: StageSnapshot | undefined): string {
-  if (!stage?.startedAt) return "";
-  const end = stage.endedAt ?? Date.now();
-  const ms = Math.max(0, end - stage.startedAt);
-  return formatDuration(ms);
+  if (!stage) return "";
+  const elapsed = elapsedStageMs(stage);
+  return elapsed === undefined ? "" : formatDuration(elapsed);
 }
 
 function formatDuration(ms: number): string {

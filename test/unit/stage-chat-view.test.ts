@@ -190,6 +190,49 @@ function assistantTextMessage(text: string): AgentSession["messages"][number] {
 }
 
 describe("StageChatView", () => {
+  test("header duration freezes while the stage is paused", () => {
+    const originalNow = Date.now;
+    try {
+      Date.now = () => 71_000;
+      const store = createStore();
+      store.recordRunStart({
+        id: "run-1",
+        name: "test-wf",
+        inputs: {},
+        status: "running",
+        stages: [],
+        startedAt: 1_000,
+      });
+      store.recordStageStart("run-1", {
+        id: "stage-a",
+        name: "review-a",
+        status: "paused",
+        parentIds: [],
+        toolEvents: [],
+        startedAt: 1_000,
+        pausedAt: 11_000,
+      });
+      const { handle } = makeHandle(undefined, [], "paused");
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {},
+        onClose: () => {},
+      });
+
+      const rendered = stripAnsi(view.render(96).join("\n"));
+      assert.match(rendered, /10s/);
+      assert.doesNotMatch(rendered, /1m 10s/);
+      view.dispose();
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
   test("uses coding-agent CustomEditor when pi overlay host objects are provided", async () => {
     const store = createStore();
     setupRun(store, "run-1", "stage-a", "pending");
@@ -348,26 +391,30 @@ describe("StageChatView", () => {
     view.dispose();
   });
 
-  test("ctrl+f sends a follow-up", async () => {
-    const store = createStore();
-    setupRun(store, "run-1", "stage-a");
-    const { handle, state } = makeHandle();
-    const view = new StageChatView({
-      store,
-      graphTheme: deriveGraphTheme({}),
-      runId: "run-1",
-      stageId: "stage-a",
-      workflowName: "test-wf",
-      handle,
-      onDetach: () => {},
-      onClose: () => {},
-    });
-    for (const ch of "afterwards") view.handleInput(ch);
-    view.handleInput("\x06");
-    await flush();
-    await flush();
-    assert.deepEqual(state.followUpCalls, ["afterwards"]);
-    view.dispose();
+  test("ctrl+f variants send a follow-up", async () => {
+    const ctrlFVariants = ["\x06", "\x1b[102;5u", "\x1b[102;5:1u", "\x1b[27;5;102~"];
+
+    for (const key of ctrlFVariants) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a");
+      const { handle, state } = makeHandle();
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {},
+        onClose: () => {},
+      });
+      for (const ch of "afterwards") view.handleInput(ch);
+      view.handleInput(key);
+      await flush();
+      await flush();
+      assert.deepEqual(state.followUpCalls, ["afterwards"], JSON.stringify(key));
+      view.dispose();
+    }
   });
 
   test("Escape interrupts a pending streaming stage without replacing the chat UI", async () => {
@@ -633,55 +680,73 @@ describe("StageChatView", () => {
     view.dispose();
   });
 
-  test("Ctrl+D calls onDetach", () => {
-    const store = createStore();
-    setupRun(store, "run-1", "stage-a");
-    const { handle } = makeHandle();
-    let detached = 0;
-    const view = new StageChatView({
-      store,
-      graphTheme: deriveGraphTheme({}),
-      runId: "run-1",
-      stageId: "stage-a",
-      workflowName: "test-wf",
-      handle,
-      onDetach: () => {
-        detached += 1;
-      },
-      onClose: () => {},
-    });
-    view.handleInput("\x04");
-    assert.equal(detached, 1);
-    view.dispose();
+  test("Ctrl+D variants call onDetach", () => {
+    const ctrlDVariants = [
+      "\x04",
+      "\x1b[100;5u",
+      "\x1b[100;5:1u",
+      "\x1b[27;5;100~",
+    ];
+
+    for (const key of ctrlDVariants) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a");
+      const { handle } = makeHandle();
+      let detached = 0;
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {
+          detached += 1;
+        },
+        onClose: () => {},
+      });
+      view.handleInput(key);
+      assert.equal(detached, 1, JSON.stringify(key));
+      view.dispose();
+    }
   });
 
-  test("Ctrl+D closes a paused stage chat", () => {
-    const store = createStore();
-    setupRun(store, "run-1", "stage-a", "paused");
-    const { handle } = makeHandle(undefined, [], "paused");
-    let detached = 0;
-    let closed = 0;
-    const view = new StageChatView({
-      store,
-      graphTheme: deriveGraphTheme({}),
-      runId: "run-1",
-      stageId: "stage-a",
-      workflowName: "test-wf",
-      handle,
-      onDetach: () => {
-        detached += 1;
-      },
-      onClose: () => {
-        closed += 1;
-      },
-    });
-    view.handleInput("\x04");
-    assert.equal(closed, 1);
-    assert.equal(detached, 0);
-    view.dispose();
+  test("Ctrl+D variants close a paused stage chat", () => {
+    const ctrlDVariants = [
+      "\x04",
+      "\x1b[100;5u",
+      "\x1b[100;5:1u",
+      "\x1b[27;5;100~",
+    ];
+
+    for (const key of ctrlDVariants) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a", "paused");
+      const { handle } = makeHandle(undefined, [], "paused");
+      let detached = 0;
+      let closed = 0;
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {
+          detached += 1;
+        },
+        onClose: () => {
+          closed += 1;
+        },
+      });
+      view.handleInput(key);
+      assert.equal(closed, 1, JSON.stringify(key));
+      assert.equal(detached, 0, JSON.stringify(key));
+      view.dispose();
+    }
   });
 
-  test("Escape variants on settled stages and Ctrl+C call onClose", () => {
+  test("Escape variants and Ctrl+C variants on settled stages call onClose", () => {
     const store = createStore();
     setupRun(store, "run-1", "stage-a", "completed");
     let closed = 0;
@@ -696,10 +761,19 @@ describe("StageChatView", () => {
         closed += 1;
       },
     });
-    for (const key of ["\x1b", "\x1b[27u", "\x1b[27;1;27~", "\x03"]) {
+    const closeKeys = [
+      "\x1b",
+      "\x1b[27u",
+      "\x1b[27;1;27~",
+      "\x03",
+      "\x1b[99;5u",
+      "\x1b[99;5:1u",
+      "\x1b[27;5;99~",
+    ];
+    for (const key of closeKeys) {
       view.handleInput(key);
     }
-    assert.equal(closed, 4);
+    assert.equal(closed, closeKeys.length);
     view.dispose();
   });
 

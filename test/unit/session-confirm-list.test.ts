@@ -28,12 +28,14 @@ function makeRun(over: Partial<RunSnapshot>): RunSnapshot {
   };
 }
 
-test("kill confirm: y always confirms, n / esc cancels", () => {
+test("kill confirm: y always confirms, n / esc variants cancel", () => {
   const s = createKillConfirmState();
   assert.deepEqual(handleKillConfirmInput("y", s), { kind: "confirm" });
   assert.deepEqual(handleKillConfirmInput("Y", s), { kind: "confirm" });
   assert.deepEqual(handleKillConfirmInput("n", s), { kind: "cancel" });
-  assert.deepEqual(handleKillConfirmInput("\x1b", s), { kind: "cancel" });
+  for (const key of ["\x1b", "\x1b[27u", "\x1b[27;1;27~"]) {
+    assert.deepEqual(handleKillConfirmInput(key, s), { kind: "cancel" }, JSON.stringify(key));
+  }
 });
 
 test("kill confirm: tab toggles focus, enter commits focused button", () => {
