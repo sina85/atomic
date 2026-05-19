@@ -57,7 +57,7 @@ import {
   wordLeft,
   wordRight,
 } from "./keybindings-adapter.js";
-import { matchesKey, visibleWidth } from "./text-helpers.js";
+import { decodePrintableKey, matchesKey, visibleWidth } from "./text-helpers.js";
 
 export type FormEditorOutcome = "submit" | "cancel";
 
@@ -654,12 +654,15 @@ export class InlineFormEditor implements PiEditorComponent {
       return true;
     }
 
-    // Printable insertion — no Pi action, raw grapheme check. Numeric
-    // fields accept the same printable range as text; per-field validation
-    // catches non-numeric content at submit time.
-    if (isPrintableGrapheme(data)) {
-      state.rawText[name] = cur.slice(0, caret) + data + cur.slice(caret);
-      state.caret = caret + data.length;
+    // Printable insertion — accept raw graphemes and terminal-encoded
+    // printable keys (CSI-u / Kitty). VSCode's integrated terminal can emit
+    // printable keys as escape sequences when modifyOtherKeys is active.
+    // Numeric fields accept the same printable range as text; per-field
+    // validation catches non-numeric content at submit time.
+    const printable = decodePrintableKey(data) ?? data;
+    if (isPrintableGrapheme(printable)) {
+      state.rawText[name] = cur.slice(0, caret) + printable + cur.slice(caret);
+      state.caret = caret + printable.length;
       return true;
     }
     return false;

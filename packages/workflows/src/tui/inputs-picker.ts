@@ -40,7 +40,7 @@
 import type { WorkflowInputEntry } from "../extension/render-result.js";
 import type { GraphTheme } from "./graph-theme.js";
 import { paint } from "./color-utils.js";
-import { matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
+import { decodePrintableKey, matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
 import {
   type KeybindingsLike,
   deleteRange,
@@ -989,11 +989,13 @@ function handleFormKey(
     }
     return { kind: "noop" };
   }
-  // Printable insert. Accept exactly one grapheme cluster so CJK, emoji ZWJ
-  // sequences, and combining-mark input follow pi-tui Input semantics.
-  if (isPrintableGrapheme(key)) {
-    state.rawText[name] = cur.slice(0, caret) + key + cur.slice(caret);
-    state.caret = caret + key.length;
+  // Printable insert. Accept raw graphemes and terminal-encoded printable
+  // keys (CSI-u / Kitty). VSCode's integrated terminal can emit printable
+  // keys as escape sequences when modifyOtherKeys is active.
+  const printable = decodePrintableKey(key) ?? key;
+  if (isPrintableGrapheme(printable)) {
+    state.rawText[name] = cur.slice(0, caret) + printable + cur.slice(caret);
+    state.caret = caret + printable.length;
     return { kind: "noop" };
   }
   return { kind: "noop" };

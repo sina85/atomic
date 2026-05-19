@@ -95,6 +95,20 @@ test("text field: typing inserts characters, backspace removes", () => {
   assert.equal(s.caret, 1);
 });
 
+test("text field accepts encoded printable key sequences", () => {
+  for (const [key, expected] of [
+    ["\x1b[98;1u", "b"], // Kitty / CSI-u plain b
+    ["\x1b[65;2u", "A"], // Kitty / CSI-u shifted A
+    ["\x1b[27;1;98~", "b"], // xterm modifyOtherKeys plain b
+    ["\x1b[27;2;65~", "A"], // xterm modifyOtherKeys shifted A
+  ] as const) {
+    const s = createInputsPickerState(FIELDS);
+    handleInputsPickerInput(key, s, FIELDS, KB);
+    assert.equal(s.rawText.prompt, expected, `key=${JSON.stringify(key)}`);
+    assert.equal(s.caret, expected.length, `key=${JSON.stringify(key)}`);
+  }
+});
+
 test("text field: CJK, emoji, and combining-mark edits move by grapheme", () => {
   const s = createInputsPickerState(FIELDS);
   handleInputsPickerInput("漢", s, FIELDS, KB);

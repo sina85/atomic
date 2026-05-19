@@ -251,6 +251,21 @@ test("editor: typing a char inserts at caret on the focused text field", () => {
   e.dispose();
 });
 
+test("editor: accepts encoded printable key sequences", () => {
+  for (const [key, expected] of [
+    ["\x1b[98;1u", "b"], // Kitty / CSI-u plain b
+    ["\x1b[65;2u", "A"], // Kitty / CSI-u shifted A
+    ["\x1b[27;1;98~", "b"], // xterm modifyOtherKeys plain b
+    ["\x1b[27;2;65~", "A"], // xterm modifyOtherKeys shifted A
+  ] as const) {
+    const e = makeEditor();
+    e.editor.handleInput(key);
+    assert.equal(e.state.rawText.prompt, expected, `key=${JSON.stringify(key)}`);
+    assert.equal(e.state.caret, expected.length, `key=${JSON.stringify(key)}`);
+    e.dispose();
+  }
+});
+
 test("editor: tab advances focus, shift+tab retreats", () => {
   const e = makeEditor();
   assert.equal(e.state.focusedIdx, 0);
