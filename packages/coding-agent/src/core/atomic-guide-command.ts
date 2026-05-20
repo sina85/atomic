@@ -224,8 +224,18 @@ export function isAtomicGuideHelpChoice(choice: string): choice is AtomicGuideHe
 	return (ATOMIC_GUIDE_HELP_CHOICES as readonly string[]).includes(choice);
 }
 
+const ATOMIC_GUIDE_TRAILING_PUNCTUATION = "?!.,;:";
+
+function stripTrailingAtomicGuidePunctuation(value: string): string {
+	let end = value.length;
+	while (end > 0 && ATOMIC_GUIDE_TRAILING_PUNCTUATION.includes(value.charAt(end - 1))) {
+		end--;
+	}
+	return value.slice(0, end);
+}
+
 export function normalizeAtomicGuideMode(args: string): AtomicGuideMode {
-	const normalized = args.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?!.,;:]+$/g, "");
+	const normalized = stripTrailingAtomicGuidePunctuation(args.trim().toLowerCase());
 	if (!normalized) return "help";
 	if (normalized === "overview") return "overview";
 	if (normalized === "workflows" || normalized === "workflow") return "workflows";
