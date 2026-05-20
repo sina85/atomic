@@ -5,9 +5,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { getBuiltinPackagePaths } from "../../packages/coding-agent/src/core/builtin-packages.js";
 import { DefaultResourceLoader } from "../../packages/coding-agent/src/core/resource-loader.js";
 import { SettingsManager } from "../../packages/coding-agent/src/core/settings-manager.js";
-import { getBuiltinPackagePaths } from "../../packages/coding-agent/src/core/builtin-packages.js";
+import { BUILTIN_SLASH_COMMANDS } from "../../packages/coding-agent/src/core/slash-commands.js";
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -134,5 +135,18 @@ describe("coding-agent builtin resources", () => {
     for (const skillName of ["workflow", "subagent", "intercom"]) {
       assert.ok(skillNames.has(skillName), `expected builtin skill ${skillName}`);
     }
+
+    const atomicPrompt = loader.getPrompts().prompts.find((prompt) => prompt.name === "atomic");
+    assert.equal(atomicPrompt, undefined, "expected /atomic to be a builtin command, not an LLM prompt template");
+
+    const subagentExtension = extensions.extensions.find((extension) =>
+      extension.path.replace(/\\/g, "/").endsWith("packages/subagents/src/extension/index.ts"),
+    );
+    assert.equal(subagentExtension?.commands.get("atomic"), undefined, "expected subagents not to register /atomic");
+
+    const atomicCommand = BUILTIN_SLASH_COMMANDS.find((command) => command.name === "atomic");
+    assert.ok(atomicCommand, "expected builtin /atomic command");
+    assert.equal(atomicCommand.description, "Atomic onboarding and help guide");
+    assert.equal(typeof atomicCommand.getArgumentCompletions, "function");
   }, fullBuiltinPackageLoadTimeoutMs);
 });
