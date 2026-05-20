@@ -1,152 +1,104 @@
 {
-  "navigation": [
-    {
-      "title": "Start here",
-      "items": [
-        {
-          "title": "Overview",
-          "path": "index.md"
-        },
-        {
-          "title": "Quickstart",
-          "path": "quickstart.md"
-        },
-        {
-          "title": "Using Atomic",
-          "path": "usage.md"
-        },
-        {
-          "title": "Providers",
-          "path": "providers.md"
-        },
-        {
-          "title": "Settings",
-          "path": "settings.md"
-        },
-        {
-          "title": "Keybindings",
-          "path": "keybindings.md"
-        },
-        {
-          "title": "Sessions",
-          "path": "sessions.md"
-        },
-        {
-          "title": "Compaction",
-          "path": "compaction.md"
-        }
-      ]
-    },
-    {
-      "title": "Customization",
-      "items": [
-        {
-          "title": "Extensions",
-          "path": "extensions.md"
-        },
-        {
-          "title": "Skills",
-          "path": "skills.md"
-        },
-        {
-          "title": "Atomic Workflows",
-          "path": "workflows.md"
-        },
-        {
-          "title": "Prompt Templates",
-          "path": "prompt-templates.md"
-        },
-        {
-          "title": "Themes",
-          "path": "themes.md"
-        },
-        {
-          "title": "Atomic Packages",
-          "path": "packages.md"
-        },
-        {
-          "title": "Custom Models",
-          "path": "models.md"
-        },
-        {
-          "title": "Custom Providers",
-          "path": "custom-provider.md"
-        }
-      ]
-    },
-    {
-      "title": "Reference",
-      "items": [
-        {
-          "title": "Session Format",
-          "path": "session-format.md"
-        }
-      ]
-    },
-    {
-      "title": "Programmatic Usage",
-      "items": [
-        {
-          "title": "SDK",
-          "path": "sdk.md"
-        },
-        {
-          "title": "RPC Mode",
-          "path": "rpc.md"
-        },
-        {
-          "title": "JSON Event Stream Mode",
-          "path": "json.md"
-        },
-        {
-          "title": "TUI Components",
-          "path": "tui.md"
-        }
-      ]
-    },
-    {
-      "title": "Platform Setup",
-      "items": [
-        {
-          "title": "Windows",
-          "path": "windows.md"
-        },
-        {
-          "title": "Termux on Android",
-          "path": "termux.md"
-        },
-        {
-          "title": "tmux",
-          "path": "tmux.md"
-        },
-        {
-          "title": "Terminal Setup",
-          "path": "terminal-setup.md"
-        },
-        {
-          "title": "Shell Aliases",
-          "path": "shell-aliases.md"
-        }
-      ]
-    },
-    {
-      "title": "Development",
-      "items": [
-        {
-          "title": "Development",
-          "path": "development.md"
-        }
-      ]
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Atomic",
+  "colors": {
+    "primary": "#2563EB",
+    "light": "#60A5FA",
+    "dark": "#1D4ED8"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start here",
+        "pages": [
+          "index",
+          "quickstart",
+          "usage",
+          "providers",
+          "settings",
+          "keybindings",
+          "sessions",
+          "compaction"
+        ]
+      },
+      {
+        "group": "Customization",
+        "pages": [
+          "extensions",
+          "skills",
+          "workflows",
+          "prompt-templates",
+          "themes",
+          "packages",
+          "models",
+          "custom-provider"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "session-format"
+        ]
+      },
+      {
+        "group": "Programmatic Usage",
+        "pages": [
+          "sdk",
+          "rpc",
+          "json",
+          "tui"
+        ]
+      },
+      {
+        "group": "Platform Setup",
+        "pages": [
+          "windows",
+          "termux",
+          "tmux",
+          "terminal-setup",
+          "shell-aliases"
+        ]
+      },
+      {
+        "group": "Development",
+        "pages": [
+          "development"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/flora131/atomic"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/quickstart"
     }
-  ],
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/flora131/atomic"
+    }
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.bastani.ai"
+    }
+  },
   "redirects": [
     {
-      "from": "session.md",
-      "to": "session-format.md"
+      "source": "/session",
+      "destination": "/session-format"
     },
     {
-      "from": "tree.md",
-      "to": "sessions.md"
+      "source": "/tree",
+      "destination": "/sessions"
     }
   ]
 }
