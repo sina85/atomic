@@ -16,8 +16,16 @@ pkg update && pkg upgrade
 # Install dependencies
 pkg install nodejs termux-api git
 
-# Install Atomic
+# Install Atomic (choose one package manager available in Termux)
+# npm is installed by `pkg install nodejs`; Bun and pnpm must be installed separately before using those commands.
+# npm
 npm install -g @bastani/atomic
+
+# Bun
+bun install -g @bastani/atomic
+
+# pnpm
+pnpm add -g @bastani/atomic
 
 # Create config directory
 mkdir -p ~/.atomic/agent
@@ -25,6 +33,8 @@ mkdir -p ~/.atomic/agent
 # Run Atomic
 atomic
 ```
+
+Atomic does not require package install scripts. If you want to disable dependency lifecycle scripts during the Atomic install, you can add `--ignore-scripts` to the install command.
 
 ## Clipboard Support
 

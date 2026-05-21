@@ -1,6 +1,6 @@
 # Development
 
-See [AGENTS.md](../../../AGENTS.md) for additional guidelines.
+See [AGENTS.md](https://github.com/flora131/atomic/blob/main/AGENTS.md) for additional guidelines.
 
 ## Setup
 

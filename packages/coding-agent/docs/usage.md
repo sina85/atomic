@@ -4,7 +4,7 @@ This page collects day-to-day usage details that do not fit on the quickstart pa
 
 ## Interactive Mode
 
-<p align="center"><img src="images/interactive-mode.png" alt="Interactive Mode" width="600"></p>
+<p align="center"><img src="images/interactive-mode.png" alt="Interactive Mode" width="600" /></p>
 
 The interface has four main areas:
 

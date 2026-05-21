@@ -11,7 +11,7 @@ The SDK provides programmatic access to atomic's agent capabilities. Use it to e
 - Build custom tools that spawn sub-agents
 - Test agent behavior programmatically
 
-See [examples/sdk/](../examples/sdk/) for working examples from minimal to full control.
+See [examples/sdk/](https://github.com/flora131/atomic/tree/main/packages/coding-agent/examples/sdk) for working examples from minimal to full control.
 
 ## Quick Start
 
@@ -39,9 +39,20 @@ await session.prompt("What files are in the current directory?");
 
 ## Installation
 
+Choose npm, Bun, or pnpm:
+
 ```bash
+# npm
 npm install @bastani/atomic
+
+# Bun
+bun add @bastani/atomic
+
+# pnpm
+pnpm add @bastani/atomic
 ```
+
+Atomic does not require package install scripts. If you want to disable dependency lifecycle scripts during the Atomic install, you can add `--ignore-scripts` to the install command.
 
 The SDK is included in the main package. No separate installation needed.
 
@@ -407,7 +418,7 @@ If no model is provided:
 2. Uses default from settings
 3. Falls back to first available model
 
-> See [examples/sdk/02-custom-model.ts](../examples/sdk/02-custom-model.ts)
+> See [examples/sdk/02-custom-model.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/02-custom-model.ts)
 
 ### API Keys and OAuth
 
@@ -448,7 +459,7 @@ const { session } = await createAgentSession({
 const simpleRegistry = ModelRegistry.inMemory(authStorage);
 ```
 
-> See [examples/sdk/09-api-keys-and-oauth.ts](../examples/sdk/09-api-keys-and-oauth.ts)
+> See [examples/sdk/09-api-keys-and-oauth.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/09-api-keys-and-oauth.ts)
 
 ### System Prompt
 
@@ -465,7 +476,7 @@ await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
-> See [examples/sdk/03-custom-prompt.ts](../examples/sdk/03-custom-prompt.ts)
+> See [examples/sdk/03-custom-prompt.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/03-custom-prompt.ts)
 
 ### Tools
 
@@ -513,7 +524,7 @@ const { session } = await createAgentSession({
 });
 ```
 
-> See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
+> See [examples/sdk/05-tools.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/05-tools.ts)
 
 ### Custom Tools
 
@@ -547,7 +558,7 @@ Custom tools passed via `customTools` are combined with extension-registered too
 
 If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
 
-> See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
+> See [examples/sdk/05-tools.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/05-tools.ts)
 
 ### Extensions
 
@@ -587,7 +598,7 @@ await loader.reload();
 eventBus.on("my-extension:status", (data) => console.log(data));
 ```
 
-> See [examples/sdk/06-extensions.ts](../examples/sdk/06-extensions.ts) and [docs/extensions.md](extensions.md)
+> See [examples/sdk/06-extensions.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/06-extensions.ts) and [docs/extensions.md](extensions.md)
 
 ### Skills
 
@@ -617,7 +628,7 @@ await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
-> See [examples/sdk/04-skills.ts](../examples/sdk/04-skills.ts)
+> See [examples/sdk/04-skills.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/04-skills.ts)
 
 ### Context Files
 
@@ -637,7 +648,7 @@ await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
-> See [examples/sdk/07-context-files.ts](../examples/sdk/07-context-files.ts)
+> See [examples/sdk/07-context-files.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/07-context-files.ts)
 
 ### Slash Commands
 
@@ -666,7 +677,7 @@ await loader.reload();
 const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
-> See [examples/sdk/08-prompt-templates.ts](../examples/sdk/08-prompt-templates.ts)
+> See [examples/sdk/08-prompt-templates.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/08-prompt-templates.ts)
 
 ### Session Management
 
@@ -770,7 +781,7 @@ sm.branchWithSummary(id, "Summary...");  // Branch with context summary
 sm.createBranchedSession(leafId);       // Extract path to new file
 ```
 
-> See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts) and [Session Format](session-format.md)
+> See [examples/sdk/11-sessions.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/11-sessions.ts) and [Session Format](session-format.md)
 
 ### Settings Management
 
@@ -821,7 +832,7 @@ Project overrides global. Nested objects merge keys. Setters modify global setti
 - Call `await settingsManager.flush()` when you need a durability boundary (for example, before process exit or before asserting file contents in tests).
 - `SettingsManager` does not print settings I/O errors. Use `settingsManager.drainErrors()` and report them in your app layer.
 
-> See [examples/sdk/10-settings.ts](../examples/sdk/10-settings.ts)
+> See [examples/sdk/10-settings.ts](https://github.com/flora131/atomic/blob/main/packages/coding-agent/examples/sdk/10-settings.ts)
 
 ## ResourceLoader
 

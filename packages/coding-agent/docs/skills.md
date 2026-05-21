@@ -116,9 +116,16 @@ description: What this skill does and when to use it. Be specific.
 
 ## Setup
 
-Run once before first use:
+Run once before first use (choose one):
 ```bash
+# npm
 cd /path/to/skill && npm install
+
+# Bun
+cd /path/to/skill && bun install
+
+# pnpm
+cd /path/to/skill && pnpm install
 ```
 
 ## Usage
@@ -209,7 +216,14 @@ description: Web search and content extraction via Brave Search API. Use for sea
 ## Setup
 
 ```bash
+# npm
 cd /path/to/brave-search && npm install
+
+# Bun
+cd /path/to/brave-search && bun install
+
+# pnpm
+cd /path/to/brave-search && pnpm install
 ```
 
 ## Search
