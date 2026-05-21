@@ -26,7 +26,7 @@ Atomic turns one-off prompts into developer workflows: on-call debugging, repo r
 | Goal | How to use |
 |---|---|
 | On-call / broken behavior | Run \`/run debugger "Reproduce the failure, patch the root cause, and validate it"\` for a focused fix loop, or ask Atomic in chat to build a reusable workflow that does the same |
-| Research → spec → implementation | Chain \`/skill:research-codebase\` → \`/skill:create-spec\` → direct implementation or \`/workflow ralph ...\`; ask Atomic in chat to wrap it as a reusable workflow when you'll repeat it |
+| Research → spec → implementation | Chain \`/skill:research-codebase\` → \`/skill:create-spec\` → direct implementation or \`/workflow ralph ...\`; ask Atomic in chat to turn the repeatable process into a reusable workflow using the workflow docs |
 | Testing / regression hardening | Run \`/skill:tdd\` for test-first work, then \`/parallel-review current diff\`, then land the change |
 | Large repo discovery | Run \`/parallel codebase-locator "map the area" -> codebase-analyzer "trace the current flow" -> codebase-pattern-finder "find patterns" --bg\`, or \`/workflow deep-research-codebase\` for whole-repo synthesis |
 | UI / product polish | Run \`/skill:impeccable\` for interface critique and refinement, or \`/workflow open-claude-design\` for generation + refinement loops |
@@ -130,7 +130,7 @@ const WORKFLOWS = `# Workflows primer
 
 A workflow is a TypeScript-defined pipeline built with \`defineWorkflow(...).run(...).compile()\`. It can run tasks, chains, parallel fan-out, human-in-the-loop prompts, background status, and model fallback chains.
 
-You do not have to write TypeScript to add one. Describe the workflow you want in plain chat — goal, inputs, stages, which steps are parallel or sequential, handoff/output shape, and any model or thinking-level preferences — and Atomic will scaffold a reusable definition under \`.atomic/workflows/\` and reload it for you. Hand-edit the TypeScript afterward when you want precise control.
+You do not have to write TypeScript to add one. Describe the workflow you want in plain chat — goal, inputs, stages, which steps are parallel or sequential, handoff/output shape, and any model or thinking-level preferences — and Atomic will use the workflow docs to scaffold a reusable definition under \`.atomic/workflows/\` and reload it for you. Hand-edit the TypeScript afterward when you want precise control.
 
 ## Built-in workflows
 
@@ -195,7 +195,7 @@ Workflows run as background tasks. Use F2 or \`/workflow connect <run-id>\` for 
 
 ## Author your own
 
-Describe your workflow in plain chat — say what you want the workflow to accomplish, what inputs it should accept, what stages should run, and what final output or decision it should return. Atomic will scaffold a reusable definition under \`.atomic/workflows/\`, ask clarifying questions when stage purpose, models, or handoffs are ambiguous, and reload discovery so you can run it immediately.
+Describe your workflow in plain chat — say what you want the workflow to accomplish, what inputs it should accept, what stages should run, and what final output or decision it should return. Atomic will use the workflow docs to scaffold a reusable definition under \`.atomic/workflows/\`, ask clarifying questions when stage purpose, models, or handoffs are ambiguous, and reload discovery so you can run it immediately.
 
 ─────────────────────────────────────────────────────────────────
 
