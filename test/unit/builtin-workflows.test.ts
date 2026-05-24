@@ -4,8 +4,11 @@
  * the high-level ctx.task / ctx.parallel / ctx.chain primitives.
  */
 
-import { describe, test } from "bun:test";
+import { afterEach, beforeEach, describe, test } from "bun:test";
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import type {
   WorkflowChainOptions,
   WorkflowDefinition,
@@ -29,6 +32,8 @@ interface MockCalls {
 
 interface MockResponders {
   task?: (name: string, options: WorkflowTaskOptions, calls: MockCalls) => string | undefined;
+  omitParallelResults?: readonly string[];
+  skipOutputWrites?: readonly string[];
 }
 
 function promptText(options: WorkflowTaskOptions): string {
@@ -37,6 +42,34 @@ function promptText(options: WorkflowTaskOptions): string {
 
 function makeTaskResult(name: string, text: string): WorkflowTaskResult {
   return { name, stageName: name, text };
+}
+
+function readPaths(options: WorkflowTaskOptions | undefined): readonly string[] {
+  return Array.isArray(options?.reads) ? options.reads : [];
+}
+
+function normalizePathSeparators(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function readPathEndsWith(
+  options: WorkflowTaskOptions | undefined,
+  suffix: string,
+): boolean {
+  const normalizedSuffix = normalizePathSeparators(suffix);
+  return readPaths(options).some((path) =>
+    normalizePathSeparators(path).endsWith(normalizedSuffix),
+  );
+}
+
+function expectedDeepResearchAggregatorReadCount(): number {
+  return 5;
+}
+
+function assertStringOutput(
+  output: WorkflowTaskOptions["output"] | undefined,
+): asserts output is string {
+  assert.equal(typeof output, "string");
 }
 
 /** Mock WorkflowRunContext factory that records high-level SDK calls. */
@@ -67,7 +100,15 @@ function makeMockCtx<TInputs extends Record<string, unknown>>(
     calls.prompts[name] = [...(calls.prompts[name] ?? []), text];
     calls.taskOptions[name] = [...(calls.taskOptions[name] ?? []), options];
     const override = responders.task?.(name, options, calls);
-    return makeTaskResult(name, override ?? `[mock-task:${name}] ${text.slice(0, 80)}`);
+    const resultText = override ?? `[mock-task:${name}] ${text.slice(0, 80)}`;
+    if (
+      typeof options.output === "string" &&
+      responders.skipOutputWrites?.includes(name) !== true
+    ) {
+      mkdirSync(dirname(options.output), { recursive: true });
+      writeFileSync(options.output, resultText);
+    }
+    return makeTaskResult(name, resultText);
   };
 
   const ctx: WorkflowRunContext<TInputs> & { calls: MockCalls } = {
@@ -95,7 +136,11 @@ function makeMockCtx<TInputs extends Record<string, unknown>>(
     ): Promise<WorkflowTaskResult[]> => {
       calls.parallel.push(steps.map((step) => step.name));
       calls.parallelOptions.push(options);
-      return Promise.all(steps.map((step) => runTask(step.name, step)));
+      const results = await Promise.all(steps.map((step) => runTask(step.name, step)));
+      const omitted = new Set(responders.omitParallelResults ?? []);
+      return omitted.size === 0
+        ? results
+        : results.filter((result) => result.name === undefined || !omitted.has(result.name));
     },
     ui,
   };
@@ -122,6 +167,22 @@ function assertWorkflowDefinition(def: unknown): asserts def is WorkflowDefiniti
 // ---------------------------------------------------------------------------
 
 describe("deep-research-codebase", () => {
+  let previousCwd = process.cwd();
+  let tempCwd: string | undefined;
+
+  beforeEach(() => {
+    previousCwd = process.cwd();
+    tempCwd = mkdtempSync(join(tmpdir(), "atomic-deep-research-test-"));
+    process.chdir(tempCwd);
+  });
+
+  afterEach(() => {
+    process.chdir(previousCwd);
+    if (tempCwd !== undefined) {
+      rmSync(tempCwd, { recursive: true, force: true });
+      tempCwd = undefined;
+    }
+  });
   test("loads and has correct shape", async () => {
     const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
     const def = mod.default as unknown as WorkflowDefinition;
@@ -139,6 +200,11 @@ describe("deep-research-codebase", () => {
     assert.equal((d.inputs["max_partitions"] as { default?: number }).default, 100);
     assert.equal(d.inputs["max_concurrency"]?.type, "number");
     assert.equal((d.inputs["max_concurrency"] as { default?: number }).default, 4);
+    assert.deepEqual(Object.keys(d.inputs).sort(), [
+      "max_concurrency",
+      "max_partitions",
+      "prompt",
+    ]);
   });
 
   test("runs scout/history, specialist waves, and aggregator via task primitives", async () => {
@@ -167,6 +233,258 @@ describe("deep-research-codebase", () => {
     assert.deepEqual(result["partitions"], ["auth logic", "token validation"]);
     assert.equal(result["specialist_count"], 8);
     assert.equal(result["max_concurrency"], 2);
+    assert.equal("artifact_root" in result, false);
+    assert.equal("artifact_count" in result, false);
+    assert.equal(typeof result["research_doc_path"], "string");
+  });
+
+  test("uses artifact handoffs so aggregation stays bounded", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    const largeSentinel = "SPECIALIST_INLINE_SENTINEL".repeat(200);
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 2, max_concurrency: 2 },
+      {
+        task: (name) => {
+          if (name === "partition") return "auth logic\ntoken validation";
+          if (/^(locator|pattern-finder|analyzer|online-researcher)-/.test(name)) {
+            return `${name}: ${largeSentinel}`;
+          }
+          return undefined;
+        },
+      },
+    );
+
+    const result = await d.run(ctx);
+    const aggregatorOptions = ctx.calls.taskOptions["aggregator"]?.[0];
+    const aggregatorPrompt = ctx.calls.prompts["aggregator"]?.[0] ?? "";
+    const normalizedAggregatorPrompt = normalizePathSeparators(aggregatorPrompt);
+    const aggregatorReads = readPaths(aggregatorOptions);
+
+    assert.deepEqual(result["partitions"], ["auth logic", "token validation"]);
+    assert.equal(aggregatorOptions?.previous, undefined);
+    assert.ok(Array.isArray(aggregatorOptions?.reads));
+    assert.equal(aggregatorReads.length, expectedDeepResearchAggregatorReadCount());
+    assert.match(normalizedAggregatorPrompt, /specialist_reports/);
+    assert.match(normalizedAggregatorPrompt, /explorer-1\.md/);
+    assert.match(normalizedAggregatorPrompt, /Read the complete explorer handoff artifact/);
+    assert.doesNotMatch(normalizedAggregatorPrompt, /artifact_index/);
+    assert.doesNotMatch(normalizedAggregatorPrompt, /SPECIALIST_INLINE_SENTINEL/);
+    assert.doesNotMatch(normalizedAggregatorPrompt, /Context:/);
+    assert.ok(aggregatorReads.some((path) => normalizePathSeparators(path).endsWith("00-codebase-scout.md")));
+    assert.ok(aggregatorReads.some((path) => normalizePathSeparators(path).endsWith("01-partition-plan.md")));
+    assert.ok(aggregatorReads.some((path) => normalizePathSeparators(path).endsWith("02-history-analyzer.md")));
+    assert.ok(aggregatorReads.some((path) => normalizePathSeparators(path).endsWith("explorer-1.md")));
+    assert.equal(aggregatorReads.some((path) => /\/wave[12]\//.test(normalizePathSeparators(path))), false);
+    assert.equal(aggregatorReads.some((path) => /(^|\/)context-build\//.test(normalizePathSeparators(path))), false);
+
+    const scoutOutput = ctx.calls.taskOptions["codebase-scout"]?.[0];
+    const historyLocatorOutput = ctx.calls.taskOptions["history-locator"]?.[0];
+    const historyAnalyzerOutput = ctx.calls.taskOptions["history-analyzer"]?.[0];
+    assert.equal(scoutOutput?.outputMode, "file-only");
+    assert.equal(historyLocatorOutput?.outputMode, "file-only");
+    assert.equal(historyAnalyzerOutput?.outputMode, "file-only");
+    assert.notEqual(scoutOutput?.output, historyLocatorOutput?.output);
+
+    const partitionOutput = ctx.calls.taskOptions["partition"]?.[0];
+    assert.equal(partitionOutput?.outputMode, undefined);
+    assertStringOutput(partitionOutput?.output);
+    assert.ok(normalizePathSeparators(partitionOutput.output).endsWith("01-partition-plan.md"));
+    assert.ok(readPathEndsWith(partitionOutput, "00-codebase-scout.md"));
+    assert.ok(readPathEndsWith(ctx.calls.taskOptions["locator-1"]?.[0], "00-codebase-scout.md"));
+    assert.ok(readPathEndsWith(ctx.calls.taskOptions["analyzer-1"]?.[0], "00-codebase-scout.md"));
+    assert.ok(readPathEndsWith(ctx.calls.taskOptions["analyzer-1"]?.[0], "locator-1.md"));
+    assert.ok(readPathEndsWith(ctx.calls.taskOptions["online-researcher-1"]?.[0], "locator-1.md"));
+    assert.equal(ctx.calls.taskOptions["locator-1"]?.[0]?.outputMode, "file-only");
+    assert.equal(ctx.calls.taskOptions["analyzer-1"]?.[0]?.outputMode, "file-only");
+  });
+
+  test("does not use a saved-output reference when history artifact is unavailable", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 1, max_concurrency: 1 },
+      {
+        skipOutputWrites: ["history-analyzer"],
+        task: (name) => {
+          if (name === "partition") return "auth logic";
+          if (name === "history-analyzer") {
+            return "Output saved to: /tmp/history-analyzer.md (123 bytes). Read this file if needed.";
+          }
+          return undefined;
+        },
+      },
+    );
+
+    const result = await d.run(ctx);
+    const aggregatorPrompt = ctx.calls.prompts["aggregator"]?.[0] ?? "";
+
+    assert.doesNotMatch(aggregatorPrompt, /Output saved to:/);
+    assert.match(aggregatorPrompt, /\(no prior research found\)/);
+    assert.equal(result["history"], "");
+  });
+
+  test("falls back to scout context when a wave1 locator result is missing", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 1, max_concurrency: 1 },
+      {
+        omitParallelResults: ["locator-1"],
+        task: (name) => {
+          if (name === "partition") return "auth logic";
+          return undefined;
+        },
+      },
+    );
+
+    await d.run(ctx);
+
+    const analyzerOptions = ctx.calls.taskOptions["analyzer-1"]?.[0];
+    const onlineOptions = ctx.calls.taskOptions["online-researcher-1"]?.[0];
+    const normalizedAnalyzerPrompt = normalizePathSeparators(ctx.calls.prompts["analyzer-1"]?.[0] ?? "");
+    const normalizedOnlinePrompt = normalizePathSeparators(ctx.calls.prompts["online-researcher-1"]?.[0] ?? "");
+
+    assert.equal(readPaths(analyzerOptions).length, 1);
+    assert.ok(readPathEndsWith(analyzerOptions, "00-codebase-scout.md"));
+    assert.equal(readPathEndsWith(analyzerOptions, "wave1/locator-1.md"), false);
+    assert.doesNotMatch(normalizedAnalyzerPrompt, /wave1\/locator-1\.md/);
+
+    assert.equal(readPaths(onlineOptions).length, 1);
+    assert.ok(readPathEndsWith(onlineOptions, "00-codebase-scout.md"));
+    assert.equal(readPathEndsWith(onlineOptions, "wave1/locator-1.md"), false);
+    assert.match(normalizedOnlinePrompt, /Read scout context before researching/);
+    assert.doesNotMatch(normalizedOnlinePrompt, /wave1\/locator-1\.md/);
+  });
+
+  test("writes final research doc and historical hidden run artifacts under research", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    let aggregatorReadPaths: readonly string[] = [];
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 1, max_concurrency: 1 },
+      {
+        task: (name, options) => {
+          if (name === "partition") return "auth logic";
+          if (name === "aggregator") {
+            aggregatorReadPaths = readPaths(options);
+            assert.ok(aggregatorReadPaths.length > 0);
+            for (const path of aggregatorReadPaths) {
+              assert.equal(existsSync(path), true, `expected aggregator read path to exist: ${path}`);
+            }
+            return "final synthesized findings";
+          }
+          return undefined;
+        },
+      },
+    );
+
+    const result = await d.run(ctx);
+
+    assert.equal(result["findings"], "final synthesized findings");
+    assert.equal(result["research_doc_path"], normalizePathSeparators(join("research", `${new Date().toISOString().slice(0, 10)}-trace-auth-behavior.md`)));
+    assert.equal(readFileSync(result["research_doc_path"] as string, "utf8"), "final synthesized findings");
+    assert.equal(existsSync("context-build"), false);
+
+    const artifactDirValue = result["artifact_dir"];
+    if (typeof artifactDirValue !== "string") {
+      throw new Error("expected artifact_dir to be a string");
+    }
+    const artifactDir = artifactDirValue;
+    assert.match(normalizePathSeparators(artifactDir), /^research\/\.deep-research-/);
+    assert.equal(existsSync(artifactDir), true);
+
+    for (const filename of [
+      "00-codebase-scout.md",
+      "01-partition-plan.md",
+      "01-history-locator.md",
+      "02-history-analyzer.md",
+      "locator-1.md",
+      "pattern-finder-1.md",
+      "analyzer-1.md",
+      "online-1.md",
+      "explorer-1.md",
+      "manifest.json",
+    ]) {
+      assert.equal(existsSync(join(artifactDir, filename)), true, `expected ${filename}`);
+    }
+    for (const path of aggregatorReadPaths) {
+      assert.equal(existsSync(path), true, `expected handoff artifact to persist: ${path}`);
+      assert.equal(/(^|\/)context-build\//.test(normalizePathSeparators(path)), false);
+    }
+
+    const manifest = JSON.parse(readFileSync(join(artifactDir, "manifest.json"), "utf8")) as {
+      runId?: string;
+      startedAt?: string;
+      completedAt?: string;
+      researchQuestion?: string;
+      finalAsset?: string;
+      artifacts?: Record<string, string>;
+    };
+    assert.equal(manifest.runId, artifactDir.replace(/^research\/\.deep-research-/, ""));
+    assert.equal(typeof manifest.startedAt, "string");
+    assert.equal(typeof manifest.completedAt, "string");
+    assert.equal(manifest.researchQuestion, "Trace auth behavior");
+    assert.equal(manifest.finalAsset, normalizePathSeparators(join("research", `${new Date().toISOString().slice(0, 10)}-trace-auth-behavior.md`)));
+    assert.deepEqual(manifest.artifacts, {
+      "codebase-scout": normalizePathSeparators(join(artifactDir, "00-codebase-scout.md")),
+      partition: normalizePathSeparators(join(artifactDir, "01-partition-plan.md")),
+      "history-locator": normalizePathSeparators(join(artifactDir, "01-history-locator.md")),
+      "history-analyzer": normalizePathSeparators(join(artifactDir, "02-history-analyzer.md")),
+      "locator-1": normalizePathSeparators(join(artifactDir, "locator-1.md")),
+      "pattern-finder-1": normalizePathSeparators(join(artifactDir, "pattern-finder-1.md")),
+      "analyzer-1": normalizePathSeparators(join(artifactDir, "analyzer-1.md")),
+      "online-1": normalizePathSeparators(join(artifactDir, "online-1.md")),
+      "explorer-1": normalizePathSeparators(join(artifactDir, "explorer-1.md")),
+      manifest: normalizePathSeparators(join(artifactDir, "manifest.json")),
+    });
+  });
+
+  test("does not overwrite an existing default research document", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    const date = new Date().toISOString().slice(0, 10);
+    const existingPath = join("research", `${date}-trace-auth-behavior.md`);
+    mkdirSync(dirname(existingPath), { recursive: true });
+    writeFileSync(existingPath, "existing research", "utf8");
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 1, max_concurrency: 1 },
+      {
+        task: (name) => {
+          if (name === "partition") return "auth logic";
+          if (name === "aggregator") return "final synthesized findings";
+          return undefined;
+        },
+      },
+    );
+
+    const result = await d.run(ctx);
+    const researchDocPath = result["research_doc_path"];
+
+    assert.equal(readFileSync(existingPath, "utf8"), "existing research");
+    assert.ok(typeof researchDocPath === "string");
+    assert.ok(normalizePathSeparators(researchDocPath).endsWith(`${date}-trace-auth-behavior-2.md`));
+    assert.equal(readFileSync(researchDocPath, "utf8"), "final synthesized findings");
+  });
+
+  test("does not create a top-level context-build directory", async () => {
+    const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
+    const d = mod.default as unknown as WorkflowDefinition;
+    const ctx = makeMockCtx(
+      { prompt: "Trace auth behavior", max_partitions: 1, max_concurrency: 1 },
+      {
+        task: (name) => {
+          if (name === "partition") return "auth logic";
+          if (name === "aggregator") return "final synthesized findings";
+          return undefined;
+        },
+      },
+    );
+
+    await d.run(ctx);
+
+    assert.equal(existsSync("context-build"), false);
+    assert.deepEqual(readdirSync("research").filter((entry) => entry === "context-build"), []);
   });
 });
 

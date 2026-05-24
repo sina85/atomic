@@ -8,8 +8,11 @@
  * ctx.parallel(), and ctx.chain().
  */
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import { defineWorkflow } from "../src/index.js";
 import type {
+  WorkflowOutputMode,
   WorkflowTaskResult,
   WorkflowTaskStep,
 } from "../src/shared/types.js";
@@ -17,8 +20,25 @@ import type {
 const DEFAULT_MAX_PARTITIONS = 100;
 const DEFAULT_MAX_CONCURRENCY = 4;
 const LOC_PER_PARTITION = 10_000;
+const DEFAULT_RESEARCH_DOC_DIR = "research";
+const DEEP_RESEARCH_RUN_DIR_PREFIX = ".deep-research-";
+const MAX_RESEARCH_DOC_SLUG_LENGTH = 80;
 
 type PromptSection = readonly [tag: string, content: string];
+
+interface DeepResearchCodebaseResult extends Record<string, unknown> {
+  readonly findings: string;
+  readonly research_doc_path: string;
+  readonly artifact_dir: string;
+  readonly manifest_path: string;
+  readonly partitions: readonly string[];
+  readonly explorer_count: number;
+  readonly specialist_count: number;
+  readonly max_concurrency: number;
+  readonly history: string;
+}
+
+const FILE_ONLY_OUTPUT = "file-only" satisfies WorkflowOutputMode;
 
 const CODEBASE_SKILLS = {
   locator:
@@ -118,6 +138,147 @@ function parsePartitions(text: string, cap: number): string[] {
   return partitions.length > 0 ? partitions : ["core codebase architecture"];
 }
 
+function slugifyResearchTopic(prompt: string): string {
+  const slug = prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_RESEARCH_DOC_SLUG_LENGTH)
+    .replace(/-+$/g, "");
+  return slug.length > 0 ? slug : "deep-research-codebase";
+}
+
+function defaultResearchDocPath(prompt: string, now = new Date()): string {
+  const date = now.toISOString().slice(0, 10);
+  return join(DEFAULT_RESEARCH_DOC_DIR, `${date}-${slugifyResearchTopic(prompt)}.md`);
+}
+
+function sanitizeRunId(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return sanitized.length > 0 ? sanitized : "run";
+}
+
+function timestampRunId(now: Date): string {
+  return sanitizeRunId(now.toISOString().replace(/[:.]/g, "-"));
+}
+
+function suffixedPath(path: string, suffix: number): string {
+  const extension = extname(path);
+  const stem = extension.length === 0 ? path : path.slice(0, -extension.length);
+  return `${stem}-${suffix}${extension}`;
+}
+
+function isFileExistsError(error: unknown): boolean {
+  return error instanceof Error && (error as { readonly code?: string }).code === "EEXIST";
+}
+
+interface DeepResearchArtifactRoot {
+  readonly runId: string;
+  readonly artifactRoot: string;
+}
+
+async function createArtifactRoot(startedAt: Date): Promise<DeepResearchArtifactRoot> {
+  await mkdir(DEFAULT_RESEARCH_DOC_DIR, { recursive: true });
+  const baseRunId = timestampRunId(startedAt);
+  for (let suffix = 0; ; suffix += 1) {
+    const runId = suffix === 0 ? baseRunId : `${baseRunId}-${suffix + 1}`;
+    const artifactRoot = join(
+      DEFAULT_RESEARCH_DOC_DIR,
+      `${DEEP_RESEARCH_RUN_DIR_PREFIX}${runId}`,
+    );
+    try {
+      await mkdir(artifactRoot, { recursive: false });
+      return { runId, artifactRoot };
+    } catch (error) {
+      if (isFileExistsError(error)) continue;
+      throw error;
+    }
+  }
+}
+
+interface DeepResearchManifest {
+  readonly runId: string;
+  readonly startedAt: string;
+  readonly completedAt?: string;
+  readonly researchQuestion: string;
+  readonly finalAsset: string;
+  readonly artifacts: Record<string, string>;
+}
+
+async function writeManifest(path: string, manifest: DeepResearchManifest): Promise<void> {
+  await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+async function writeResearchDoc(path: string, content: string): Promise<string> {
+  await mkdir(dirname(path), { recursive: true });
+
+  for (let suffix = 0; ; suffix += 1) {
+    const candidate = suffix === 0 ? path : suffixedPath(path, suffix + 1);
+    try {
+      await writeFile(candidate, content, { encoding: "utf8", flag: "wx" });
+      return candidate;
+    } catch (error) {
+      if (isFileExistsError(error)) continue;
+      throw error;
+    }
+  }
+}
+
+async function readArtifactText(path: string | undefined, fallback: string): Promise<string> {
+  if (path === undefined) return fallback;
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return fallback;
+  }
+}
+
+async function specialistHandoffFromArtifacts(
+  partition: string,
+  index: number,
+  artifactPathsByStage: ReadonlyMap<string, string>,
+): Promise<string> {
+  const i = index + 1;
+  const locator = await readArtifactText(
+    artifactPathsByStage.get(`locator-${i}`),
+    "(no locator output)",
+  );
+  const patterns = await readArtifactText(
+    artifactPathsByStage.get(`pattern-finder-${i}`),
+    "(no pattern output)",
+  );
+  const analyzer = await readArtifactText(
+    artifactPathsByStage.get(`analyzer-${i}`),
+    "(no analyzer output)",
+  );
+  const online = await readArtifactText(
+    artifactPathsByStage.get(`online-${i}`),
+    "(no online research output)",
+  );
+  return [
+    `## Partition ${i}: ${partition}`,
+    `### Locator\n${locator}`,
+    `### Pattern Finder\n${patterns}`,
+    `### Analyzer\n${analyzer}`,
+    `### Online Researcher\n${online}`,
+  ].join("\n\n");
+}
+
+function manifestArtifactPaths(
+  artifactPathsByStage: ReadonlyMap<string, string>,
+  manifestPath: string,
+): Record<string, string> {
+  const artifacts: Record<string, string> = {};
+  for (const [stage, path] of artifactPathsByStage) {
+    artifacts[stage] = displayPath(path);
+  }
+  artifacts.manifest = displayPath(manifestPath);
+  return artifacts;
+}
+
 function findResult(
   results: readonly WorkflowTaskResult[],
   name: string,
@@ -127,32 +288,12 @@ function findResult(
   );
 }
 
-function specialistSummary(
-  partitions: readonly string[],
-  wave1: readonly WorkflowTaskResult[],
-  wave2: readonly WorkflowTaskResult[],
-): string {
-  return partitions
-    .map((partition, index) => {
-      const i = index + 1;
-      const locator =
-        findResult(wave1, `locator-${i}`)?.text ?? "(no locator output)";
-      const patterns =
-        findResult(wave1, `pattern-finder-${i}`)?.text ?? "(no pattern output)";
-      const analyzer =
-        findResult(wave2, `analyzer-${i}`)?.text ?? "(no analyzer output)";
-      const online =
-        findResult(wave2, `online-researcher-${i}`)?.text ??
-        "(no online research output)";
-      return [
-        `## Partition ${i}: ${partition}`,
-        `### Locator\n${locator}`,
-        `### Pattern Finder\n${patterns}`,
-        `### Analyzer\n${analyzer}`,
-        `### Online Researcher\n${online}`,
-      ].join("\n\n");
-    })
-    .join("\n\n---\n\n");
+function displayPath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function displayPaths(paths: readonly string[]): string {
+  return paths.map(displayPath).join(", ");
 }
 
 export default defineWorkflow("deep-research-codebase")
@@ -191,13 +332,45 @@ export default defineWorkflow("deep-research-codebase")
       inputs.max_concurrency,
       DEFAULT_MAX_CONCURRENCY,
     );
+    const startedAt = new Date();
+    const finalResearchDocPath = defaultResearchDocPath(prompt);
     const codebaseLines = countCodebaseLines();
     const partitionCap = calculatePartitionCap(
       requestedMaxPartitions,
       codebaseLines,
     );
+    const { runId, artifactRoot } = await createArtifactRoot(startedAt);
+    const artifactPathsByStage = new Map<string, string>();
+    const addArtifact = (stage: string, path: string) => {
+      artifactPathsByStage.set(stage, path);
+      return path;
+    };
+    const fileOnlyOutput = (output: string): {
+      output: string;
+      outputMode: WorkflowOutputMode;
+    } => ({
+      output,
+      outputMode: FILE_ONLY_OUTPUT,
+    });
 
-    let noAskQuestionToolSet = [
+    const scoutPath = addArtifact(
+      "codebase-scout",
+      join(artifactRoot, "00-codebase-scout.md"),
+    );
+    const partitionPlanPath = addArtifact(
+      "partition",
+      join(artifactRoot, "01-partition-plan.md"),
+    );
+    const historyLocatorPath = addArtifact(
+      "history-locator",
+      join(artifactRoot, "01-history-locator.md"),
+    );
+    const historyAnalyzerPath = addArtifact(
+      "history-analyzer",
+      join(artifactRoot, "02-history-analyzer.md"),
+    );
+
+    const noAskQuestionToolSet = [
       "read",
       "bash",
       "edit",
@@ -211,7 +384,7 @@ export default defineWorkflow("deep-research-codebase")
       "intercom",
     ];
 
-    let plannerModelConfig = {
+    const plannerModelConfig = {
       model: "openai/gpt-5.5",
       fallbackModels: [
         "openai-codex/gpt-5.5",
@@ -223,7 +396,7 @@ export default defineWorkflow("deep-research-codebase")
       tools: noAskQuestionToolSet,
     };
 
-    let explorerModelConfig = {
+    const explorerModelConfig = {
       model: "openai/gpt-5.4-mini",
       fallbackModels: [
         "openai-codex/gpt-5.4-mini",
@@ -269,6 +442,7 @@ export default defineWorkflow("deep-research-codebase")
               ].join("\n"),
             ],
           ]),
+          ...fileOnlyOutput(scoutPath),
           ...plannerModelConfig,
         },
         {
@@ -295,6 +469,7 @@ export default defineWorkflow("deep-research-codebase")
               "A markdown table with columns: Path, Evidence, Relevance, Confidence.",
             ],
           ]),
+          ...fileOnlyOutput(historyLocatorPath),
           ...explorerModelConfig,
         },
       ],
@@ -305,7 +480,7 @@ export default defineWorkflow("deep-research-codebase")
       findResult(initialDiscovery, "codebase-scout") ?? initialDiscovery[0]!;
     const historyLocator =
       findResult(initialDiscovery, "history-locator") ?? initialDiscovery[1]!;
-    const history = await ctx.chain(
+    await ctx.chain(
       [
         {
           name: "history-analyzer",
@@ -341,6 +516,8 @@ export default defineWorkflow("deep-research-codebase")
             ],
           ]),
           previous: historyLocator,
+          reads: [historyLocatorPath],
+          ...fileOnlyOutput(historyAnalyzerPath),
           ...plannerModelConfig,
         },
       ],
@@ -370,14 +547,26 @@ export default defineWorkflow("deep-research-codebase")
         ["output_format", "Plain text only: one partition per line."],
       ]),
       previous: scout,
+      output: partitionPlanPath,
+      reads: [scoutPath],
       ...plannerModelConfig,
     });
 
     const partitions = parsePartitions(partitionPlan.text, partitionCap);
+    const locatorArtifactPaths = new Map<number, string>();
 
     const wave1Steps: WorkflowTaskStep[] = partitions.flatMap(
       (partition, index) => {
         const i = index + 1;
+        const locatorPath = addArtifact(
+          `locator-${i}`,
+          join(artifactRoot, `locator-${i}.md`),
+        );
+        const patternFinderPath = addArtifact(
+          `pattern-finder-${i}`,
+          join(artifactRoot, `pattern-finder-${i}.md`),
+        );
+        locatorArtifactPaths.set(i, locatorPath);
         return [
           {
             name: `locator-${i}`,
@@ -388,7 +577,10 @@ export default defineWorkflow("deep-research-codebase")
                 `Partition ${i}/${partitions.length}: ${partition}`,
               ],
               ["research_question", prompt],
-              ["scout_context", "{previous}"],
+              [
+                "scout_context",
+                `Read the scout artifact before making evidence claims: ${displayPath(scoutPath)}\nCompact saved-output reference: {previous}`,
+              ],
               ["codebase_skills", codebaseSkillGuidance("locator")],
               [
                 "instructions",
@@ -411,6 +603,8 @@ export default defineWorkflow("deep-research-codebase")
               ],
             ]),
             previous: scout,
+            reads: [scoutPath],
+            ...fileOnlyOutput(locatorPath),
             ...explorerModelConfig,
           },
           {
@@ -422,7 +616,10 @@ export default defineWorkflow("deep-research-codebase")
                 `Partition ${i}/${partitions.length}: ${partition}`,
               ],
               ["research_question", prompt],
-              ["scout_context", "{previous}"],
+              [
+                "scout_context",
+                `Read the scout artifact before making evidence claims: ${displayPath(scoutPath)}\nCompact saved-output reference: {previous}`,
+              ],
               ["codebase_skills", codebaseSkillGuidance("patternFinder")],
               [
                 "instructions",
@@ -445,6 +642,8 @@ export default defineWorkflow("deep-research-codebase")
               ],
             ]),
             previous: scout,
+            reads: [scoutPath],
+            ...fileOnlyOutput(patternFinderPath),
             ...explorerModelConfig,
           },
         ];
@@ -460,6 +659,24 @@ export default defineWorkflow("deep-research-codebase")
       (partition, index) => {
         const i = index + 1;
         const locator = findResult(wave1, `locator-${i}`);
+        const locatorPath =
+          locator === undefined ? undefined : locatorArtifactPaths.get(i);
+        const analyzerReads =
+          locatorPath === undefined ? [scoutPath] : [scoutPath, locatorPath];
+        const onlineResearcherReads =
+          locatorPath === undefined ? [scoutPath] : [locatorPath];
+        const onlineResearcherLocalContext =
+          locatorPath === undefined
+            ? `Read scout context before researching: ${displayPath(scoutPath)}\nCompact saved-output reference: {previous}`
+            : `Read local artifact context before researching: ${displayPath(locatorPath)}\nCompact saved-output reference: {previous}`;
+        const analyzerPath = addArtifact(
+          `analyzer-${i}`,
+          join(artifactRoot, `analyzer-${i}.md`),
+        );
+        const onlineResearcherPath = addArtifact(
+          `online-${i}`,
+          join(artifactRoot, `online-${i}.md`),
+        );
         return [
           {
             name: `analyzer-${i}`,
@@ -473,7 +690,10 @@ export default defineWorkflow("deep-research-codebase")
                 `Partition ${i}/${partitions.length}: ${partition}`,
               ],
               ["research_question", prompt],
-              ["context", "{previous}"],
+              [
+                "context",
+                `Read these artifacts before analyzing: ${displayPaths(analyzerReads)}\nCompact saved-output reference: {previous}`,
+              ],
               ["codebase_skills", codebaseSkillGuidance("analyzer")],
               [
                 "instructions",
@@ -496,6 +716,8 @@ export default defineWorkflow("deep-research-codebase")
               ],
             ]),
             previous: locator === undefined ? scout : [scout, locator],
+            reads: analyzerReads,
+            ...fileOnlyOutput(analyzerPath),
             ...explorerModelConfig,
           },
           {
@@ -510,7 +732,10 @@ export default defineWorkflow("deep-research-codebase")
                 `Partition ${i}/${partitions.length}: ${partition}`,
               ],
               ["research_question", prompt],
-              ["local_context", "{previous}"],
+              [
+                "local_context",
+                onlineResearcherLocalContext,
+              ],
               ["codebase_skills", codebaseSkillGuidance("onlineResearcher")],
               [
                 "instructions",
@@ -533,6 +758,8 @@ export default defineWorkflow("deep-research-codebase")
               ],
             ]),
             previous: locator === undefined ? scout : locator,
+            reads: onlineResearcherReads,
+            ...fileOnlyOutput(onlineResearcherPath),
             ...explorerModelConfig,
           },
         ];
@@ -543,8 +770,29 @@ export default defineWorkflow("deep-research-codebase")
       task: prompt,
       concurrency: maxConcurrency,
     });
-    const historyOverview = history.at(-1)?.text ?? "";
-    const specialistReports = specialistSummary(partitions, wave1, wave2);
+    const historyOverview = await readArtifactText(historyAnalyzerPath, "");
+    const explorerPaths = await Promise.all(
+      partitions.map(async (partition, index) => {
+        const i = index + 1;
+        const explorerPath = addArtifact(
+          `explorer-${i}`,
+          join(artifactRoot, `explorer-${i}.md`),
+        );
+        const explorer = await specialistHandoffFromArtifacts(
+          partition,
+          index,
+          artifactPathsByStage,
+        );
+        await writeFile(explorerPath, explorer, "utf8");
+        return explorerPath;
+      }),
+    );
+    const aggregatorReadPaths = [
+      scoutPath,
+      partitionPlanPath,
+      ...(historyOverview === "" ? [] : [historyAnalyzerPath]),
+      ...explorerPaths,
+    ];
 
     const aggregate = await ctx.task("aggregator", {
       prompt: taggedPrompt([
@@ -554,10 +802,25 @@ export default defineWorkflow("deep-research-codebase")
           `Answer the research question comprehensively: ${prompt}`,
         ],
         [
-          "prior_research_overview",
-          historyOverview || "(no prior research found)",
+          "context_artifacts",
+          [
+            `Read the scout artifact at ${displayPath(scoutPath)}.`,
+            `Read the partition plan artifact at ${displayPath(partitionPlanPath)}.`,
+            historyOverview === ""
+              ? "No prior research overview artifact is available."
+              : `Read the prior research overview artifact at ${displayPath(historyAnalyzerPath)}.`,
+          ].join("\n"),
         ],
-        ["specialist_reports", specialistReports],
+        [
+          "prior_research_overview",
+          historyOverview === ""
+            ? "(no prior research found)"
+            : `Read the prior research overview artifact at ${displayPath(historyAnalyzerPath)}.`,
+        ],
+        [
+          "specialist_reports",
+          `Read the complete explorer handoff artifact(s) at ${displayPaths(explorerPaths)}. They preserve every partition's Locator, Pattern Finder, Analyzer, and Online Researcher output from the original inline specialist handoff while keeping this prompt bounded.`,
+        ],
         [
           "codebase_skills",
           codebaseSkillGuidance(
@@ -570,6 +833,7 @@ export default defineWorkflow("deep-research-codebase")
           "instructions",
           [
             "Synthesize; do not merely concatenate specialist reports.",
+            "Use the supplied input files as the source of detailed scout, partition, history, and specialist evidence instead of relying on inline transcripts.",
             "Prioritize claims supported by concrete paths, symbols, tests, docs, or cited external references.",
             "Resolve contradictions explicitly and preserve important uncertainty.",
             "Avoid inventing facts not supported by the supplied reports; state unknowns instead.",
@@ -588,17 +852,36 @@ export default defineWorkflow("deep-research-codebase")
           ].join("\n"),
         ],
       ]),
-      previous: [scout, partitionPlan, ...wave1, ...wave2],
+      reads: aggregatorReadPaths,
       ...explorerModelConfig,
     });
 
-    return {
+    const writtenResearchDocPath = await writeResearchDoc(
+      finalResearchDocPath,
+      aggregate.text,
+    );
+    const manifestPath = join(artifactRoot, "manifest.json");
+    const completedAt = new Date();
+    await writeManifest(manifestPath, {
+      runId,
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt.toISOString(),
+      researchQuestion: prompt,
+      finalAsset: displayPath(writtenResearchDocPath),
+      artifacts: manifestArtifactPaths(artifactPathsByStage, manifestPath),
+    });
+
+    const result: DeepResearchCodebaseResult = {
       findings: aggregate.text,
+      research_doc_path: displayPath(writtenResearchDocPath),
+      artifact_dir: displayPath(artifactRoot),
+      manifest_path: displayPath(manifestPath),
       partitions,
       explorer_count: partitions.length,
       specialist_count: wave1.length + wave2.length,
       max_concurrency: maxConcurrency,
       history: historyOverview,
     };
+    return result;
   })
   .compile();

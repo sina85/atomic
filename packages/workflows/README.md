@@ -288,6 +288,8 @@ Scout + research-history chain → two parallel specialist waves → aggregator.
 | `max_partitions`  | `number` | —        | `100`   | Maximum number of codebase partitions to explore.         |
 | `max_concurrency` | `number` | —        | `4`     | Maximum number of workflow stages to run concurrently.    |
 
+Final Markdown research documents are written to dated `research/` paths relative to the current working directory, with a numeric suffix if needed to avoid overwriting an existing document. Hidden run artifacts are written under `research/.deep-research-<run-id>/`.
+
 ### `ralph`
 
 Plan → orchestrate → simplify → infrastructure discovery → parallel review loop. Named after the [Ralph Wiggum Method](https://ghuntley.com/ralph/).
