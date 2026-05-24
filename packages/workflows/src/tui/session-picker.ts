@@ -4,7 +4,7 @@
  *
  * Visual contract (DESIGN.md §5 Picker Rows + pi-subagents/src/tui/render-helpers.ts):
  *  - Rounded `╭─ Title ─╮` chrome in `border` colour with title in `accent`.
- *  - Section header rows use the mauve `▎` glyph (matches GraphView).
+ *  - Section header rows use a simple two-space label indent (matches GraphView).
  *  - Selected row: `picker-row-selected` token (blue bg, surface0 fg, bold).
  *  - Footer: dim hints, active key letters in `text`.
  *
@@ -24,7 +24,10 @@ import type { GraphTheme } from "./graph-theme.js";
 import { keyText } from "@bastani/atomic";
 import { fmtDuration, statusIcon, statusColor } from "./status-helpers.js";
 import { hexToAnsi, hexBg, RESET, BOLD } from "./color-utils.js";
-import { matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
+import { Key, matchesKey, truncateToWidth, visibleWidth } from "./text-helpers.js";
+
+const ESCAPE_CODE = 0x1b;
+const DOUBLE_ESCAPE_SEQUENCE = String.fromCharCode(ESCAPE_CODE, ESCAPE_CODE);
 
 // ---------------------------------------------------------------------------
 // State + filtering
@@ -182,7 +185,7 @@ function renderSectionRow(label: string, inner: number, theme: GraphTheme): stri
   const panelBg = hexBg(theme.bg);
   const mauve = hexToAnsi(theme.mauve);
   const muted = hexToAnsi(theme.textMuted);
-  const content = ` ${mauve}▎${RESET}${panelBg} ${muted}${BOLD}${label}${RESET}`;
+  const content = ` ${mauve} ${RESET}${panelBg} ${muted}${BOLD}${label}${RESET}`;
   return `${border}│${RESET}${panelBg}${padTo(content, inner)}${RESET}${border}│${RESET}`;
 }
 
@@ -195,14 +198,14 @@ function renderFilterRow(inner: number, theme: GraphTheme, state: SessionPickerS
   const accent = hexToAnsi(theme.accent);
   const cursor = state.filterFocused ? `${accent}▌${RESET}${panelBg}` : "";
   const label = state.filterFocused ? `${accent}filter` : `${muted}filter`;
-  const prefixPlain = " ▎ filter  ";
+  const prefixPlain = "   filter  ";
   const valueBudget = Math.max(1, inner - visibleWidth(prefixPlain) - (state.filterFocused ? 1 : 0));
   const rawValue = state.query || "(type to filter by name or id)";
   const shownValue = truncateToWidth(rawValue, valueBudget, "…");
   const value = state.query
     ? `${text}${shownValue}${RESET}${panelBg}`
     : `${muted}${shownValue}${RESET}${panelBg}`;
-  const content = ` ${mauve}▎${RESET}${panelBg} ${label}${RESET}${panelBg}  ${value}${cursor}`;
+  const content = ` ${mauve} ${RESET}${panelBg} ${label}${RESET}${panelBg}  ${value}${cursor}`;
   return `${border}│${RESET}${panelBg}${padTo(content, inner)}${RESET}${border}│${RESET}`;
 }
 
@@ -342,15 +345,15 @@ export function handleSessionPickerInput(
 ): SessionPickerAction {
   // Filter mode — typed chars feed the query, Enter/Esc exit.
   if (state.filterFocused) {
-    if (matchesKey(data, "escape") || data === "\x1b\x1b") {
+    if (matchesKey(data, Key.escape) || data === DOUBLE_ESCAPE_SEQUENCE) {
       state.filterFocused = false;
       return { kind: "noop" };
     }
-    if (matchesKey(data, "enter")) {
+    if (matchesKey(data, Key.enter)) {
       state.filterFocused = false;
       return { kind: "noop" };
     }
-    if (matchesKey(data, "backspace")) {
+    if (matchesKey(data, Key.backspace)) {
       state.query = state.query.slice(0, -1);
       state.selectedIndex = 0;
       return { kind: "noop" };
@@ -364,36 +367,36 @@ export function handleSessionPickerInput(
   }
 
   // Navigation mode.
-  if (data === "/") {
+  if (matchesKey(data, "/")) {
     state.filterFocused = true;
     return { kind: "noop" };
   }
-  if (matchesKey(data, "escape")) return { kind: "close" };
-  if (data === "q" || data === "Q") return { kind: "close" };
-  if (data === "a" || data === "A") {
+  if (matchesKey(data, Key.escape)) return { kind: "close" };
+  if (matchesKey(data, "q") || matchesKey(data, Key.shift("q"))) return { kind: "close" };
+  if (matchesKey(data, "a") || matchesKey(data, Key.shift("a"))) {
     state.includeAll = !state.includeAll;
     state.selectedIndex = 0;
     return { kind: "noop" };
   }
 
   // Arrows + j/k.
-  if (matchesKey(data, "down") || data === "j") {
+  if (matchesKey(data, Key.down) || matchesKey(data, "j")) {
     state.selectedIndex = Math.min(state.selectedIndex + 1, Math.max(0, rows.length - 1));
     return { kind: "noop" };
   }
-  if (matchesKey(data, "up") || data === "k") {
+  if (matchesKey(data, Key.up) || matchesKey(data, "k")) {
     if (rows.length > 0 && state.selectedIndex === 0) return { kind: "noop" };
     state.selectedIndex = Math.max(state.selectedIndex - 1, 0);
     return { kind: "noop" };
   }
 
-  if (matchesKey(data, "enter")) {
+  if (matchesKey(data, Key.enter)) {
     const row = rows[state.selectedIndex];
     if (!row) return { kind: "noop" };
     return { kind: "connect", runId: row.run.id };
   }
   // `x` = kill. Avoids collision with vim's `k` = up.
-  if (data === "x" || data === "X") {
+  if (matchesKey(data, "x") || matchesKey(data, Key.shift("x"))) {
     const row = rows[state.selectedIndex];
     if (!row) return { kind: "noop" };
     return { kind: "kill", runId: row.run.id };

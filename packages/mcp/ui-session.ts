@@ -14,6 +14,7 @@ import {
 import { logger } from "./logger.ts";
 import { startUiServer, type UiServerHandle } from "./ui-server.ts";
 import { isGlimpseAvailable, openGlimpseWindow } from "./glimpse-ui.ts";
+import { escapeHtmlAttribute } from "./host-html-template.ts";
 
 let activeGlimpseWindow: { close(): void } | null = null;
 
@@ -264,9 +265,10 @@ export async function maybeStartUiSession(
         active = false;
         cleanupStreamListener();
 
-        if (state.uiServer === handle) {
-          const messages = handle.getSessionMessages();
-          const stream = handle.getStreamSummary();
+        if (state.uiServer === handle && handle !== null) {
+          const completedHandle = handle;
+          const messages = completedHandle.getSessionMessages();
+          const stream = completedHandle.getStreamSummary();
           const hasContent =
             messages.prompts.length > 0 ||
             messages.intents.length > 0 ||
@@ -275,8 +277,8 @@ export async function maybeStartUiSession(
 
           if (hasContent) {
             state.completedUiSessions.push({
-              serverName: handle.serverName,
-              toolName: handle.toolName,
+              serverName: completedHandle.serverName,
+              toolName: completedHandle.toolName,
               completedAt: new Date(),
               reason,
               messages,
@@ -323,7 +325,8 @@ export async function maybeStartUiSession(
 
     if (useGlimpse) {
       try {
-        const glimpseHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden}iframe{width:100%;height:100%;border:none}</style></head><body><iframe src="${handle.url}"></iframe></body></html>`;
+        const iframeUrl = escapeHtmlAttribute(handle.url);
+        const glimpseHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden}iframe{width:100%;height:100%;border:none}</style></head><body><iframe src="${iframeUrl}"></iframe></body></html>`;
         activeGlimpseWindow = await openGlimpseWindow(glimpseHtml, {
           title: `MCP · ${request.serverName} · ${request.toolName}`,
           width: 1000,

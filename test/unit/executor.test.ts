@@ -2037,7 +2037,55 @@ describe("executor — stage-control registry integration", () => {
     assert.equal(stage.attachable, undefined);
   });
 
-  test("attached completed stage handle remains chat-capable until detach", async () => {
+  test("completed idle stage handle is released after settle", async () => {
+    const registry = createStageControlRegistry();
+    const store = createStore();
+    let ids: { runId: string; stageId: string } | undefined;
+    let disposeCalls = 0;
+    const promptCalls: string[] = [];
+    const session: StageSessionRuntime = {
+      ...mockSession(),
+      async prompt(text: string) {
+        promptCalls.push(text);
+      },
+      async dispose() {
+        disposeCalls += 1;
+      },
+    };
+    const def = defineWorkflow("complete-chat-wf")
+      .run(async (ctx) => {
+        await ctx.stage("only").prompt("workflow prompt");
+        return {};
+      })
+      .compile();
+
+    await run(def, {}, {
+      adapters: {
+        agentSession: {
+          async create() { return session; },
+        },
+      },
+      store,
+      stageControlRegistry: registry,
+      onStageStart: (runId, stage) => {
+        if (stage.name !== "only" || stage.startedAt !== undefined || ids) return;
+        ids = { runId, stageId: stage.id };
+      },
+    });
+
+    assert.ok(ids, "stage ids should be captured");
+    assert.equal(registry.get(ids!.runId, ids!.stageId), undefined);
+    assert.deepEqual(
+      registry.run(ids!.runId).stages(),
+      [],
+      "completed stage should be detached from workflow pause/resume control",
+    );
+    assert.equal(disposeCalls, 1);
+    assert.deepEqual(promptCalls, ["workflow prompt"]);
+    assert.equal(store.runs()[0]?.stages[0]?.status, "completed");
+  });
+
+  test("attached completed idle stage handle is released after settle", async () => {
     const registry = createStageControlRegistry();
     const store = createStore();
     let attachedIds: { runId: string; stageId: string } | undefined;
@@ -2075,23 +2123,74 @@ describe("executor — stage-control registry integration", () => {
     });
 
     assert.ok(attachedIds, "stage should have been attached before prompt");
-    const retained = registry.get(attachedIds!.runId, attachedIds!.stageId);
-    assert.ok(retained, "attached completed stage should keep its live chat handle");
+    assert.equal(registry.get(attachedIds!.runId, attachedIds!.stageId), undefined);
     assert.deepEqual(
       registry.run(attachedIds!.runId).stages(),
       [],
       "completed stage should be detached from workflow pause/resume control",
     );
     assert.equal(store.runs()[0]?.stages[0]?.status, "completed");
+    assert.equal(disposeCalls, 1);
+    assert.deepEqual(promptCalls, ["workflow prompt"]);
+  });
+
+  test("completed stage handle is kept only until queued messages drain", async () => {
+    const registry = createStageControlRegistry();
+    const store = createStore();
+    let ids: { runId: string; stageId: string } | undefined;
+    let disposeCalls = 0;
+    let pendingMessageCount = 1;
+    const listeners = new Set<(event: { type: string; [key: string]: unknown }) => void>();
+    const session: StageSessionRuntime = {
+      ...mockSession(),
+      get pendingMessageCount() {
+        return pendingMessageCount;
+      },
+      subscribe(listener) {
+        listeners.add(listener as (event: { type: string; [key: string]: unknown }) => void);
+        return () => {
+          listeners.delete(listener as (event: { type: string; [key: string]: unknown }) => void);
+        };
+      },
+      async dispose() {
+        disposeCalls += 1;
+      },
+    };
+    const def = defineWorkflow("queued-complete-chat-wf")
+      .run(async (ctx) => {
+        await ctx.stage("only").prompt("workflow prompt");
+        return {};
+      })
+      .compile();
+
+    const result = await run(def, {}, {
+      adapters: {
+        agentSession: {
+          async create() { return session; },
+        },
+      },
+      store,
+      stageControlRegistry: registry,
+      onStageStart: (runId, stage) => {
+        if (stage.name !== "only" || stage.startedAt !== undefined || ids) return;
+        ids = { runId, stageId: stage.id };
+      },
+    });
+
+    assert.equal(result.status, "completed");
+    assert.ok(ids, "stage ids should be captured");
+    const retained = registry.get(ids!.runId, ids!.stageId);
+    assert.ok(retained, "queued messages should keep the live handle temporarily");
+    assert.deepEqual(registry.run(ids!.runId).stages(), []);
     assert.equal(disposeCalls, 0);
 
-    await retained!.prompt("post-completion chat");
-    assert.deepEqual(promptCalls, ["workflow prompt", "post-completion chat"]);
-    assert.equal(store.runs()[0]?.stages[0]?.status, "completed");
+    pendingMessageCount = 0;
+    for (const listener of listeners) {
+      listener({ type: "queue_update", steering: [], followUp: [] });
+    }
+    await waitForMicrotasks();
 
-    store.recordStageAttached(attachedIds!.runId, attachedIds!.stageId, false);
-    await sleep(20);
-    assert.equal(registry.get(attachedIds!.runId, attachedIds!.stageId), undefined);
+    assert.equal(registry.get(ids!.runId, ids!.stageId), undefined);
     assert.equal(disposeCalls, 1);
   });
 

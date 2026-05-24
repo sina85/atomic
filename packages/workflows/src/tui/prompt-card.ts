@@ -12,9 +12,9 @@
  *   │                                               │
  *   │  <message>                                    │
  *   │                                               │
- *   │  ┌ response ─────────────────────────────┐    │
+ *   │  ╭ response ─────────────────────────────╮    │
  *   │  │ <text input / choice cycler>          │    │
- *   │  └───────────────────────────────────────┘    │
+ *   │  ╰───────────────────────────────────────╯    │
  *   │                                               │
  *   │  ↵ submit · esc skip                          │
  *   ╰───────────────────────────────────────────────╯
@@ -37,7 +37,7 @@ import {
 import type { PendingPrompt } from "../shared/store-types.js";
 import type { GraphTheme } from "./graph-theme.js";
 import { hexToAnsi, hexBg, paint, RESET, BOLD } from "./color-utils.js";
-import { matchesKey } from "./text-helpers.js";
+import { Key, matchesKey } from "./text-helpers.js";
 
 // ---------------------------------------------------------------------------
 // State
@@ -99,7 +99,7 @@ export function handlePromptCardInput(
   data: string,
   state: PromptCardState,
 ): PromptCardAction {
-  if (matchesKey(data, "ctrl+c") || matchesKey(data, "escape")) {
+  if (matchesKey(data, Key.ctrl("c")) || matchesKey(data, Key.escape)) {
     return { kind: "cancel" };
   }
 
@@ -119,17 +119,17 @@ function handleConfirm(
   data: string,
   state: PromptCardState,
 ): PromptCardAction {
-  if (matchesKey(data, "left") || matchesKey(data, "right") || matchesKey(data, "space") || matchesKey(data, "tab")) {
+  if (matchesKey(data, Key.left) || matchesKey(data, Key.right) || matchesKey(data, Key.space) || matchesKey(data, Key.tab)) {
     state.confirmValue = !state.confirmValue;
     return { kind: "noop" };
   }
-  if (data === "y" || data === "Y") {
+  if (matchesKey(data, "y") || matchesKey(data, Key.shift("y"))) {
     return { kind: "submit", response: true };
   }
-  if (data === "n" || data === "N") {
+  if (matchesKey(data, "n") || matchesKey(data, Key.shift("n"))) {
     return { kind: "submit", response: false };
   }
-  if (matchesKey(data, "enter")) {
+  if (matchesKey(data, Key.enter)) {
     return { kind: "submit", response: state.confirmValue };
   }
   return { kind: "noop" };
@@ -138,7 +138,7 @@ function handleConfirm(
 function handleSelect(data: string, state: PromptCardState): PromptCardAction {
   const choices = state.prompt.choices ?? [];
   if (choices.length === 0) {
-    if (matchesKey(data, "enter")) {
+    if (matchesKey(data, Key.enter)) {
       return { kind: "submit", response: "" };
     }
     return { kind: "noop" };
@@ -155,24 +155,24 @@ function handleSelect(data: string, state: PromptCardState): PromptCardAction {
 }
 
 function handleInput(data: string, state: PromptCardState): PromptCardAction {
-  if (matchesKey(data, "enter")) {
+  if (matchesKey(data, Key.enter)) {
     return { kind: "submit", response: state.rawText };
   }
   return applyTextEdit(data, state);
 }
 
 function handleEditor(data: string, state: PromptCardState): PromptCardAction {
-  if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
+  if (matchesKey(data, Key.tab) || matchesKey(data, Key.shift("tab"))) {
     state.editorSubmitFocused = !state.editorSubmitFocused;
     return { kind: "noop" };
   }
   if (state.editorSubmitFocused) {
-    if (matchesKey(data, "enter")) {
+    if (matchesKey(data, Key.enter)) {
       return { kind: "submit", response: state.rawText };
     }
     return { kind: "noop" };
   }
-  if (matchesKey(data, "enter")) {
+  if (matchesKey(data, Key.enter)) {
     state.rawText = state.rawText.slice(0, state.caret) + "\n" + state.rawText.slice(state.caret);
     state.caret += 1;
     return { kind: "noop" };
@@ -184,15 +184,15 @@ function applyTextEdit(
   data: string,
   state: PromptCardState,
 ): PromptCardAction {
-  if (matchesKey(data, "left")) {
+  if (matchesKey(data, Key.left)) {
     state.caret = previousGraphemeBoundary(state.rawText, state.caret);
     return { kind: "noop" };
   }
-  if (matchesKey(data, "right")) {
+  if (matchesKey(data, Key.right)) {
     state.caret = nextGraphemeBoundary(state.rawText, state.caret);
     return { kind: "noop" };
   }
-  if (matchesKey(data, "backspace")) {
+  if (matchesKey(data, Key.backspace)) {
     if (state.caret > 0) {
       const prev = previousGraphemeBoundary(state.rawText, state.caret);
       state.rawText = state.rawText.slice(0, prev) + state.rawText.slice(state.caret);
@@ -335,8 +335,8 @@ function normalizeSelectKeyData(data: string): string {
   // The historical prompt card accepted left/right as select aliases; feed the
   // corresponding vertical key into pi-tui's SelectList so it owns the actual
   // wrap/clamp/selection update behavior.
-  if (matchesKey(data, "right")) return "\x1b[B";
-  if (matchesKey(data, "left")) return "\x1b[A";
+  if (matchesKey(data, Key.right)) return "\x1b[B";
+  if (matchesKey(data, Key.left)) return "\x1b[A";
   return data;
 }
 
@@ -372,7 +372,7 @@ export function renderPromptCard(opts: PromptCardRenderOpts): string[] {
   }
   lines.push(makePaddedRow(bg, borderColor, innerWidth, ""));
 
-  const fieldLines = renderResponseField(state, theme, innerWidth - 4, opts.cursorOn);
+  const fieldLines = renderResponseFieldBox(state, theme, innerWidth - 4, opts.cursorOn);
   for (const fl of fieldLines) {
     lines.push(makePaddedRow(bg, borderColor, innerWidth, "  " + fl));
   }
@@ -422,6 +422,33 @@ function makePaddedRow(
 function wrapText(text: string, width: number): string[] {
   if (width <= 0) return [text];
   return wrapTextWithAnsi(text, width);
+}
+
+function renderResponseFieldBox(
+  state: PromptCardState,
+  theme: GraphTheme,
+  usable: number,
+  cursorOn: boolean,
+): string[] {
+  const boxWidth = Math.max(4, usable);
+  const contentWidth = Math.max(1, boxWidth - 2);
+  const borderColor = theme.accent;
+  const label = " response ";
+  const labelText = paint(label, theme.textMuted, { bold: true });
+  const labelW = visibleWidth(labelText);
+  const topFill = Math.max(0, boxWidth - labelW - 2);
+  const rows = renderResponseField(state, theme, contentWidth, cursorOn);
+  return [
+    paint("╭", borderColor) + labelText + paint("─".repeat(topFill) + "╮", borderColor),
+    ...rows.map((row) => makeFieldRow(row, contentWidth, borderColor)),
+    paint("╰" + "─".repeat(Math.max(0, boxWidth - 2)) + "╯", borderColor),
+  ];
+}
+
+function makeFieldRow(content: string, width: number, borderColor: string): string {
+  const clipped = truncateToWidth(content, width, "", true);
+  const padded = clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+  return paint("│", borderColor) + padded + paint("│", borderColor);
 }
 
 function renderResponseField(

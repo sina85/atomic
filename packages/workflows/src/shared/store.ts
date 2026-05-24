@@ -84,6 +84,17 @@ export interface Store {
    * overlay-driven response. Foreground runs never call this.
    */
   awaitPendingPrompt(runId: string, promptId: string): Promise<unknown>;
+  /** Record a pending HIL prompt for a specific workflow stage/node. */
+  recordStagePendingPrompt(runId: string, stageId: string, prompt: PendingPrompt): boolean;
+  /** Resolve a pending HIL prompt on a specific workflow stage/node. */
+  resolveStagePendingPrompt(
+    runId: string,
+    stageId: string,
+    promptId: string,
+    response: unknown,
+  ): boolean;
+  /** Wait for a stage/node-scoped HIL prompt to resolve. */
+  awaitStagePendingPrompt(runId: string, stageId: string, promptId: string): Promise<unknown>;
   /**
    * Record Pi/pi SDK session metadata for a stage after lazy
    * attach. The serializable snapshot tracks this so post-mortem reopen
@@ -186,6 +197,26 @@ export function createStore(): Store {
     return run.stages.find((s) => s.id === stageId);
   }
 
+  function rejectPrompt(promptId: string, reason: string): void {
+    const entry = _resolvers.get(promptId);
+    if (!entry) return;
+    _resolvers.delete(promptId);
+    entry.reject(new Error(reason));
+  }
+
+  function rejectStagePrompt(stage: StageSnapshot, reason: string): void {
+    const prompt = stage.pendingPrompt;
+    if (!prompt) return;
+    stage.pendingPrompt = undefined;
+    rejectPrompt(prompt.id, reason);
+  }
+
+  function rejectAllStagePrompts(run: RunSnapshot, reason: string): void {
+    for (const stage of run.stages) {
+      rejectStagePrompt(stage, reason);
+    }
+  }
+
   return {
     runs(): readonly RunSnapshot[] {
       return _runs;
@@ -275,6 +306,7 @@ export function createStore(): Store {
       existing.result = stage.result;
       existing.error = stage.error;
       delete existing.awaitingInputSince;
+      rejectStagePrompt(existing, `pi-workflows: stage ${stage.id} ended before prompt resolved`);
       _version++;
       notify();
     },
@@ -312,14 +344,9 @@ export function createStore(): Store {
       const pending = run.pendingPrompt;
       if (pending) {
         run.pendingPrompt = undefined;
-        const entry = _resolvers.get(pending.id);
-        if (entry) {
-          _resolvers.delete(pending.id);
-          entry.reject(
-            new Error(`pi-workflows: run ${runId} ended before prompt resolved`),
-          );
-        }
+        rejectPrompt(pending.id, `pi-workflows: run ${runId} ended before prompt resolved`);
       }
+      rejectAllStagePrompts(run, `pi-workflows: run ${runId} ended before prompt resolved`);
       _version++;
       notify();
       return true;
@@ -331,14 +358,9 @@ export function createStore(): Store {
       const run = _runs[index]!;
       const pending = run.pendingPrompt;
       if (pending) {
-        const entry = _resolvers.get(pending.id);
-        if (entry) {
-          _resolvers.delete(pending.id);
-          entry.reject(
-            new Error(`pi-workflows: run ${runId} was removed before prompt resolved`),
-          );
-        }
+        rejectPrompt(pending.id, `pi-workflows: run ${runId} was removed before prompt resolved`);
       }
+      rejectAllStagePrompts(run, `pi-workflows: run ${runId} was removed before prompt resolved`);
       _runs.splice(index, 1);
       for (let i = _notices.length - 1; i >= 0; i--) {
         if (_notices[i]?.runId === runId) _notices.splice(i, 1);
@@ -408,6 +430,74 @@ export function createStore(): Store {
           reject(
             new Error(
               `pi-workflows: pending prompt "${promptId}" not registered on run "${runId}"`,
+            ),
+          );
+          return;
+        }
+        _resolvers.set(promptId, { promptId, resolve, reject });
+      });
+    },
+
+    recordStagePendingPrompt(runId: string, stageId: string, prompt: PendingPrompt): boolean {
+      const run = findRun(runId);
+      if (!run) return false;
+      if (TERMINAL_STATUSES.has(run.status)) return false;
+      const stage = findStage(run, stageId);
+      if (!stage) return false;
+      if (stage.status === "completed" || stage.status === "failed") return false;
+      if (stage.pendingPrompt !== undefined) return false;
+      stage.pendingPrompt = { ...prompt };
+      stage.status = "awaiting_input";
+      stage.awaitingInputSince = prompt.createdAt;
+      _version++;
+      notify();
+      return true;
+    },
+
+    resolveStagePendingPrompt(
+      runId: string,
+      stageId: string,
+      promptId: string,
+      response: unknown,
+    ): boolean {
+      const run = findRun(runId);
+      if (!run) return false;
+      const stage = findStage(run, stageId);
+      if (!stage) return false;
+      const pending = stage.pendingPrompt;
+      if (!pending || pending.id !== promptId) return false;
+      stage.pendingPrompt = undefined;
+      if (stage.status === "awaiting_input") {
+        stage.status = "running";
+        delete stage.awaitingInputSince;
+      }
+      _version++;
+      notify();
+      const entry = _resolvers.get(promptId);
+      if (entry) {
+        _resolvers.delete(promptId);
+        entry.resolve(response);
+      }
+      return true;
+    },
+
+    awaitStagePendingPrompt(runId: string, stageId: string, promptId: string): Promise<unknown> {
+      return new Promise<unknown>((resolve, reject) => {
+        const run = findRun(runId);
+        if (!run) {
+          reject(new Error(`pi-workflows: run "${runId}" not found`));
+          return;
+        }
+        const stage = findStage(run, stageId);
+        if (!stage) {
+          reject(new Error(`pi-workflows: stage "${stageId}" not found on run "${runId}"`));
+          return;
+        }
+        const pending = stage.pendingPrompt;
+        if (!pending || pending.id !== promptId) {
+          reject(
+            new Error(
+              `pi-workflows: pending prompt "${promptId}" not registered on stage "${stageId}" in run "${runId}"`,
             ),
           );
           return;

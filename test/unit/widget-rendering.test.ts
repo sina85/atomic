@@ -2,8 +2,8 @@
  * Unit tests for the background-workflow widget.
  *
  * Visual contract:
- *   - 3-row outline-pill band header (`[ BACKGROUND ]` accent pill +
- *     `N runs` subtitle + status-icon count badges).
+ *   - One transparent rounded `BACKGROUND` panel with `N runs` subtitle and
+ *     status-icon count badges in the title.
  *   - Two-line entry per run (status glyph + short id + bold name on
  *     line 1; dim mode · progress · duration on line 2).
  *   - Blank line between entries, no trailing blank.
@@ -19,7 +19,10 @@ import {
   renderWidgetLines,
   buildThemedWidgetLines,
   formatDuration,
+  nextWidgetRefreshDelayMs,
+  RECENT_ENDED_WINDOW_MS,
 } from "../../packages/workflows/src/tui/widget.js";
+import { visibleWidth } from "../../packages/workflows/src/tui/text-helpers.js";
 import type {
   StoreSnapshot,
   RunSnapshot,
@@ -122,20 +125,16 @@ describe("renderWidgetLines — hidden states", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderWidgetLines — standard form", () => {
-  test("single active run → band header + 2-line entry (5 lines total)", () => {
+  test("single active run → rounded panel + 2-line entry (4 lines total)", () => {
     const snap = makeSnap([makeRun("abc123uuid", "my-wf", "running")]);
     const lines = renderWidgetLines(snap, 120).map(stripAnsi);
-    // 3 chrome rows + 2 content rows = 5 total
-    assert.equal(lines.length, 5);
-    // Band header pill label
-    assert.ok(lines[1]!.includes("BACKGROUND"), "header should include BACKGROUND label");
-    // Subtitle reflects total run count
-    assert.ok(lines[1]!.includes("1 run"), "header should include 1 run subtitle");
-    // Entry line 1: short id (6 chars) + workflow name
-    assert.ok(lines[3]!.includes("abc123"), "line 1 should include short id");
-    assert.ok(lines[3]!.includes("my-wf"), "line 1 should include workflow name");
-    // Entry line 2: mode label
-    assert.ok(lines[4]!.includes("single"), "line 2 should describe mode");
+    // top border + 2 content rows + bottom border = 4 total
+    assert.equal(lines.length, 4);
+    assert.ok(lines[0]!.includes("BACKGROUND"), "header should include BACKGROUND label");
+    assert.ok(lines[0]!.includes("1 run"), "header should include 1 run subtitle");
+    assert.ok(lines[1]!.includes("abc123"), "line 1 should include short id");
+    assert.ok(lines[1]!.includes("my-wf"), "line 1 should include workflow name");
+    assert.ok(lines[2]!.includes("single"), "line 2 should describe mode");
   });
 
   test("running run shows chain mode when multi-stage", () => {
@@ -145,7 +144,7 @@ describe("renderWidgetLines — standard form", () => {
       makeStage("s3", "aggregate", "pending"),
     ]);
     const lines = renderWidgetLines(makeSnap([run]), 120).map(stripAnsi);
-    const metaLine = lines[4]!;
+    const metaLine = lines[2]!;
     assert.ok(metaLine.includes("chain"), "multi-stage run reads as chain");
     assert.ok(metaLine.includes("1/3"), "progress count includes done/total");
   });
@@ -155,7 +154,7 @@ describe("renderWidgetLines — standard form", () => {
     const r1 = makeRun("aaa111zzz", "wf-one", "running", [], t - 2000);
     const r2 = makeRun("bbb222zzz", "wf-two", "running", [], t - 100);
     const lines = renderWidgetLines(makeSnap([r1, r2]), 120).map(stripAnsi);
-    assert.ok(lines[1]!.includes("2 runs"));
+    assert.ok(lines[0]!.includes("2 runs"));
     const joined = lines.join("\n");
     assert.ok(joined.includes("wf-one"));
     assert.ok(joined.includes("wf-two"));
@@ -165,16 +164,98 @@ describe("renderWidgetLines — standard form", () => {
     assert.ok(wfTwoIdx < wfOneIdx, "most recently started run renders first");
   });
 
+  test("count badges include stage-local awaiting input", () => {
+    const awaiting = makeRun("r1xxxxxx", "wf-await", "running", [
+      makeStage("s1", "ask", "awaiting_input"),
+    ]);
+    const lines = renderWidgetLines(makeSnap([awaiting]), 120).map(stripAnsi);
+    const header = lines[0]!;
+    assert.ok(header.includes("● 1 running"), "run remains active");
+    assert.ok(
+      header.includes("↵ 1 needs attention (attach to workflow with `/workflow connect`)"),
+      "awaiting-input badge is labeled with attach action",
+    );
+  });
+
   test("count badges reflect status mix", () => {
     const t = Date.now();
     const running = makeRun("r1xxxxxx", "wf-r", "running", [], t - 1000);
+    const paused = makeRun("r4xxxxxx", "wf-p", "paused", [], t - 3000);
     const done = makeRun("r2xxxxxx", "wf-d", "completed", [], t - 5000, t - 1000);
     const failed = makeRun("r3xxxxxx", "wf-f", "failed", [], t - 4000, t - 500);
-    const lines = renderWidgetLines(makeSnap([running, done, failed]), 120).map(stripAnsi);
-    const header = lines[1]!;
-    assert.ok(header.includes("● 1"), "running badge");
-    assert.ok(header.includes("✓ 1"), "completed badge");
-    assert.ok(header.includes("✗ 1"), "failed badge");
+    const lines = renderWidgetLines(makeSnap([running, paused, done, failed]), 120).map(stripAnsi);
+    const header = lines[0]!;
+    assert.ok(header.includes("● 1 running"), "running badge");
+    assert.ok(header.includes("❚❚ 1 paused"), "paused badge");
+    assert.ok(header.includes("✓ 1 complete"), "completed badge");
+    assert.ok(header.includes("✗ 1 failed"), "failed badge");
+  });
+
+  test("terminal rows render final duration without ticking ago labels", () => {
+    const originalNow = Date.now;
+    try {
+      const startedAt = 1_000;
+      const endedAt = 11_000;
+      const completed = makeRun("r2xxxxxx", "wf-d", "completed", [], startedAt, endedAt);
+      const failed = makeRun("r3xxxxxx", "wf-f", "failed", [], startedAt, endedAt);
+      const killed = makeRun("r4xxxxxx", "wf-k", "killed", [], startedAt, endedAt);
+      completed.durationMs = undefined;
+      failed.durationMs = undefined;
+      killed.durationMs = undefined;
+
+      Date.now = () => 12_000;
+      const at12s = renderWidgetLines(makeSnap([completed, failed, killed]), 120).map(stripAnsi).join("\n");
+      Date.now = () => 29_000;
+      const at29s = renderWidgetLines(makeSnap([completed, failed, killed]), 120).map(stripAnsi).join("\n");
+
+      assert.match(at12s, /complete · 10s/);
+      assert.match(at12s, /failed · 10s/);
+      assert.match(at12s, /killed · 10s/);
+      assert.doesNotMatch(at12s, /ago/);
+      assert.equal(at29s, at12s);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test("paused run renders pause status and frozen active elapsed time", () => {
+    const originalNow = Date.now;
+    try {
+      Date.now = () => 71_000;
+      const paused = makeRun("r4xxxxxx", "wf-p", "paused", [], 1_000);
+      paused.pausedAt = 11_000;
+      const lines = renderWidgetLines(makeSnap([paused]), 120).map(stripAnsi);
+      assert.ok(lines.join("\n").includes("❚❚"), "paused glyph");
+      assert.ok(lines[0]!.includes("❚❚ 1 paused"), "paused badge");
+      assert.match(lines[2]!, /10s/);
+      assert.doesNotMatch(lines[2]!, /1m/);
+
+      Date.now = () => 76_000;
+      const later = renderWidgetLines(makeSnap([paused]), 120).map(stripAnsi);
+      assert.equal(later[2], lines[2]);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  test("terminal and fully paused widgets do not schedule second-boundary refreshes", () => {
+    const now = 1_000_000;
+    const terminal = makeRun("r2xxxxxx", "wf-d", "completed", [], now - 20_000, now - 10_000);
+    const terminalDelay = nextWidgetRefreshDelayMs(makeSnap([terminal]), now);
+    assert.equal(terminalDelay, RECENT_ENDED_WINDOW_MS - 10_000 + 1);
+
+    const paused = makeRun("r4xxxxxx", "wf-p", "paused", [], now - 20_000);
+    paused.pausedAt = now - 5_000;
+    assert.equal(nextWidgetRefreshDelayMs(makeSnap([paused]), now), undefined);
+  });
+
+  test("standard panel scales to the provided terminal width", () => {
+    const width = 120;
+    const snap = makeSnap([makeRun("abc123uuid", "my-wf", "running")]);
+    const lines = renderWidgetLines(snap, width);
+    for (const line of lines) {
+      assert.equal(visibleWidth(line), width);
+    }
   });
 
   test("running run uses static ● glyph, never a braille spinner frame", () => {
@@ -226,7 +307,7 @@ describe("buildThemedWidgetLines — themed path", () => {
   test("when piTheme is provided, output carries ANSI escape sequences", () => {
     const snap = makeSnap([makeRun("zzz", "themed-wf", "running")]);
     const lines = buildThemedWidgetLines(snap, NULL_PI_THEME, 120);
-    assert.ok(lines.length >= 5, "themed render returns header + entry lines");
+    assert.ok(lines.length >= 4, "themed render returns panel + entry lines");
     const joined = lines.join("");
     assert.ok(joined.includes("\x1b["), "themed lines include ANSI escapes");
   });

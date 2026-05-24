@@ -1,15 +1,13 @@
 /**
  * Above-editor background-workflow widget.
  *
- * Visual contract (DESIGN.md §5 · orchestrator-panel-ui.png):
- *  - 3-row outline-pill band header: `[ BACKGROUND ]` accent pill,
- *    `N runs` subtitle in textMuted, right-aligned status-icon badges
- *    (`✓ n  ● n  ○ n  ✗ n`). Same chrome vocabulary as the orchestrator
- *    overlay header — pi-subagents widget identity, atomic palette.
- *  - Two-line entry per run:
- *      line 1: `<status glyph>  <short id>  <bold name>`
- *      line 2: `<dim mode · progress · duration>`
- *  - Blank line between entries; trailing blank trimmed.
+ * Visual contract (DESIGN.md §5):
+ *  - One transparent rounded `BACKGROUND` panel with `N runs` and status
+ *    badges (`✓ n  ● n  ○ n  ✗ n`) in the title.
+ *  - One compact rounded card per run:
+ *      title: `<status glyph>  <short id>  <name>`
+ *      row 1: `<dim mode · progress · duration>`
+ *  - Blank line between cards; trailing blank trimmed.
  *  - Collapsed single-line form below 80 cells:
  *      `▾  N background · X ●` in dim+warning.
  *
@@ -21,8 +19,7 @@
  *
  * cross-ref:
  *  - github.com/nicobailon/pi-subagents src/tui/render.ts buildWidgetLines
- *  - src/tui/header.ts renderBandHeader
- *  - orchestrator-panel-ui.png
+ *  - src/tui/chat-surface.ts renderRoundedBoxLines
  */
 
 import type {
@@ -31,8 +28,8 @@ import type {
 } from "../shared/store-types.js";
 import { elapsedRunMs } from "../shared/timing.js";
 import type { PiTheme } from "./store-widget-installer.js";
-import { renderBandHeader } from "./header.js";
-import type { BandBadge } from "./header.js";
+import { renderRoundedBoxLines } from "./chat-surface.js";
+import type { FlatBandBadge } from "./chat-surface.js";
 import { deriveGraphTheme } from "./graph-theme.js";
 import type { GraphTheme } from "./graph-theme.js";
 import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
@@ -43,7 +40,8 @@ import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
 
 const SHORT_ID_LEN = 6;
 const MAX_VISIBLE_RUNS = 4;
-const RECENT_ENDED_WINDOW_MS = 30_000;
+export const RECENT_ENDED_WINDOW_MS = 30_000;
+const WIDGET_CLOCK_REFRESH_MS = 1_000;
 const COLLAPSED_BREAKPOINT_COLS = 80;
 
 // ---------------------------------------------------------------------------
@@ -75,6 +73,7 @@ function recentlyEnded(run: RunSnapshot, now: number): boolean {
 
 interface RunCounts {
   active: number;
+  paused: number;
   done: number;
   failed: number;
   /** Runs with a pending HIL prompt — surfaced as a separate badge so the
@@ -83,16 +82,41 @@ interface RunCounts {
 }
 
 function countRuns(runs: readonly RunSnapshot[]): RunCounts {
-  const counts: RunCounts = { active: 0, done: 0, failed: 0, awaiting: 0 };
+  const counts: RunCounts = { active: 0, paused: 0, done: 0, failed: 0, awaiting: 0 };
   for (const r of runs) {
-    if (r.endedAt === undefined) counts.active++;
+    if (r.endedAt === undefined && r.status === "paused") counts.paused++;
+    else if (r.endedAt === undefined) counts.active++;
     else if (r.status === "completed") counts.done++;
     else if (r.status === "failed" || r.status === "killed") counts.failed++;
-    if (r.endedAt === undefined && r.pendingPrompt !== undefined) {
+    if (
+      r.endedAt === undefined &&
+      (r.pendingPrompt !== undefined || r.stages.some((s) => s.status === "awaiting_input"))
+    ) {
       counts.awaiting++;
     }
   }
   return counts;
+}
+
+function msUntilNextClockTick(now: number): number {
+  const remainder = now % WIDGET_CLOCK_REFRESH_MS;
+  return remainder === 0 ? WIDGET_CLOCK_REFRESH_MS : WIDGET_CLOCK_REFRESH_MS - remainder;
+}
+
+export function nextWidgetRefreshDelayMs(
+  snap: StoreSnapshot,
+  now = Date.now(),
+): number | undefined {
+  const display = selectDisplayRuns(snap, now);
+  if (display.length === 0) return undefined;
+
+  const hasLiveClock = display.some((run) => run.endedAt === undefined && run.status !== "paused");
+  const clockDelay = hasLiveClock ? msUntilNextClockTick(now) : undefined;
+  const expiryDelays = display
+    .filter((run) => run.endedAt !== undefined)
+    .map((run) => Math.max(1, run.endedAt! + RECENT_ENDED_WINDOW_MS - now + 1));
+  const delays = [clockDelay, ...expiryDelays].filter((delay): delay is number => delay !== undefined);
+  return delays.length === 0 ? undefined : Math.min(...delays);
 }
 
 function selectDisplayRuns(snap: StoreSnapshot, now: number): RunSnapshot[] {
@@ -118,6 +142,8 @@ function statusGlyph(run: RunSnapshot): string {
   switch (run.status) {
     case "running":
       return "●";
+    case "paused":
+      return "❚❚";
     case "completed":
       return "✓";
     case "failed":
@@ -133,6 +159,7 @@ function statusGlyph(run: RunSnapshot): string {
 function statusFg(run: RunSnapshot, theme: GraphTheme): string {
   switch (run.status) {
     case "running":
+    case "paused":
       return theme.warning;
     case "completed":
       return theme.success;
@@ -161,11 +188,11 @@ function progressLabel(run: RunSnapshot): string | undefined {
 
 function elapsedLabel(run: RunSnapshot, now: number): string {
   if (run.endedAt !== undefined) {
-    const ago = formatDuration(now - run.endedAt);
-    if (run.status === "completed") return `complete · ${ago} ago`;
-    if (run.status === "failed") return `failed · ${ago} ago`;
-    if (run.status === "killed") return `killed · ${ago} ago`;
-    return `${run.status} · ${ago} ago`;
+    const elapsed = formatDuration(elapsedRunMs(run, run.endedAt));
+    if (run.status === "completed") return `complete · ${elapsed}`;
+    if (run.status === "failed") return `failed · ${elapsed}`;
+    if (run.status === "killed") return `killed · ${elapsed}`;
+    return `${run.status} · ${elapsed}`;
   }
   if (run.startedAt != null) return formatDuration(elapsedRunMs(run, now));
   return "";
@@ -187,16 +214,26 @@ function metaLine(run: RunSnapshot, now: number): string {
 // Count badges for the band header
 // ---------------------------------------------------------------------------
 
-function countBadges(counts: RunCounts, theme: GraphTheme): BandBadge[] {
-  const badges: BandBadge[] = [];
-  if (counts.active > 0) badges.push({ text: `● ${counts.active}`, fg: theme.warning });
-  // Awaiting input is shown in Sky per DESIGN.md status semantics: it's a
-  // "live, waiting for human" signal — distinct from running (yellow) and
-  // completed (green). Position right after active so it reads as "N of M
-  // running need you".
-  if (counts.awaiting > 0) badges.push({ text: `↵ ${counts.awaiting}`, fg: theme.info });
-  if (counts.done > 0) badges.push({ text: `✓ ${counts.done}`, fg: theme.success });
-  if (counts.failed > 0) badges.push({ text: `✗ ${counts.failed}`, fg: theme.error });
+function countBadges(counts: RunCounts, theme: GraphTheme): FlatBandBadge[] {
+  const badges: FlatBandBadge[] = [];
+  if (counts.active > 0) {
+    badges.push({ text: `● ${counts.active} running`, fg: theme.warning });
+  }
+  if (counts.paused > 0) {
+    badges.push({ text: `❚❚ ${counts.paused} paused`, fg: theme.warning });
+  }
+  // Awaiting input is shown in Sky per DESIGN.md status semantics: a live
+  // human-in-the-loop request that requires attention. Spell it out in the
+  // widget title instead of relying on the ↵ glyph alone.
+  if (counts.awaiting > 0) {
+    badges.push({ text: `↵ ${counts.awaiting} needs attention (attach to workflow with \`/workflow connect\`)`, fg: theme.info });
+  }
+  if (counts.done > 0) {
+    badges.push({ text: `✓ ${counts.done} complete`, fg: theme.success });
+  }
+  if (counts.failed > 0) {
+    badges.push({ text: `✗ ${counts.failed} failed`, fg: theme.error });
+  }
   return badges;
 }
 
@@ -246,14 +283,16 @@ function themedCollapsed(
   const dim = hexToAnsi(theme.dim);
   const muted = hexToAnsi(theme.textMuted);
   const warning = hexToAnsi(theme.warning);
-  const total = counts.active + counts.done + counts.failed;
+  const total = counts.active + counts.paused + counts.done + counts.failed;
   const active = counts.active;
-  return ` ${mauve}▾${RESET}  ${muted}${total} background${RESET}${dim} · ${RESET}${warning}${active} ●${RESET}`;
+  const paused = counts.paused > 0 ? `${dim} · ${RESET}${warning}${counts.paused} ❚❚${RESET}` : "";
+  return ` ${mauve}▾${RESET}  ${muted}${total} background${RESET}${dim} · ${RESET}${warning}${active} ●${RESET}${paused}`;
 }
 
 function plainCollapsed(counts: RunCounts): string {
-  const total = counts.active + counts.done + counts.failed;
-  return ` ▾  ${total} background · ${counts.active} ●`;
+  const total = counts.active + counts.paused + counts.done + counts.failed;
+  const paused = counts.paused > 0 ? ` · ${counts.paused} ❚❚` : "";
+  return ` ▾  ${total} background · ${counts.active} ●${paused}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +322,8 @@ export function buildThemedWidgetLines(
   // Active + recently-ended dominate the badge counts so a finished run
   // visually persists for a beat before dropping off.
   const visibleCounts: RunCounts = {
-    active: counts.active,
+    active: display.filter((r) => r.endedAt === undefined && r.status !== "paused").length,
+    paused: display.filter((r) => r.endedAt === undefined && r.status === "paused").length,
     done: display.filter((r) => r.endedAt !== undefined && r.status === "completed").length,
     failed: display.filter((r) => r.endedAt !== undefined && (r.status === "failed" || r.status === "killed")).length,
     awaiting: counts.awaiting,
@@ -297,47 +337,29 @@ export function buildThemedWidgetLines(
     return [themed ? themedCollapsed(visibleCounts, graphTheme) : plainCollapsed(visibleCounts)];
   }
 
-  const total = counts.active + counts.done + counts.failed;
+  const total = counts.active + counts.paused + counts.done + counts.failed;
   const subtitle = `${total} run${total === 1 ? "" : "s"}`;
 
-  const lines: string[] = [];
-
-  if (themed) {
-    const badges = countBadges(visibleCounts, graphTheme);
-    // Cap the chrome width to ~min(width, 64) so a wide terminal doesn't
-    // stretch the band across the whole pane.
-    const chromeWidth = Math.min(width, 64);
-    lines.push(...renderBandHeader({
-      label: "BACKGROUND",
-      subtitle,
-      badges,
-      width: chromeWidth,
-      theme: graphTheme,
-    }));
-  } else {
-    // Plain band: 3 rows mirroring the outline-pill shape, ASCII-only.
-    const innerLen = " BACKGROUND ".length;
-    const inner = "─".repeat(innerLen);
-    const badges = countBadges(visibleCounts, graphTheme)
-      .map((b) => b.text)
-      .join("  ");
-    const subtitleSeg = `  ${subtitle}`;
-    const badgeTail = badges ? `   ${badges}` : "";
-    lines.push(` ╭${inner}╮${subtitleSeg.replace(/./g, " ")}${badgeTail.replace(/./g, " ")}`);
-    lines.push(` │ BACKGROUND │${subtitleSeg}${badgeTail}`);
-    lines.push(` ╰${inner}╯${subtitleSeg.replace(/./g, " ")}${badgeTail.replace(/./g, " ")}`);
-  }
+  const badges = countBadges(visibleCounts, graphTheme).map((b) => b.text).join("  ");
+  const title = `BACKGROUND  ${subtitle}${badges ? `  ${badges}` : ""}`;
+  const body: string[] = [];
 
   for (let i = 0; i < display.length; i++) {
     const run = display[i]!;
     const runLines = themed
       ? themedRunLines(run, now, graphTheme)
       : plainRunLines(run, now);
-    lines.push(...runLines);
-    if (i < display.length - 1) lines.push("");
+    body.push(...runLines);
+    if (i < display.length - 1) body.push("");
   }
 
-  return lines;
+  return renderRoundedBoxLines({
+    title,
+    bodyLines: body,
+    accent: themed ? graphTheme.border : undefined,
+    theme: themed ? graphTheme : undefined,
+    width,
+  });
 }
 
 /**
