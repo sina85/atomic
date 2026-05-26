@@ -84,6 +84,8 @@ export interface StageControlHandle {
    * before the session exists are buffered and bound on first attach.
    */
   subscribe(listener: AgentSessionEventListener): () => void;
+  /** Release the underlying SDK session and unregister this direct chat handle. */
+  dispose?(): void | Promise<void>;
 }
 
 /**
@@ -131,8 +133,9 @@ export interface StageControlRegistry {
   /** Build a run-level control aggregate. Cheap; not memoised. */
   run(runId: string): WorkflowRunControlHandle;
   /**
-   * Drop every registration. Used on session boundaries to release
-   * any leaked handles when the host store is cleared.
+   * Drop every registration and invoke each handle's optional dispose hook.
+   * Used on session boundaries to release retained direct chat handles and
+   * their subscriptions when the host store is cleared.
    */
   clear(): void;
 }
@@ -267,7 +270,15 @@ export function createStageControlRegistry(): StageControlRegistry {
       return makeRunHandle(runId);
     },
     clear(): void {
+      const handles = [..._byRun.values()].flatMap((runMap) =>
+        [...runMap.values()].map((entry) => entry.handle),
+      );
       _byRun.clear();
+      for (const handle of handles) {
+        void Promise.resolve(handle.dispose?.()).catch((err: unknown) => {
+          console.warn("pi-workflows: stage handle dispose failed", err);
+        });
+      }
     },
   };
 }

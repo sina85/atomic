@@ -149,6 +149,25 @@ describe("store.recordStagePendingPrompt", () => {
     assert.equal(getRun(s, "r1").stages[0]?.pendingPrompt, undefined);
   });
 
+  test("resolved stage prompt answers stay in private ledger and out of snapshots", async () => {
+    const s = createStore();
+    s.recordRunStart(makeRun("r1"));
+    s.recordStageStart("r1", makeStage("s1"));
+    assert.equal(s.recordStagePendingPrompt("r1", "s1", makePrompt("p1", { message: "Secret?" })), true);
+    const waiter = s.awaitStagePendingPrompt("r1", "s1", "p1");
+    assert.equal(s.resolveStagePendingPrompt("r1", "s1", "p1", "super-secret-value"), true);
+    assert.equal(await waiter, "super-secret-value");
+
+    const answer = s.getStagePromptAnswer("r1", "s1");
+    assert.equal(answer?.value, "super-secret-value");
+    assert.equal(answer?.kind, "input");
+    assert.equal(JSON.stringify(s.snapshot()).includes("super-secret-value"), false);
+    assert.equal(getRun(s, "r1").stages[0]?.promptAnswerState, "available");
+
+    assert.equal(s.removeRun("r1"), true);
+    assert.equal(s.getStagePromptAnswer("r1", "s1"), undefined);
+  });
+
   test("records independent prompts on multiple stages in the same run", async () => {
     const s = createStore();
     s.recordRunStart(makeRun("r1"));
@@ -170,6 +189,74 @@ describe("store.recordStagePendingPrompt", () => {
 
     assert.equal(s.resolveStagePendingPrompt("r1", "s2", "p2", "green"), true);
     assert.equal(await w2, "green");
+  });
+
+  test("recordStageEnd preserves existing replay metadata when caller omits it", () => {
+    const s = createStore();
+    s.recordRunStart(makeRun("r1"));
+    s.recordStageStart("r1", {
+      ...makeStage("s1"),
+      replayKey: "prompt:confirm:key",
+      promptAnswerState: "available",
+      replayedFromStageId: "source-stage",
+      replayed: true,
+    });
+
+    s.recordStageEnd("r1", {
+      ...makeStage("s1"),
+      status: "completed",
+      endedAt: Date.now(),
+      durationMs: 1,
+    });
+
+    const stage = getRun(s, "r1").stages[0]!;
+    assert.equal(stage.replayKey, "prompt:confirm:key");
+    assert.equal(stage.promptAnswerState, "available");
+    assert.equal(stage.replayedFromStageId, "source-stage");
+    assert.equal(stage.replayed, true);
+  });
+
+  test("prompt answer ledger keys keep colon-bearing run and stage ids distinct", async () => {
+    const s = createStore();
+    s.recordRunStart(makeRun("run:a"));
+    s.recordRunStart(makeRun("run"));
+    s.recordStageStart("run:a", makeStage("stage"));
+    s.recordStageStart("run", makeStage("a:stage"));
+
+    assert.equal(s.recordStagePendingPrompt("run:a", "stage", makePrompt("p1")), true);
+    assert.equal(s.recordStagePendingPrompt("run", "a:stage", makePrompt("p2")), true);
+    const w1 = s.awaitStagePendingPrompt("run:a", "stage", "p1");
+    const w2 = s.awaitStagePendingPrompt("run", "a:stage", "p2");
+    assert.equal(s.resolveStagePendingPrompt("run:a", "stage", "p1", "left"), true);
+    assert.equal(s.resolveStagePendingPrompt("run", "a:stage", "p2", "right"), true);
+    assert.equal(await w1, "left");
+    assert.equal(await w2, "right");
+
+    assert.equal(s.getStagePromptAnswer("run:a", "stage")?.value, "left");
+    assert.equal(s.getStagePromptAnswer("run", "a:stage")?.value, "right");
+  });
+
+  test("removeRun purges prompt answer ledger entries for every stage in the run", async () => {
+    const s = createStore();
+    s.recordRunStart(makeRun("r1"));
+    s.recordStageStart("r1", makeStage("s1"));
+    s.recordStageStart("r1", makeStage("s2"));
+
+    assert.equal(s.recordStagePendingPrompt("r1", "s1", makePrompt("p1")), true);
+    assert.equal(s.recordStagePendingPrompt("r1", "s2", makePrompt("p2")), true);
+    const w1 = s.awaitStagePendingPrompt("r1", "s1", "p1");
+    const w2 = s.awaitStagePendingPrompt("r1", "s2", "p2");
+
+    assert.equal(s.resolveStagePendingPrompt("r1", "s1", "p1", "blue"), true);
+    assert.equal(s.resolveStagePendingPrompt("r1", "s2", "p2", "green"), true);
+    assert.equal(await w1, "blue");
+    assert.equal(await w2, "green");
+    assert.equal(s.getStagePromptAnswer("r1", "s1")?.value, "blue");
+    assert.equal(s.getStagePromptAnswer("r1", "s2")?.value, "green");
+
+    assert.equal(s.removeRun("r1"), true);
+    assert.equal(s.getStagePromptAnswer("r1", "s1"), undefined);
+    assert.equal(s.getStagePromptAnswer("r1", "s2"), undefined);
   });
 });
 

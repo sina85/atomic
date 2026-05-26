@@ -112,6 +112,62 @@ describe("stageControlRegistry — register/get/forRun/run", () => {
     assert.equal(r.get("run-1", "stage-a"), undefined);
     assert.equal(r.get("run-2", "stage-b"), undefined);
   });
+
+  test("clear disposes retained direct chat handles", () => {
+    const r = createStageControlRegistry();
+    let disposeCalls = 0;
+    r.register({
+      ...makeHandle("run-1", "stage-a"),
+      dispose() {
+        disposeCalls += 1;
+      },
+    });
+    r.clear();
+    assert.equal(disposeCalls, 1);
+  });
+
+  test("clear disposes detached direct chat handles", () => {
+    const r = createStageControlRegistry();
+    let disposeCalls = 0;
+    const handle = {
+      ...makeHandle("run-1", "stage-a"),
+      dispose() {
+        disposeCalls += 1;
+      },
+    };
+    r.register(handle);
+    assert.equal(r.detachControl("run-1", "stage-a", handle), true);
+
+    r.clear();
+
+    assert.equal(disposeCalls, 1);
+    assert.equal(r.get("run-1", "stage-a"), undefined);
+  });
+
+  test("clear observes asynchronous dispose failures", async () => {
+    const r = createStageControlRegistry();
+    const previousWarn = console.warn;
+    let logged = false;
+    console.warn = () => {
+      logged = true;
+    };
+    try {
+      r.register({
+        ...makeHandle("run-1", "stage-a"),
+        async dispose() {
+          throw new Error("dispose failed");
+        },
+      });
+
+      assert.doesNotThrow(() => r.clear());
+      await Promise.resolve();
+
+      assert.equal(logged, true);
+      assert.equal(r.get("run-1", "stage-a"), undefined);
+    } finally {
+      console.warn = previousWarn;
+    }
+  });
 });
 
 describe("stageControlRegistry — pause fan-out", () => {

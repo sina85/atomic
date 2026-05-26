@@ -250,7 +250,8 @@ export class GraphView implements Component {
     }
 
     const previousFocusedStageId = this.cachedLayout[this.focusedIndex]?.stage.id;
-    const nextLayout = computeLayout(run.stages, { orientation: "vertical" });
+    const graphStages = this._graphStages(run);
+    const nextLayout = computeLayout(graphStages, { orientation: "vertical" });
     this.cachedLayout = nextLayout;
 
     let focusNeedsReveal = this.pendingEnsureFocusedVisible;
@@ -287,6 +288,21 @@ export class GraphView implements Component {
     }
     this.pendingEnsureFocusedVisible = focusNeedsReveal;
     this._syncPromptState(run.pendingPrompt);
+  }
+
+  private _graphStages(run: RunSnapshot): StageSnapshot[] {
+    const hasStagePrompt = run.stages.some((stage) => stage.pendingPrompt !== undefined);
+    if (!hasStagePrompt) return [...run.stages];
+    return run.stages.filter((stage) => {
+      // Prompt-node injection can leave unstarted author stages in the store
+      // while the prompt node owns focus; hide only these inert placeholders.
+      const isUnstartedPlaceholder =
+        stage.status === "pending" &&
+        stage.startedAt === undefined &&
+        stage.pendingPrompt === undefined &&
+        stage.toolEvents.length === 0;
+      return !isUnstartedPlaceholder;
+    });
   }
 
   /**

@@ -24,6 +24,7 @@ import { deriveGraphTheme } from "../../packages/workflows/src/tui/graph-theme.j
 import { StageUiBroker } from "../../packages/workflows/src/shared/stage-ui-broker.js";
 import { CURSOR_MARKER, type Component, type EditorComponent, type TUI } from "@earendil-works/pi-tui";
 import type { StageControlHandle } from "../../packages/workflows/src/runs/foreground/stage-control-registry.js";
+import type { PendingPrompt } from "../../packages/workflows/src/shared/store-types.js";
 import { initTheme, SessionManager, type AgentSession, type AgentSessionEvent } from "@bastani/atomic";
 
 beforeAll(() => {
@@ -105,7 +106,7 @@ function setupRun(
   store: ReturnType<typeof createStore>,
   runId: string,
   stageId: string,
-  status: "pending" | "running" | "paused" | "blocked" | "completed" | "failed" = "running",
+  status: "pending" | "running" | "paused" | "blocked" | "completed" | "failed" | "skipped" = "running",
 ) {
   store.recordRunStart({
     id: runId,
@@ -172,6 +173,61 @@ function stripAnsi(text: string): string {
     .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
+const CTRL_D_VARIANTS = [
+  "\x04",
+  "\x1b[100;5u",
+  "\x1b[100;5:1u",
+  "\x1b[27;5;100~",
+];
+
+function makePendingPrompt(overrides: Partial<PendingPrompt> = {}): PendingPrompt {
+  return {
+    id: "prompt-1",
+    kind: "input",
+    message: "What should the workflow use?",
+    createdAt: Date.now(),
+    ...overrides,
+  };
+}
+
+class FakePromptEditor implements EditorComponent {
+  text = "";
+  focused = false;
+  disposeCalls = 0;
+  readonly receivedInput: string[] = [];
+  borderColor?: (str: string) => string;
+  onSubmit?: (text: string) => void;
+  onChange?: (text: string) => void;
+
+  render(_width: number): string[] {
+    return [`fake-pi-editor:${this.text}${this.focused ? CURSOR_MARKER : ""}`];
+  }
+
+  handleInput(data: string): void {
+    this.receivedInput.push(data);
+    if (data === "\r" || data === "\n") {
+      this.onSubmit?.(this.text);
+      return;
+    }
+    this.text += data;
+    this.onChange?.(this.text);
+  }
+
+  invalidate(): void {}
+
+  getText(): string {
+    return this.text;
+  }
+
+  setText(text: string): void {
+    this.text = text;
+  }
+
+  dispose(): void {
+    this.disposeCalls += 1;
+  }
+}
+
 function assistantTextMessage(text: string): AgentSession["messages"][number] {
   return {
     role: "assistant",
@@ -193,6 +249,195 @@ function assistantTextMessage(text: string): AgentSession["messages"][number] {
 }
 
 describe("StageChatView", () => {
+  test("renders and resolves a structured stage pending prompt locally", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    const prompt = makePendingPrompt();
+    assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+    const pending = store.awaitStagePendingPrompt("run-1", "stage-a", prompt.id);
+    const { handle } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+    });
+
+    const visible = stripAnsi(view.render(80).join("\n"));
+    assert.match(visible, /AWAITING INPUT/);
+    assert.match(visible, /What should the workflow use\?/);
+
+    for (const ch of "answer") view.handleInput(ch);
+    view.handleInput("\r");
+
+    assert.equal(await pending, "answer");
+    const stage = store.runs()[0]?.stages[0];
+    assert.equal(stage?.pendingPrompt, undefined);
+    assert.equal(stage?.status, "running");
+    view.dispose();
+  });
+
+  test("uses host pi-tui editor primitive for structured text prompts", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    const prompt = makePendingPrompt({ initial: "seed" });
+    assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+    const pending = store.awaitStagePendingPrompt("run-1", "stage-a", prompt.id);
+    const { handle } = makeHandle();
+    let createdEditor: FakePromptEditor | undefined;
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+      piTui: { requestRender: () => {}, terminal: { rows: 32, columns: 80 } } as unknown as TUI,
+      piTheme: {},
+      piKeybindings: makeFakeKeybindings(),
+      piEditorFactory: () => {
+        createdEditor = new FakePromptEditor();
+        return createdEditor;
+      },
+    });
+
+    const visible = stripAnsi(view.render(80).join("\n"));
+    assert.match(visible, /fake-pi-editor:seed/);
+    assert.doesNotMatch(visible, /╭ response/);
+
+    view.handleInput("!");
+    assert.equal(createdEditor?.getText(), "seed!");
+    view.handleInput("\r");
+
+    assert.equal(await pending, "seed!");
+    assert.equal(store.runs()[0]?.stages[0]?.pendingPrompt, undefined);
+    assert.equal(createdEditor?.disposeCalls, 1);
+    view.dispose();
+  });
+
+  test("lets the host prompt editor handle page keys", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    const prompt = makePendingPrompt({
+      kind: "editor",
+      initial: "seed",
+      message: "Edit a long response before continuing.",
+    });
+    assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+    const { handle } = makeHandle();
+    let createdEditor: FakePromptEditor | undefined;
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+      piTui: { requestRender: () => {}, terminal: { rows: 12, columns: 80 } } as unknown as TUI,
+      piTheme: {},
+      piKeybindings: makeFakeKeybindings(),
+      piEditorFactory: () => {
+        createdEditor = new FakePromptEditor();
+        return createdEditor;
+      },
+      getViewportRows: () => 12,
+    });
+
+    view.render(80);
+    view.handleInput("pageUp");
+    view.handleInput("pageDown");
+
+    assert.deepEqual(createdEditor?.receivedInput, ["pageUp", "pageDown"]);
+    view.dispose();
+    assert.equal(createdEditor?.disposeCalls, 1);
+  });
+
+  test("scrolls long structured stage pending prompts", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    const prompt = makePendingPrompt({
+      message: [
+        "SECTION 1 top of the long question.",
+        "SECTION 2 middle of the long question with enough words to wrap across several rows in a narrow viewport.",
+        "SECTION 3 more content that should not be permanently clipped by the prompt body renderer.",
+        "SECTION 4 continue scrolling to reach the response field and footer hints.",
+        "SECTION 5 bottom of the long question.",
+      ].join("\n\n"),
+    });
+    assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+    const { handle } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+      getViewportRows: () => 12,
+    });
+
+    const top = stripAnsi(view.render(72).join("\n"));
+    assert.match(top, /SECTION 1/);
+    assert.doesNotMatch(top, /SECTION 5/);
+
+    view.handleInput("end");
+    const bottom = stripAnsi(view.render(72).join("\n"));
+    assert.doesNotMatch(bottom, /SECTION 1/);
+    assert.match(bottom, /SECTION 5|response|Submit/);
+
+    view.handleInput("home");
+    const restoredTop = stripAnsi(view.render(72).join("\n"));
+    assert.match(restoredTop, /SECTION 1/);
+    view.dispose();
+  });
+
+  test("keeps mounted custom UI above structured stage pending prompts", async () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a");
+    assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", makePendingPrompt()), true);
+    const broker = new StageUiBroker(store);
+    const { handle } = makeHandle();
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      handle,
+      onDetach: () => {},
+      onClose: () => {},
+      piTui: { requestRender: () => {}, terminal: { rows: 32, columns: 80 } } as unknown as TUI,
+      piTheme: {},
+      piKeybindings: makeFakeKeybindings(),
+      stageUiBroker: broker,
+    });
+
+    const pending = broker.requestCustomUi("run-1", "stage-a", (_tui, _theme, _kb, done) => ({
+      render: () => ["custom question wins"],
+      handleInput: () => done("custom answer"),
+      invalidate: () => {},
+    }));
+    await flush();
+
+    const visible = stripAnsi(view.render(80).join("\n"));
+    assert.match(visible, /custom question wins/);
+    assert.doesNotMatch(visible, /AWAITING INPUT/);
+    view.handleInput("x");
+    assert.equal(await pending, "custom answer");
+    assert.equal(store.runs()[0]?.stages[0]?.pendingPrompt?.id, "prompt-1");
+    view.dispose();
+  });
+
   test("hosts stage-scoped custom UI inside the attached node", async () => {
     const store = createStore();
     setupRun(store, "run-1", "stage-a");
@@ -1116,14 +1361,7 @@ describe("StageChatView", () => {
   });
 
   test("Ctrl+D variants call onDetach", () => {
-    const ctrlDVariants = [
-      "\x04",
-      "\x1b[100;5u",
-      "\x1b[100;5:1u",
-      "\x1b[27;5;100~",
-    ];
-
-    for (const key of ctrlDVariants) {
+    for (const key of CTRL_D_VARIANTS) {
       const store = createStore();
       setupRun(store, "run-1", "stage-a");
       const { handle } = makeHandle();
@@ -1146,15 +1384,84 @@ describe("StageChatView", () => {
     }
   });
 
-  test("Ctrl+D variants close a paused stage chat", () => {
-    const ctrlDVariants = [
-      "\x04",
-      "\x1b[100;5u",
-      "\x1b[100;5:1u",
-      "\x1b[27;5;100~",
-    ];
+  test("Ctrl+D variants detach from structured pending prompts without answering", async () => {
+    for (const key of CTRL_D_VARIANTS) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a");
+      const prompt = makePendingPrompt({ id: `prompt-${JSON.stringify(key)}` });
+      assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+      let resolved = false;
+      store.awaitStagePendingPrompt("run-1", "stage-a", prompt.id).then(() => {
+        resolved = true;
+      });
+      const { handle } = makeHandle();
+      let detached = 0;
+      let closed = 0;
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {
+          detached += 1;
+        },
+        onClose: () => {
+          closed += 1;
+        },
+      });
 
-    for (const key of ctrlDVariants) {
+      assert.equal(view.handleInput(key), true);
+      await flush();
+      assert.equal(detached, 1, JSON.stringify(key));
+      assert.equal(closed, 0, JSON.stringify(key));
+      assert.equal(resolved, false, JSON.stringify(key));
+      assert.equal(store.runs()[0]?.stages[0]?.pendingPrompt?.id, prompt.id);
+      view.dispose();
+    }
+  });
+
+  test("Ctrl+D variants close a paused structured pending prompt without answering", async () => {
+    for (const key of CTRL_D_VARIANTS) {
+      const store = createStore();
+      setupRun(store, "run-1", "stage-a", "paused");
+      const prompt = makePendingPrompt({ id: `paused-prompt-${JSON.stringify(key)}` });
+      assert.equal(store.recordStagePendingPrompt("run-1", "stage-a", prompt), true);
+      let resolved = false;
+      store.awaitStagePendingPrompt("run-1", "stage-a", prompt.id).then(() => {
+        resolved = true;
+      });
+      const { handle } = makeHandle(undefined, [], "paused");
+      let detached = 0;
+      let closed = 0;
+      const view = new StageChatView({
+        store,
+        graphTheme: deriveGraphTheme({}),
+        runId: "run-1",
+        stageId: "stage-a",
+        workflowName: "test-wf",
+        handle,
+        onDetach: () => {
+          detached += 1;
+        },
+        onClose: () => {
+          closed += 1;
+        },
+      });
+
+      assert.equal(view.handleInput(key), true);
+      await flush();
+      assert.equal(closed, 1, JSON.stringify(key));
+      assert.equal(detached, 0, JSON.stringify(key));
+      assert.equal(resolved, false, JSON.stringify(key));
+      assert.equal(store.runs()[0]?.stages[0]?.pendingPrompt?.id, prompt.id);
+      view.dispose();
+    }
+  });
+
+  test("Ctrl+D variants close a paused stage chat", () => {
+    for (const key of CTRL_D_VARIANTS) {
       const store = createStore();
       setupRun(store, "run-1", "stage-a", "paused");
       const { handle } = makeHandle(undefined, [], "paused");
@@ -1269,6 +1576,28 @@ describe("StageChatView", () => {
     for (const ch of "new question") view.handleInput(ch);
     view.handleInput("\r");
     assert.deepEqual(state.promptCalls, []);
+    view.dispose();
+  });
+
+  test("skipped stages without a live handle render as read-only archives", () => {
+    const store = createStore();
+    setupRun(store, "run-1", "stage-a", "skipped");
+    const view = new StageChatView({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageId: "stage-a",
+      workflowName: "test-wf",
+      onDetach: () => {},
+      onClose: () => {},
+    });
+
+    const rendered = stripAnsi(view.render(96).join("\n"));
+    assert.match(rendered, /READ-ONLY SESSION/);
+    assert.doesNotMatch(rendered, /❯/);
+    for (const ch of "new question") view.handleInput(ch);
+    view.handleInput("\r");
+    assert.equal(view._inputBuffer, "");
     view.dispose();
   });
 

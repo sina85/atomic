@@ -1,9 +1,11 @@
 /**
- * Background workflow HIL adapter — bridges `ctx.ui.input/confirm/select/editor`
- * to store-backed pending prompts instead of pi.ui modal dialogs.
+ * Legacy background workflow HIL adapter — bridges
+ * `ctx.ui.input/confirm/select/editor` to run-level store-backed pending
+ * prompts instead of pi.ui modal dialogs.
  *
- * Detached runs use this adapter so the main chat editor stays usable while
- * a workflow is in flight. HIL surfaces through the graph viewer overlay:
+ * Normal detached workflow runs now use executor-owned synthetic prompt nodes
+ * backed by `StageSnapshot.pendingPrompt`; this adapter remains for tests and
+ * non-executor fallback callers that still need the run-level graph overlay:
  *
  *   1. Stage calls `ctx.ui.editor(prefill)`
  *   2. Adapter records a `PendingPrompt` on the run via the store
@@ -16,6 +18,10 @@
  * If the run terminates (kill / abort) before the user responds, the awaiter
  * rejects via `recordRunEnd` so the executor can finalise cleanly — no leaked
  * pending promises.
+ *
+ * @internal Legacy fallback retained for tests and non-executor callers.
+ * TODO(workflows): delete after all tests and fallback entrypoints migrate to
+ * executor-owned synthetic prompt nodes.
  *
  * cross-ref:
  *   src/shared/store-types.ts PendingPrompt
@@ -111,13 +117,13 @@ function fallbackForKind(descriptor: PromptDescriptor): unknown {
 }
 
 /**
- * Build a `WorkflowUIAdapter` whose methods record prompts on `runId` via
- * the store and await user response through the graph viewer.
+ * Build a legacy `WorkflowUIAdapter` whose methods record prompts on `runId`
+ * via the store and await user response through the graph viewer overlay.
  *
- * This is the only HIL surface a workflow body sees — `pi.ui.editor`,
- * `pi.ui.confirm`, etc. are intentionally never invoked from inside a run.
- * The chat editor stays free; the user attends to prompts via F2 / the
- * `/workflow connect` overlay.
+ * Detached workflow execution normally uses node-local prompt stages instead.
+ * `pi.ui.editor`, `pi.ui.confirm`, etc. are still intentionally never invoked
+ * from inside a background run. The chat editor stays free; fallback callers
+ * attend to run-level prompts via F2 / the `/workflow connect` overlay.
  *
  * `signal` is the run's `AbortController.signal`; when fired (e.g. via
  * `/workflow interrupt <id>`), any HIL waiter rejects so the workflow body
@@ -144,6 +150,9 @@ export function buildBackgroundUIAdapter(
       message: string,
       options: readonly T[],
     ): Promise<T> {
+      if (options.length === 0) {
+        throw new Error("pi-workflows: ctx.ui.select requires at least one option");
+      }
       const response = await ask(store, runId, {
         kind: "select",
         message,
@@ -152,7 +161,7 @@ export function buildBackgroundUIAdapter(
       if (typeof response === "string" && (options as readonly string[]).includes(response)) {
         return response as T;
       }
-      return options[0];
+      return options[0]!;
     },
 
     async editor(initial?: string): Promise<string> {

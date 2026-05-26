@@ -312,9 +312,18 @@ describe("createStageContext — stage surface", () => {
 // ---------------------------------------------------------------------------
 
 describe("createStageContext — error paths", () => {
-  test("complete throws when adapter absent", async () => {
+  test("complete without adapters fails with a complete-specific configuration hint", async () => {
     const ctx = createStageContext(makeOpts({ adapters: {} }));
-    await assert.rejects(ctx.complete("text"), { message: /complete adapter not configured/ });
+    await assert.rejects(ctx.complete("text"), {
+      message: /ctx\.complete requires either RunOpts\.adapters\.complete or RunOpts\.adapters\.agentSession/,
+    });
+  });
+
+  test("complete options require an explicit complete adapter", async () => {
+    const ctx = createStageContext(makeOpts({
+      adapters: { agentSession: { create: async () => makeMockSession().session } },
+    }));
+    await assert.rejects(ctx.complete("text", { maxTokens: 12 }), { message: /complete options require a CompleteAdapter/ });
   });
 
   test("stage name exposed on ctx.name", () => {

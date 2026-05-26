@@ -23,7 +23,6 @@ import { run as syncRun } from "../foreground/executor.js";
 import { cancellationRegistry as defaultCancellationRegistry } from "./cancellation-registry.js";
 import { jobTracker as defaultJobTracker } from "./job-tracker.js";
 import { store as defaultStore } from "../../shared/store.js";
-import { buildBackgroundUIAdapter } from "../../extension/background-ui-adapter.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,20 +102,19 @@ export function runDetached<TInputs extends Record<string, unknown>>(
   //    are not lost.
   registry.register(runId, controller);
 
-  // 4. Build executor opts — inject runId seam, signal, and a store-backed
-  //    HIL adapter. Background runs must NOT route ctx.ui.* through pi.ui
-  //    dialogs (those steal focus from the main chat editor); the adapter
-  //    records prompts on the run and the graph viewer overlay drives the
-  //    response. Destructure `jobs`/`cancellation`/`ui` out so they're not
-  //    forwarded to RunOpts twice.
+  // 4. Build executor opts — inject runId seam, signal, and node-local
+  //    store-backed HIL. Background runs must NOT route ctx.ui.* through pi.ui
+  //    dialogs (those steal focus from the main chat editor); the executor
+  //    records prompts on synthetic workflow nodes and the attached stage chat
+  //    drives the response. Destructure `jobs`/`cancellation`/`ui` out so
+  //    they're not forwarded to RunOpts twice.
   const {
     jobs: _jobs,
     cancellation: _cancellation,
-    ui: _ignoredFgUi,
+    ui: _ui,
     store: storeOverride,
     ...restOpts
   } = opts;
-  void _ignoredFgUi;
   const store: Store = storeOverride ?? defaultStore;
   const execOpts: RunOpts = {
     ...restOpts,
@@ -124,7 +122,7 @@ export function runDetached<TInputs extends Record<string, unknown>>(
     signal: controller.signal,
     cancellation: registry,
     store,
-    ui: buildBackgroundUIAdapter(store, runId, controller.signal),
+    usePromptNodesForUi: true,
     deferWorkflowStart: true,
   };
 
