@@ -149,19 +149,17 @@ export interface DiscoveryResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Validate a candidate value as a WorkflowDefinition.
+ * Validate a candidate value as a WorkflowDefinition by shape only.
+ *
+ * Discovery intentionally does not invoke workflow run functions: user-authored
+ * run bodies may perform filesystem, network, or other side effects before the
+ * first ctx.stage()/ctx.task()/ctx.chain()/ctx.parallel() call. Runtime empty
+ * graph validation remains the authoritative guard that a workflow creates at
+ * least one stage when it is actually invoked.
+ *
  * Returns null when valid, or a human-readable rejection reason string.
  */
-function workflowRunCreatesStage(run: WorkflowDefinition["run"]): boolean {
-  // Discovery must not execute workflow bodies: run functions are arbitrary
-  // user code and may perform I/O before the first stage. Use a conservative
-  // static guard instead so obvious no-stage definitions are rejected before
-  // they can register and render an empty graph.
-  const source = Function.prototype.toString.call(run);
-  return /\.\s*(?:stage|task|chain|parallel)\s*\(/.test(source);
-}
-
-function validateDefinition(value: unknown): string | null {
+function validateDefinitionShape(value: unknown): string | null {
   if (value === null || typeof value !== "object") {
     return "export is not an object";
   }
@@ -178,9 +176,6 @@ function validateDefinition(value: unknown): string | null {
   }
   if (typeof d["run"] !== "function") {
     return "run must be a function";
-  }
-  if (!workflowRunCreatesStage(d["run"] as WorkflowDefinition["run"])) {
-    return "run must create at least one workflow stage via ctx.stage(), ctx.task(), ctx.chain(), or ctx.parallel(); otherwise the workflow graph is empty (cachedLayout.length === 0)";
   }
   return null;
 }
@@ -215,14 +210,58 @@ function validateConfig(config: unknown): string | null {
 }
 
 /** Merge a batch of candidates into registry state, first-seen wins. */
-function applyBatch(
+async function applyBatch(
+  candidates: Array<{ value: unknown; exportKey: string; kind: DiscoveryKind; filePath?: string; configuredName?: string }>,
+  registry: WorkflowRegistry,
+  sources: DiscoverySource[],
+  diagnostics: DiscoveryDiagnostic[],
+): Promise<WorkflowRegistry> {
+  for (const { value, exportKey, kind, filePath, configuredName } of candidates) {
+    const reason = validateDefinitionShape(value);
+    if (reason !== null) {
+      diagnostics.push({
+        level: "error",
+        code: "INVALID_DEFINITION",
+        message: `${kind} export "${exportKey}" rejected: ${reason}`,
+        source: filePath ?? exportKey,
+      });
+      continue;
+    }
+
+    const def = value as WorkflowDefinition;
+    const key = def.normalizedName;
+
+    if (registry.has(key)) {
+      diagnostics.push({
+        level: "warn",
+        code: "DUPLICATE_NAME",
+        message: `${kind} export "${exportKey}" skipped: normalizedName "${key}" already registered`,
+        source: filePath ?? exportKey,
+      });
+      continue;
+    }
+
+    registry = registry.register(def);
+    sources.push({
+      id: key,
+      kind,
+      name: def.name,
+      ...(filePath !== undefined ? { filePath } : {}),
+      ...(configuredName !== undefined ? { configuredName } : {}),
+    });
+  }
+  return registry;
+}
+
+/** Merge bundled startup candidates with shape-only validation to keep startup seeding synchronous. */
+function applyBatchShapeOnly(
   candidates: Array<{ value: unknown; exportKey: string; kind: DiscoveryKind; filePath?: string; configuredName?: string }>,
   registry: WorkflowRegistry,
   sources: DiscoverySource[],
   diagnostics: DiscoveryDiagnostic[],
 ): WorkflowRegistry {
   for (const { value, exportKey, kind, filePath, configuredName } of candidates) {
-    const reason = validateDefinition(value);
+    const reason = validateDefinitionShape(value);
     if (reason !== null) {
       diagnostics.push({
         level: "error",
@@ -508,14 +547,14 @@ export async function discoverWorkflows(
     const hasEntries = Array.isArray(pw) ? pw.length > 0 : Object.keys(pw).length > 0;
     if (hasEntries) {
       const candidates = await loadFromPaths(pw, "settings-project", cwd, diagnostics);
-      registry = applyBatch(candidates, registry, sources, diagnostics);
+      registry = await applyBatch(candidates, registry, sources, diagnostics);
     }
   }
 
   // 2. project-local
   for (const dir of getProjectConfigPaths(cwd, "workflows").reverse()) {
     const candidates = await loadFromDir(dir, "project-local", diagnostics);
-    registry = applyBatch(candidates, registry, sources, diagnostics);
+    registry = await applyBatch(candidates, registry, sources, diagnostics);
   }
 
   // 3. settings-global
@@ -524,14 +563,14 @@ export async function discoverWorkflows(
     const hasEntries = Array.isArray(gw) ? gw.length > 0 : Object.keys(gw).length > 0;
     if (hasEntries) {
       const candidates = await loadFromPaths(gw, "settings-global", homeDir, diagnostics);
-      registry = applyBatch(candidates, registry, sources, diagnostics);
+      registry = await applyBatch(candidates, registry, sources, diagnostics);
     }
   }
 
   // 4. user-global — canonical Atomic path plus legacy pi path
   for (const dir of CONFIG_DIR_NAMES.map((name) => join(homeDir, name, "agent", "workflows")).reverse()) {
     const candidates = await loadFromDir(dir, "user-global", diagnostics);
-    registry = applyBatch(candidates, registry, sources, diagnostics);
+    registry = await applyBatch(candidates, registry, sources, diagnostics);
   }
 
   // 5. package workflows
@@ -539,7 +578,7 @@ export async function discoverWorkflows(
     const hasEntries = Array.isArray(packageWorkflowPaths) ? packageWorkflowPaths.length > 0 : Object.keys(packageWorkflowPaths).length > 0;
     if (hasEntries) {
       const candidates = await loadFromPaths(packageWorkflowPaths, "package", cwd, diagnostics);
-      registry = applyBatch(candidates, registry, sources, diagnostics);
+      registry = await applyBatch(candidates, registry, sources, diagnostics);
     }
   }
 
@@ -602,7 +641,7 @@ function discoverBundledManifest(): DiscoveryResult {
     kind: "bundled" as DiscoveryKind,
   }));
 
-  registry = applyBatch(candidates, registry, sources, diagnostics);
+  registry = applyBatchShapeOnly(candidates, registry, sources, diagnostics);
 
   return { registry, sources, errors: diagnostics };
 }

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineWorkflow } from "../src/index.js";
 import type { WorkflowTaskResult } from "../src/shared/types.js";
+import { WORKER_PREFLIGHT_CONTRACT } from "./shared-prompts.js";
 
 const DEFAULT_MAX_TURNS = 10;
 // Goal Runner runs three independent reviewer personas; two approvals form a majority.
@@ -1037,6 +1038,10 @@ export default defineWorkflow("goal")
         worker = await ctx.task(`work-turn-${turn}`, {
           prompt: [
             goalContext,
+            "",
+            "<project_initialization_preflight>",
+            WORKER_PREFLIGHT_CONTRACT,
+            "</project_initialization_preflight>",
             "",
             "<worker_turn_contract>",
             WORKER_RECEIPT_CONTRACT,

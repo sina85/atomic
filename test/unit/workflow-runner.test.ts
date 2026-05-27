@@ -1,6 +1,6 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CreateAgentSessionOptions } from "@bastani/atomic";
@@ -177,11 +177,8 @@ describe("programmatic workflow runner", () => {
   test("runs a named workflow from an explicit definition object", async () => {
     const prompts: string[] = [];
     const dir = mkdtempSync(join(tmpdir(), "workflow-runner-deep-research-"));
-    const previousCwd = process.cwd();
-    let result: Awaited<ReturnType<typeof runWorkflow>>;
     try {
-      process.chdir(dir);
-      result = await runWorkflow(
+      const result = await runWorkflow(
         {
           mode: "workflow",
           workflow: "deep-research-codebase",
@@ -190,16 +187,22 @@ describe("programmatic workflow runner", () => {
             max_partitions: 1,
           },
         },
-        { adapterOptions: { createAgentSession: makeSessionFactory(prompts) } },
+        { cwd: dir, adapterOptions: { createAgentSession: makeSessionFactory(prompts) } },
       );
-    } finally {
-      process.chdir(previousCwd);
-    }
 
-    assert.equal(result.mode, "named");
-    assert.equal(result.status, "completed");
-    assert.equal(result.output?.["specialist_count"], 4);
-    assert.ok(prompts.some((prompt) => prompt.includes("Research question: map workflow sdk")));
+      assert.equal(result.mode, "named");
+      assert.equal(result.status, "completed");
+      assert.equal(result.output?.["specialist_count"], 4);
+      assert.ok(prompts.some((prompt) => prompt.includes("Research question: map workflow sdk")));
+      const researchDocPath = result.output?.["research_doc_path"];
+      const artifactDir = result.output?.["artifact_dir"];
+      assert.equal(typeof researchDocPath, "string");
+      assert.equal(typeof artifactDir, "string");
+      assert.equal(existsSync(join(dir, researchDocPath as string)), true);
+      assert.equal(existsSync(join(dir, artifactDir as string)), true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("validates named workflow inputs before starting a session", async () => {

@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, test } from "bun:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type {
   WorkflowChainOptions,
   WorkflowDefinition,
@@ -174,22 +174,23 @@ function assertWorkflowDefinition(def: unknown): asserts def is WorkflowDefiniti
 // ---------------------------------------------------------------------------
 
 describe("deep-research-codebase", () => {
-  let previousCwd = process.cwd();
   let tempCwd: string | undefined;
 
   beforeEach(() => {
-    previousCwd = process.cwd();
     tempCwd = mkdtempSync(join(tmpdir(), "atomic-deep-research-test-"));
-    process.chdir(tempCwd);
   });
 
   afterEach(() => {
-    process.chdir(previousCwd);
     if (tempCwd !== undefined) {
       rmSync(tempCwd, { recursive: true, force: true });
       tempCwd = undefined;
     }
   });
+
+  function requireDeepResearchTempCwd(): string {
+    if (tempCwd === undefined) throw new Error("expected deep research temp cwd");
+    return tempCwd;
+  }
   test("loads and has correct shape", async () => {
     const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
     const def = mod.default as unknown as WorkflowDefinition;
@@ -227,7 +228,7 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    const result = await d.run(ctx);
+    const result = await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
 
     assert.deepEqual(ctx.calls.stage, []);
     assert.ok(ctx.calls.parallel.some((names) => names.includes("codebase-scout") && names.includes("history-locator")));
@@ -262,7 +263,7 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    const result = await d.run(ctx);
+    const result = await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
     const aggregatorOptions = ctx.calls.taskOptions["aggregator"]?.[0];
     const aggregatorPrompt = ctx.calls.prompts["aggregator"]?.[0] ?? "";
     const normalizedAggregatorPrompt = normalizePathSeparators(aggregatorPrompt);
@@ -323,7 +324,7 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    const result = await d.run(ctx);
+    const result = await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
     const aggregatorPrompt = ctx.calls.prompts["aggregator"]?.[0] ?? "";
 
     assert.doesNotMatch(aggregatorPrompt, /Output saved to:/);
@@ -345,7 +346,7 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    await d.run(ctx);
+    await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
 
     const analyzerOptions = ctx.calls.taskOptions["analyzer-1"]?.[0];
     const onlineOptions = ctx.calls.taskOptions["online-researcher-1"]?.[0];
@@ -386,20 +387,21 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    const result = await d.run(ctx);
+    const result = await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
 
     assert.equal(result["findings"], "final synthesized findings");
     assert.equal(result["research_doc_path"], normalizePathSeparators(join("research", `${new Date().toISOString().slice(0, 10)}-trace-auth-behavior.md`)));
-    assert.equal(readFileSync(result["research_doc_path"] as string, "utf8"), "final synthesized findings");
-    assert.equal(existsSync("context-build"), false);
+    assert.equal(readFileSync(join(requireDeepResearchTempCwd(), result["research_doc_path"] as string), "utf8"), "final synthesized findings");
+    assert.equal(existsSync(join(requireDeepResearchTempCwd(), "context-build")), false);
 
     const artifactDirValue = result["artifact_dir"];
     if (typeof artifactDirValue !== "string") {
       throw new Error("expected artifact_dir to be a string");
     }
     const artifactDir = artifactDirValue;
+    const artifactDirFsPath = join(requireDeepResearchTempCwd(), artifactDir);
     assert.match(normalizePathSeparators(artifactDir), /^research\/\.deep-research-/);
-    assert.equal(existsSync(artifactDir), true);
+    assert.equal(existsSync(artifactDirFsPath), true);
 
     for (const filename of [
       "00-codebase-scout.md",
@@ -413,14 +415,14 @@ describe("deep-research-codebase", () => {
       "explorer-1.md",
       "manifest.json",
     ]) {
-      assert.equal(existsSync(join(artifactDir, filename)), true, `expected ${filename}`);
+      assert.equal(existsSync(join(artifactDirFsPath, filename)), true, `expected ${filename}`);
     }
     for (const path of aggregatorReadPaths) {
       assert.equal(existsSync(path), true, `expected handoff artifact to persist: ${path}`);
       assert.equal(/(^|\/)context-build\//.test(normalizePathSeparators(path)), false);
     }
 
-    const manifest = JSON.parse(readFileSync(join(artifactDir, "manifest.json"), "utf8")) as {
+    const manifest = JSON.parse(readFileSync(join(artifactDirFsPath, "manifest.json"), "utf8")) as {
       runId?: string;
       startedAt?: string;
       completedAt?: string;
@@ -428,7 +430,7 @@ describe("deep-research-codebase", () => {
       finalAsset?: string;
       artifacts?: Record<string, string>;
     };
-    assert.equal(manifest.runId, artifactDir.replace(/^research\/\.deep-research-/, ""));
+    assert.equal(manifest.runId, basename(artifactDir).replace(/^\.deep-research-/, ""));
     assert.equal(typeof manifest.startedAt, "string");
     assert.equal(typeof manifest.completedAt, "string");
     assert.equal(manifest.researchQuestion, "Trace auth behavior");
@@ -451,7 +453,7 @@ describe("deep-research-codebase", () => {
     const mod = await import("../../packages/workflows/builtin/deep-research-codebase.js");
     const d = mod.default as unknown as WorkflowDefinition;
     const date = new Date().toISOString().slice(0, 10);
-    const existingPath = join("research", `${date}-trace-auth-behavior.md`);
+    const existingPath = join(requireDeepResearchTempCwd(), "research", `${date}-trace-auth-behavior.md`);
     mkdirSync(dirname(existingPath), { recursive: true });
     writeFileSync(existingPath, "existing research", "utf8");
     const ctx = makeMockCtx(
@@ -465,13 +467,13 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    const result = await d.run(ctx);
+    const result = await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
     const researchDocPath = result["research_doc_path"];
 
     assert.equal(readFileSync(existingPath, "utf8"), "existing research");
     assert.ok(typeof researchDocPath === "string");
     assert.ok(normalizePathSeparators(researchDocPath).endsWith(`${date}-trace-auth-behavior-2.md`));
-    assert.equal(readFileSync(researchDocPath, "utf8"), "final synthesized findings");
+    assert.equal(readFileSync(join(requireDeepResearchTempCwd(), researchDocPath), "utf8"), "final synthesized findings");
   });
 
   test("does not create a top-level context-build directory", async () => {
@@ -488,10 +490,10 @@ describe("deep-research-codebase", () => {
       },
     );
 
-    await d.run(ctx);
+    await mod.runDeepResearchCodebaseWorkflow(ctx, requireDeepResearchTempCwd());
 
-    assert.equal(existsSync("context-build"), false);
-    assert.deepEqual(readdirSync("research").filter((entry) => entry === "context-build"), []);
+    assert.equal(existsSync(join(requireDeepResearchTempCwd(), "context-build")), false);
+    assert.deepEqual(readdirSync(join(requireDeepResearchTempCwd(), "research")).filter((entry) => entry === "context-build"), []);
   });
 });
 
@@ -500,22 +502,6 @@ describe("deep-research-codebase", () => {
 // ---------------------------------------------------------------------------
 
 describe("goal", () => {
-  let previousCwd = process.cwd();
-  let tempCwd: string | undefined;
-
-  beforeEach(() => {
-    previousCwd = process.cwd();
-    tempCwd = mkdtempSync(join(tmpdir(), "atomic-goal-test-"));
-    process.chdir(tempCwd);
-  });
-
-  afterEach(() => {
-    process.chdir(previousCwd);
-    if (tempCwd !== undefined) {
-      rmSync(tempCwd, { recursive: true, force: true });
-      tempCwd = undefined;
-    }
-  });
 
   type ReviewJsonFinding = {
     readonly title: string;
@@ -1267,13 +1253,45 @@ describe("goal", () => {
 // ---------------------------------------------------------------------------
 
 describe("ralph", () => {
+  let tempCwd: string | undefined;
+
+  beforeEach(() => {
+    tempCwd = mkdtempSync(join(tmpdir(), "atomic-ralph-unit-"));
+  });
+
+  afterEach(() => {
+    if (tempCwd !== undefined) {
+      rmSync(tempCwd, { recursive: true, force: true });
+      tempCwd = undefined;
+    }
+  });
+
+  function requireRalphTempCwd(): string {
+    if (tempCwd === undefined) throw new Error("expected Ralph temp cwd");
+    return tempCwd;
+  }
+
+  function assertEveryRalphStageCwd(
+    ctx: { readonly calls: MockCalls },
+    expectedCwd: string | undefined,
+  ): void {
+    for (const [taskName, entries] of Object.entries(ctx.calls.taskOptions)) {
+      for (const options of entries) {
+        assert.equal(options.cwd, expectedCwd, `unexpected cwd for ${taskName}`);
+      }
+    }
+    for (const options of ctx.calls.parallelOptions) {
+      assert.equal(options.cwd, expectedCwd, "unexpected cwd for parallel stage");
+    }
+  }
+
   test("loads and has Ralph workflow shape", async () => {
     const mod = await import("../../packages/workflows/builtin/ralph.js");
     assertWorkflowDefinition(mod.default);
     assert.equal(mod.default.name, "ralph");
   });
 
-  test("declares prompt, max_loops, and base_branch inputs", async () => {
+  test("declares prompt, max_loops, base_branch, and git_worktree_dir inputs", async () => {
     const mod = await import("../../packages/workflows/builtin/ralph.js");
     assert.equal(mod.default.inputs["prompt"]?.type, "text");
     assert.equal(mod.default.inputs["prompt"]?.required, true);
@@ -1287,7 +1305,87 @@ describe("ralph", () => {
       (mod.default.inputs["base_branch"] as { default?: string }).default,
       "origin/main",
     );
-    assert.deepEqual(Object.keys(mod.default.inputs).sort(), ["base_branch", "max_loops", "prompt"]);
+    assert.equal(mod.default.inputs["git_worktree_dir"]?.type, "string");
+    assert.equal(
+      (mod.default.inputs["git_worktree_dir"] as { default?: string }).default,
+      "",
+    );
+    const description = mod.default.inputs["git_worktree_dir"]?.description ?? "";
+    assert.match(description, /inside a Git repo/);
+    assert.match(description, /absolute paths are used as-is/);
+    assert.match(description, /relative paths resolve from the repo root/);
+    assert.match(description, /existing Git worktrees from the invoking repository are reused\/shared as-is/);
+    assert.deepEqual(Object.keys(mod.default.inputs).sort(), ["base_branch", "git_worktree_dir", "max_loops", "prompt"]);
+  });
+
+  test("leaves stage cwd unset when git_worktree_dir is not provided", async () => {
+    const mod = await import("../../packages/workflows/builtin/ralph.js");
+    const ctx = makeMockCtx({
+      prompt: "Add a small feature",
+      max_loops: 1,
+      base_branch: "main",
+      git_worktree_dir: "",
+    });
+
+    await mod.default.run({ ...ctx, cwd: requireRalphTempCwd() });
+
+    assertEveryRalphStageCwd(ctx, undefined);
+  });
+
+  test("pull-request stage documents detached HEAD branch handoff without cleanup markers", async () => {
+    const mod = await import("../../packages/workflows/builtin/ralph.js");
+    const ctx = makeMockCtx({
+      prompt: "Add a small feature",
+      max_loops: 1,
+      base_branch: "main",
+      git_worktree_dir: "",
+    });
+
+    await mod.default.run({ ...ctx, cwd: requireRalphTempCwd() });
+
+    const prompt = ctx.calls.prompts["pull-request"]?.[0] ?? "";
+    assert.match(prompt, /detached HEAD/);
+    assert.match(prompt, /git checkout -b <branch>/);
+    assert.ok(prompt.includes("git push origin HEAD:refs/heads/<branch>"));
+    assert.match(prompt, /does not remove git_worktree_dir automatically/);
+    assert.equal(prompt.includes("Worktree cleanup: safe-to-remove"), false);
+    assert.equal(prompt.includes("Worktree cleanup: preserve"), false);
+  });
+
+  test("revises the original Ralph spec file across planner iterations", async () => {
+    const mod = await import("../../packages/workflows/builtin/ralph.js");
+    const prompt = "Collision spec";
+    const cwd = requireRalphTempCwd();
+    const specsDir = join(cwd, "specs");
+    const date = new Date().toISOString().slice(0, 10);
+    const expectedSpecPath = join(specsDir, `${date}-collision-spec.md`);
+    mkdirSync(specsDir, { recursive: true });
+    writeFileSync(expectedSpecPath, "pre-existing spec\n", "utf8");
+
+    const ctx = makeMockCtx(
+      {
+        prompt,
+        max_loops: 2,
+        base_branch: "main",
+        git_worktree_dir: "",
+      },
+      {
+        task: (name) => {
+          if (name === "planner-1") return "first generated spec";
+          if (name === "planner-2") return "second revised spec";
+          return undefined;
+        },
+      },
+    );
+
+    const result = await mod.default.run({ ...ctx, cwd });
+
+    assert.equal(result["plan_path"], expectedSpecPath);
+    assert.equal(readFileSync(expectedSpecPath, "utf8"), "second revised spec\n");
+    assert.deepEqual(readPaths(ctx.calls.taskOptions["planner-1"]?.[0]), []);
+    assert.deepEqual(readPaths(ctx.calls.taskOptions["planner-2"]?.[0]), [expectedSpecPath]);
+    assert.match(ctx.calls.prompts["planner-2"]?.[0] ?? "", /full updated RFC markdown that should replace the original spec/);
+    assert.equal(existsSync(join(specsDir, `${date}-collision-spec-2.md`)), false);
   });
 });
 
