@@ -1,5 +1,5 @@
 /**
- * Status / kill / resume control helpers for in-flight workflow runs.
+ * Status / kill / resume helpers for retained workflow runs and live controls.
  *
  * These helpers operate against the singleton store and are consumed by:
  *   - The `workflow` tool execute handler (action: "status" | "kill" | "resume")
@@ -33,10 +33,6 @@ export interface RunStatusEntry {
 export type KillResult =
   | { ok: true; runId: string; previousStatus: RunStatus }
   | { ok: false; runId: string; reason: "not_found" | "already_ended" };
-
-export type DestroyRunResult =
-  | { ok: true; runId: string; previousStatus: RunStatus; wasInFlight: boolean }
-  | { ok: false; runId: string; reason: "not_found" };
 
 export type ResumeResult =
   | {
@@ -95,27 +91,22 @@ export type InspectRunResult =
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a summary of all in-flight (not-yet-ended) runs in the store.
- * If `all` is true, returns completed/failed runs too.
+ * Returns a summary of all retained runs in the current store/session.
+ *
+ * Terminal snapshots are retained for inspection and are visible by default;
+ * the legacy `all` option is accepted as a compatibility no-op.
  */
 export function statusRuns(opts?: { all?: boolean; store?: Store }): RunStatusEntry[] {
   const activeStore = opts?.store ?? defaultStore;
-  const runs = activeStore.runs();
-  const result: RunStatusEntry[] = [];
 
-  for (const run of runs) {
-    if (!opts?.all && run.endedAt !== undefined) continue;
-    result.push({
-      runId: run.id,
-      name: run.name,
-      status: run.status,
-      startedAt: run.startedAt,
-      durationMs: run.durationMs,
-      stageCount: run.stages.length,
-    });
-  }
-
-  return result;
+  return activeStore.runs().map((run) => ({
+    runId: run.id,
+    name: run.name,
+    status: run.status,
+    startedAt: run.startedAt,
+    durationMs: run.durationMs,
+    stageCount: run.stages.length,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -176,57 +167,6 @@ export function killAllRuns(opts?: {
   const inFlight = activeStore.runs().filter((r) => r.endedAt === undefined);
   return inFlight.map((r) =>
     killRun(r.id, { store: activeStore, cancellation: opts?.cancellation, persistence: opts?.persistence }),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// destroyRun
-// ---------------------------------------------------------------------------
-
-/**
- * Destructively kills a workflow run and removes it from live history/status.
- *
- * In-flight runs are aborted and persisted with a terminal `killed` entry so
- * session restore will not resurrect them. Ended runs are simply removed from
- * the live store without appending a duplicate terminal event.
- */
-export function destroyRun(
-  runId: string,
-  opts?: { store?: Store; cancellation?: CancellationRegistry; persistence?: WorkflowPersistencePort },
-): DestroyRunResult {
-  const activeStore = opts?.store ?? defaultStore;
-  const run = activeStore.runs().find((r) => r.id === runId);
-
-  if (!run) {
-    return { ok: false, runId, reason: "not_found" };
-  }
-
-  const previousStatus = run.status;
-  const wasInFlight = run.endedAt === undefined;
-
-  if (wasInFlight) {
-    opts?.cancellation?.abort(runId, "workflow killed");
-    if (opts?.persistence) {
-      appendRunEnd(opts.persistence, { runId, status: "killed", ts: Date.now() });
-    }
-  }
-
-  activeStore.removeRun(runId);
-  return { ok: true, runId, previousStatus, wasInFlight };
-}
-
-/**
- * Destructively kills and removes all in-flight runs.
- */
-export function destroyAllRuns(opts?: {
-  store?: Store;
-  cancellation?: CancellationRegistry;
-  persistence?: WorkflowPersistencePort;
-}): DestroyRunResult[] {
-  const activeStore = opts?.store ?? defaultStore;
-  const inFlight = activeStore.runs().filter((r) => r.endedAt === undefined);
-  return inFlight.map((r) =>
-    destroyRun(r.id, { store: activeStore, cancellation: opts?.cancellation, persistence: opts?.persistence }),
   );
 }
 
@@ -408,7 +348,7 @@ export function pauseAllRuns(opts?: {
 
 /**
  * Interrupt a run in a resumable way by pausing live stage handles when
- * available. Unlike `destroyRun`, this never aborts the workflow controller and
+ * available. This never aborts the workflow controller and
  * never removes the run from status/history.
  */
 export function interruptRun(

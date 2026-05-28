@@ -79,12 +79,11 @@ export interface DetailPayload {
   detail: RunDetail;
 }
 
-/** Inline notice after a workflow run is destructively killed and removed. */
+/** Inline notice after a workflow run is killed and retained for inspection. */
 export interface KilledPayload {
   kind: "killed";
   run: RunSnapshot;
   previousStatus: RunStatus;
-  wasInFlight: boolean;
 }
 
 export type ChatSurfacePayload =
@@ -234,7 +233,6 @@ function renderPayload(
         theme,
         run: payload.run,
         previousStatus: payload.previousStatus,
-        wasInFlight: payload.wasInFlight,
       }).join("\n");
   }
 }

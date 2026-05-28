@@ -29,7 +29,7 @@ function makeRun(over: Partial<RunSnapshot>): RunSnapshot {
   };
 }
 
-test("selectRunsForPicker buckets active vs recent, drops old by default", () => {
+test("selectRunsForPicker buckets active vs retained terminal by default", () => {
   const now = 10_000_000;
   const hourMs = 60 * 60 * 1000;
   const runs: RunSnapshot[] = [
@@ -37,12 +37,12 @@ test("selectRunsForPicker buckets active vs recent, drops old by default", () =>
     makeRun({ id: "b-recent", status: "completed", startedAt: now - 5000, endedAt: now - 1000, durationMs: 4000 }),
     makeRun({ id: "c-old", status: "completed", startedAt: now - hourMs * 4, endedAt: now - hourMs * 3, durationMs: hourMs }),
   ];
-  const rows = selectRunsForPicker(runs, "", false, now);
-  assert.deepEqual(rows.map((r) => r.run.id), ["a-active", "b-recent"]);
-  assert.deepEqual(rows.map((r) => r.bucket), ["active", "recent"]);
+  const rows = selectRunsForPicker(runs, "", true, now);
+  assert.deepEqual(rows.map((r) => r.run.id), ["a-active", "b-recent", "c-old"]);
+  assert.deepEqual(rows.map((r) => r.bucket), ["active", "terminal", "terminal"]);
 
-  const all = selectRunsForPicker(runs, "", true, now);
-  assert.equal(all.length, 3);
+  const legacyRecentOnly = selectRunsForPicker(runs, "", false, now);
+  assert.deepEqual(legacyRecentOnly.map((r) => r.run.id), ["a-active", "b-recent"]);
 });
 
 test("selectRunsForPicker filters by name and runId prefix", () => {
@@ -66,7 +66,7 @@ test("handleSessionPickerInput: enter on selected row returns connect", () => {
   assert.deepEqual(action, { kind: "connect", runId: "id-1" });
 });
 
-test("handleSessionPickerInput: arrows navigate, x kills selected row", () => {
+test("handleSessionPickerInput: arrows navigate, x kills selected active row", () => {
   const state = createSessionPickerState();
   const rows = [
     { run: makeRun({ id: "id-1" }), bucket: "active" as const },
@@ -76,6 +76,15 @@ test("handleSessionPickerInput: arrows navigate, x kills selected row", () => {
   assert.equal(state.selectedIndex, 1);
   const kill = handleSessionPickerInput("x", state, rows);
   assert.deepEqual(kill, { kind: "kill", runId: "id-2" });
+});
+
+test("handleSessionPickerInput: x is a no-op on terminal rows", () => {
+  const state = createSessionPickerState();
+  const rows = [
+    { run: makeRun({ id: "id-1", status: "completed", endedAt: 2000 }), bucket: "terminal" as const },
+  ];
+  const action = handleSessionPickerInput("x", state, rows);
+  assert.deepEqual(action, { kind: "noop" });
 });
 
 test("handleSessionPickerInput: / enters filter mode and types into query", () => {
@@ -106,11 +115,11 @@ test("handleSessionPickerInput: double esc exits filter mode", () => {
 
 test("handleSessionPickerInput: a toggles includeAll", () => {
   const state = createSessionPickerState();
-  assert.equal(state.includeAll, false);
-  handleSessionPickerInput("a", state, []);
   assert.equal(state.includeAll, true);
   handleSessionPickerInput("a", state, []);
   assert.equal(state.includeAll, false);
+  handleSessionPickerInput("a", state, []);
+  assert.equal(state.includeAll, true);
 });
 
 test("handleSessionPickerInput: esc variants close", () => {
@@ -126,13 +135,13 @@ test("renderSessionPicker emits header, sections, and footer hints", () => {
   const state = createSessionPickerState();
   const rows = [
     { run: makeRun({ id: "aaaa1111-0000-0000-0000-000000000000", name: "ralph" }), bucket: "active" as const },
-    { run: makeRun({ id: "bbbb2222-0000-0000-0000-000000000000", name: "deep-research", status: "completed", endedAt: 2000 }), bucket: "recent" as const },
+    { run: makeRun({ id: "bbbb2222-0000-0000-0000-000000000000", name: "deep-research", status: "completed", endedAt: 2000 }), bucket: "terminal" as const },
   ];
   const lines = renderSessionPicker({ width: 80, theme, rows, state });
   const joined = lines.join("\n");
   assert.match(joined, /Connect to workflow run/);
   assert.match(joined, /ACTIVE/);
-  assert.match(joined, /RECENT/);
+  assert.match(joined, /TERMINAL/);
   assert.match(joined, /aaaa1111/);
   assert.match(joined, /ralph/);
   assert.match(joined, /Navigate/);
