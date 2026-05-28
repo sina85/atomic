@@ -95,6 +95,7 @@ interface SubagentRunConfig {
 	childIntercomTargets?: Array<string | undefined>;
 	resultMode?: SubagentRunMode;
 	nestedRoute?: NestedRouteInfo;
+	workflowStageSubagentGuard?: boolean;
 	nestedSelf?: { parentRunId: string; parentStepIndex?: number; depth: number; path?: Array<{ runId: string; stepIndex?: number; agent?: string }> };
 }
 
@@ -215,13 +216,18 @@ function runPiStreaming(
 	piPackageRoot?: string,
 	piArgv1?: string,
 	maxSubagentDepth?: number,
+	workflowStageSubagentGuard?: boolean,
 	childEventContext?: ChildEventContext,
 	registerInterrupt?: (interrupt: (() => void) | undefined) => void,
 	onChildEvent?: (event: ChildEvent) => void,
 ): Promise<RunPiStreamingResult> {
 	return new Promise((resolve) => {
 		const outputStream = fs.createWriteStream(outputFile, { flags: "w" });
-		const spawnEnv = { ...process.env, ...(env ?? {}), ...getSubagentDepthEnv(maxSubagentDepth) };
+		const spawnEnv = {
+			...process.env,
+			...(env ?? {}),
+			...getSubagentDepthEnv(maxSubagentDepth, { workflowStageSubagentGuard }),
+		};
 		const spawnSpec = getPiSpawnCommand(args, {
 			...(piPackageRoot ? { piPackageRoot } : {}),
 			...(piArgv1 ? { argv1: piArgv1 } : {}),
@@ -561,6 +567,7 @@ interface SingleStepContext {
 	nestedRoute?: NestedRouteInfo;
 	onAttemptStart?: (attempt: { model?: string; thinking?: string }) => void;
 	onChildEvent?: (event: ChildEvent) => void;
+	workflowStageSubagentGuard?: boolean;
 }
 
 /** Run a single pi agent step, returning output and metadata */
@@ -647,6 +654,7 @@ async function runSingleStep(
 			ctx.piPackageRoot,
 			ctx.piArgv1,
 			step.maxSubagentDepth,
+			step.workflowStageSubagentGuard ?? ctx.workflowStageSubagentGuard,
 			{ eventsPath, runId: ctx.id, stepIndex: ctx.flatIndex, agent: step.agent },
 			ctx.registerInterrupt,
 			ctx.onChildEvent,
@@ -1393,6 +1401,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 							},
 							onAttemptStart: (attempt) => updateStepModel(fi, attempt.model, attempt.thinking),
 							onChildEvent: (event) => updateStepFromChildEvent(fi, event),
+							workflowStageSubagentGuard: config.workflowStageSubagentGuard,
 						});
 						if (task.sessionFile) {
 							latestSessionFile = task.sessionFile;
@@ -1539,6 +1548,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				},
 				onAttemptStart: (attempt) => updateStepModel(flatIndex, attempt.model, attempt.thinking),
 				onChildEvent: (event) => updateStepFromChildEvent(flatIndex, event),
+				workflowStageSubagentGuard: config.workflowStageSubagentGuard,
 			});
 			if (seqStep.sessionFile) {
 				latestSessionFile = seqStep.sessionFile;

@@ -85,7 +85,7 @@ import type { StatusWriter } from "./status-writer.js";
 import { setMcpScope, clearMcpScope } from "./mcp.js";
 import type { PiMcpExtensionAPI, PiEventBus } from "./mcp.js";
 import type { StageSessionRuntime } from "../runs/foreground/stage-runner.js";
-import type { CreateAgentSessionOptions } from "@bastani/atomic";
+import { WORKFLOW_STAGE_SUBAGENT_GUARD_ENV, getEnvValue, type CreateAgentSessionOptions } from "@bastani/atomic";
 
 // ---------------------------------------------------------------------------
 // Minimal ExtensionAPI structural types
@@ -240,6 +240,7 @@ export interface PiExecuteContext extends PiModelContext {
   sessionId?: string;
   ui?: PiUISurface;
   hasUI?: boolean;
+  orchestrationContext?: CreateAgentSessionOptions["orchestrationContext"];
   sessionManager?: SessionManager & {
     getSessionFile?: () => string | undefined;
   };
@@ -937,6 +938,14 @@ function reloadFailureMessage(error: unknown): string {
   return `Reload failed: ${error instanceof Error ? error.message : String(error)}`;
 }
 
+function hasWorkflowStageSubagentGuardEnv(): boolean {
+  return getEnvValue(WORKFLOW_STAGE_SUBAGENT_GUARD_ENV) === "1";
+}
+
+function isWorkflowStageToolContext(ctx: PiExecuteContext): boolean {
+  return hasWorkflowStageSubagentGuardEnv() || ctx.orchestrationContext?.kind === "workflow-stage";
+}
+
 // ---------------------------------------------------------------------------
 // Tool execute — dispatch with real registry for list/inputs/run (Phase E)
 //                + real status/interrupt/resume (Phase D)
@@ -953,6 +962,19 @@ export function makeExecuteWorkflowTool(
   ): Promise<WorkflowToolResult> {
     const action = args.action ?? "run";
     const runId = args.runId ?? "";
+    if (isWorkflowStageToolContext(ctx)) {
+      // Workflow stages must not invoke the workflow tool at all, including
+      // read-only inspection actions. The tool is normally excluded from stage
+      // sessions; this guard is a defense-in-depth fallback for stale or
+      // hand-crafted registrations.
+      return {
+        action: "run",
+        runId,
+        status: "failed",
+        error: "workflows cannot invoke workflows from workflow stages",
+        stages: [],
+      };
+    }
     const activeRuntime =
       typeof runtime === "function" ? runtime(ctx) : runtime;
 
