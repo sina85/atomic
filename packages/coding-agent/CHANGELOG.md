@@ -5,6 +5,7 @@
 ### Added
 
 - Added `/fast` Codex fast mode toggles for chat and workflow-stage sessions, applying OpenAI priority service tier to supported `openai/*` and `openai-codex/*` models only; active supported models now show a visible `fast` indicator after the model name ([#1134](https://github.com/flora131/atomic/issues/1134)).
+- Added extension custom-message `deliverAs: "interrupt"` delivery so first-party extensions can abort a stale streaming turn and start an immediate custom-message turn ([#1137](https://github.com/flora131/atomic/issues/1137)).
 
 ### Changed
 
