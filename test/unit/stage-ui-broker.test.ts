@@ -366,6 +366,37 @@ describe("StageUiBroker", () => {
       unregister();
     });
 
+    test("cancelStagePrompt hides and rejects stale terminal custom UI", async () => {
+      const { broker, store } = setupStage();
+      const adapter = buildStagePromptAdapter("p", "ask_user_question", COLOR_ARGS, 1)!;
+      broker.provideStagePrompt("run-1", "stage-1", adapter);
+      let shownRequestId = "";
+      let hiddenRequestId = "";
+      const unregister = broker.registerHost("run-1", "stage-1", {
+        showCustomUi(request) {
+          shownRequestId = request.id;
+        },
+        hideCustomUi(request) {
+          hiddenRequestId = request.id;
+        },
+      });
+      const pending = broker.requestCustomUi("run-1", "stage-1", () => ({
+        render: () => [],
+        invalidate: () => {},
+      }));
+
+      broker.cancelStagePrompt("run-1", "stage-1", new Error("stage completed"));
+
+      await assert.rejects(pending, /stage completed/);
+      assert.notEqual(shownRequestId, "");
+      assert.equal(hiddenRequestId, shownRequestId);
+      assert.equal(store.runs()[0]?.stages[0]?.status, "running");
+      assert.equal(store.runs()[0]?.stages[0]?.inputRequest, undefined);
+      assert.equal(broker.peekStagePrompt("run-1", "stage-1"), undefined);
+      assert.equal(broker.answerStagePrompt("run-1", "stage-1", { text: "Red" }), false);
+      unregister();
+    });
+
     test("rejecting or aborting a brokered prompt does not notify resolved listeners", async () => {
       const { broker } = setupStage();
       const controller = new AbortController();

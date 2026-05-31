@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Interrupt the main agent immediately when a workflow stage HiL prompt is answered, using a metadata-only `workflows:hil-answer-notice` so the agent stops stale streaming and does not ask the same question again ([#1137](https://github.com/flora131/atomic/issues/1137)).
 - Hardened workflow awaiting-input lifecycle notices and readiness-gate answers: awaiting-input lifecycle states are now tracked for dedupe without emitting visible/actionable main-chat `/workflow connect` cards that can render stale after completion, readiness gates use unique prompt ids per gate instance, and duplicate/raced `workflow send` answers for a just-resolved brokered input request now report the request as already answered instead of falling through to `No matching pending prompt` ([#1137](https://github.com/flora131/atomic/issues/1137)).
 - Fixed completed human-in-the-loop prompt archives so reattached read-only prompt nodes keep their prompt card scrollable with keyboard and mouse-wheel input ([#1140](https://github.com/flora131/atomic/issues/1140)).
+- Kept the workflow graph overlay navigable while a stage-local human-input prompt is awaiting a response: graph navigation, the stage switcher, Ctrl+D detach, and mouse-wheel scrolling now stay owned by graph mode until the user explicitly attaches to the prompted stage ([#1141](https://github.com/flora131/atomic/issues/1141)).
+- Preserved literal slash text entry in legacy run-level workflow prompt cards, so paths and URLs such as `/tmp/file` remain typable while the prompt owns input ([#1141](https://github.com/flora131/atomic/issues/1141)).
+- Cleared brokered stage HIL UI during terminal stage cleanup so a completed workflow does not leave an active `ask_user_question`/custom prompt card visible after detach ([#1141](https://github.com/flora131/atomic/issues/1141)).
 
 ## [0.8.21] - 2026-05-30
 

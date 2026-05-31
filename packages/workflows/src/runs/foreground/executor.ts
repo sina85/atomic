@@ -2736,6 +2736,11 @@ export async function run<TInputs extends Record<string, unknown>>(
         applyModelFallbackMeta(innerCtx.__modelFallbackMeta());
 
         activeStore.recordStageEnd(runId, stageSnapshot);
+        stageUiBroker.cancelStagePrompt(
+          runId,
+          stageId,
+          new Error(`pi-workflows: stage ${stageId} completed with pending custom UI`),
+        );
         opts.onStageEnd?.(runId, stageSnapshot);
 
         if (opts.persistence) {
