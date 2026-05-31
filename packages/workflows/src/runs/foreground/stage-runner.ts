@@ -25,6 +25,7 @@ import type {
   StagePromptOptions,
   WorkflowMaxOutput,
   WorkflowModelAttempt,
+  WorkflowExecutionMode,
   WorkflowModelCatalogPort,
 } from "../../shared/types.js";
 import {
@@ -117,6 +118,8 @@ export interface StageRunnerOpts {
   signal?: AbortSignal;
   /** Optional model catalog used for fallback validation/resolution. */
   models?: WorkflowModelCatalogPort;
+  /** Runtime execution mode forwarded to stage session adapters. */
+  executionMode?: WorkflowExecutionMode;
   /** Internal: notifies the executor when an in-flight fallback changes model/fast metadata. */
   onModelFallbackMetaChange?: (meta: StageModelFallbackMeta) => void;
 }
@@ -455,8 +458,8 @@ async function finalizePromptOutput(
 }
 
 export function createStageContext(opts: StageRunnerOpts): InternalStageContext {
-  const { stageId, stageName, adapters, runId, signal, stageOptions } = opts;
-  const meta: StageExecutionMeta = { runId, stageId, stageName, signal, stageOptions };
+  const { stageId, stageName, adapters, runId, signal, stageOptions, executionMode } = opts;
+  const meta: StageExecutionMeta = { runId, stageId, stageName, signal, stageOptions, executionMode };
   let session: StageSessionRuntime | undefined;
   let sessionPromise: Promise<StageSessionRuntime> | undefined;
   let lastAssistantText: string | undefined;

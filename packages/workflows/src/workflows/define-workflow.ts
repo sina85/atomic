@@ -14,6 +14,7 @@ import type {
   WorkflowImportSource,
   WorkflowInputBindings,
   WorkflowInputSchema,
+  WorkflowInteractionMetadata,
   WorkflowOutputSchema,
   WorkflowRunFn,
   WorkflowWorktreeInputBinding,
@@ -31,6 +32,7 @@ interface BuilderState<TInputs extends Record<string, unknown>> {
   readonly outputs: Readonly<Record<string, WorkflowOutputSchema>>;
   readonly imports: Readonly<Record<string, WorkflowImportDeclaration>>;
   readonly inputBindings: WorkflowInputBindings;
+  readonly interaction: WorkflowInteractionMetadata;
   readonly runFn: WorkflowRunFn<TInputs> | undefined;
 }
 
@@ -63,6 +65,8 @@ export interface WorkflowBuilder<TInputs extends Record<string, unknown> = Recor
   output(key: string, schema?: WorkflowOutputSchema): WorkflowBuilder<TInputs>;
   /** Bind workflow inputs to reusable git worktree runtime defaults. */
   worktreeFromInputs(binding: WorkflowWorktreeInputBinding): WorkflowBuilder<TInputs>;
+  /** Mark this workflow as requiring human interaction when it runs. */
+  humanInTheLoop(reason?: string): WorkflowBuilder<TInputs>;
   /** Seal the run function.  Returns a builder on which .compile() is available. */
   run(fn: WorkflowRunFn<TInputs>): CompletedWorkflowBuilder<TInputs>;
 }
@@ -80,6 +84,7 @@ export interface CompletedWorkflowBuilder<TInputs extends Record<string, unknown
   import(alias: string, source: WorkflowImportSource, options?: { description?: string }): CompletedWorkflowBuilder<TInputs>;
   output(key: string, schema?: WorkflowOutputSchema): CompletedWorkflowBuilder<TInputs>;
   worktreeFromInputs(binding: WorkflowWorktreeInputBinding): CompletedWorkflowBuilder<TInputs>;
+  humanInTheLoop(reason?: string): CompletedWorkflowBuilder<TInputs>;
   run(fn: WorkflowRunFn<TInputs>): CompletedWorkflowBuilder<TInputs>;
   /** Freeze and return the completed WorkflowDefinition. */
   compile(): WorkflowDefinition<TInputs>;
@@ -192,6 +197,16 @@ function makeBuilder<TInputs extends Record<string, unknown>>(
       });
     },
 
+    humanInTheLoop(reason?: string) {
+      return makeBuilder<TInputs>({
+        ...state,
+        interaction: Object.freeze({
+          humanInput: "required" as const,
+          ...(reason !== undefined ? { reason } : {}),
+        }),
+      });
+    },
+
     run(fn: WorkflowRunFn<TInputs>) {
       return makeBuilder<TInputs>({ ...state, runFn: fn });
     },
@@ -215,6 +230,7 @@ function makeBuilder<TInputs extends Record<string, unknown>>(
           ? { worktree: Object.freeze({ ...state.inputBindings.worktree }) }
           : {}),
       });
+      const interaction = Object.freeze({ ...state.interaction });
 
       const definition: WorkflowDefinition<TInputs> = {
         __piWorkflow: true,
@@ -225,6 +241,7 @@ function makeBuilder<TInputs extends Record<string, unknown>>(
         ...(Object.keys(frozenOutputs).length > 0 ? { outputs: frozenOutputs } : {}),
         ...(Object.keys(frozenImports).length > 0 ? { imports: frozenImports } : {}),
         ...(Object.keys(inputBindings).length > 0 ? { inputBindings } : {}),
+        interaction,
         run: state.runFn,
       };
 
@@ -266,6 +283,7 @@ export function defineWorkflow(name: string): WorkflowBuilder {
     outputs: {},
     imports: {},
     inputBindings: {},
+    interaction: Object.freeze({ humanInput: "none" }),
     runFn: undefined,
   };
 

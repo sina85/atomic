@@ -34,6 +34,7 @@ import type {
   WorkflowPersistencePort,
   WorkflowRuntimeConfig,
   WorkflowModelCatalogPort,
+  WorkflowExecutionMode,
   WorkflowRunChildOptions,
   WorkflowChildResult,
   WorkflowOutputSchema,
@@ -98,6 +99,8 @@ export interface RunOpts {
   cwd?: string;
   /** HIL adapter injected by the pi runtime or test harness. */
   ui?: WorkflowUIAdapter;
+  /** Runtime execution mode. Controls child session policy metadata. */
+  executionMode?: WorkflowExecutionMode;
   /** Internal detached-run mode: surface ctx.ui.* as node-local workflow prompt stages. */
   usePromptNodesForUi?: boolean;
   /**
@@ -2566,6 +2569,7 @@ export async function run<TInputs extends Record<string, unknown>>(
         signal: ownController.signal,
         stageOptions: options,
         models: opts.models,
+        executionMode: opts.executionMode,
         onModelFallbackMetaChange(meta) {
           applyModelFallbackMeta(meta);
           if (stageSnapshot.status === "running") {
