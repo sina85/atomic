@@ -610,6 +610,89 @@ describe("createStageContext — model fallback", () => {
         assert.equal(meta.warnings, undefined);
     });
 
+    test("terminal assistant error counts as failed attempt and retries fallback", async () => {
+        const calls: string[] = [];
+        const agentSession: AgentSessionAdapter = {
+            async create(options) {
+                const model: string = typeof options.model === "string"
+                    ? options.model
+                    : "object-model";
+                calls.push(model);
+                const messages: AgentSession["messages"] = [] as AgentSession["messages"];
+                const { session } = makeMockSession({
+                    messages,
+                    async prompt() {
+                        if (model === "anthropic/primary") {
+                            messages.push({
+                                role: "assistant",
+                                content: [{ type: "text", text: "provider failed" }],
+                                stopReason: "error",
+                                errorMessage: "provider request failed",
+                                diagnostics: [{ error: { status: 503, message: "service unavailable" } }],
+                            } as never);
+                            return;
+                        }
+                        messages.push({
+                            role: "assistant",
+                            content: [{ type: "text", text: "fallback answer" }],
+                            stopReason: "stop",
+                        } as never);
+                    },
+                    getLastAssistantText() {
+                        return model === "openai/fallback" ? "fallback answer" : undefined;
+                    },
+                });
+                return session;
+            },
+        };
+        const ctx = createStageContext(
+            makeOpts({
+                adapters: { agentSession },
+                stageOptions: {
+                    model: "anthropic/primary",
+                    fallbackModels: ["openai/fallback"],
+                },
+            }),
+        ) as InternalStageContext;
+
+        assert.equal(await ctx.prompt("go"), "fallback answer");
+        assert.deepEqual(calls, ["anthropic/primary", "openai/fallback"]);
+        assert.equal(ctx.__modelFallbackMeta().modelAttempts?.[0]?.success, false);
+        assert.match(ctx.__modelFallbackMeta().modelAttempts?.[0]?.error ?? "", /provider request failed/);
+        assert.equal(ctx.__modelFallbackMeta().modelAttempts?.[1]?.success, true);
+    });
+
+    test("terminal assistant aborted is not recorded as success", async () => {
+        const messages: AgentSession["messages"] = [] as AgentSession["messages"];
+        const agentSession: AgentSessionAdapter = {
+            async create() {
+                const { session } = makeMockSession({
+                    messages,
+                    async prompt() {
+                        messages.push({
+                            role: "assistant",
+                            content: [{ type: "text", text: "aborted by provider" }],
+                            stopReason: "aborted",
+                        } as never);
+                    },
+                });
+                return session;
+            },
+        };
+        const ctx = createStageContext(
+            makeOpts({
+                adapters: { agentSession },
+                stageOptions: {
+                    model: "anthropic/primary",
+                    fallbackModels: ["openai/fallback"],
+                },
+            }),
+        ) as InternalStageContext;
+
+        await assert.rejects(ctx.prompt("go"), /aborted by provider/);
+        assert.deepEqual(ctx.__modelFallbackMeta().modelAttempts?.map((attempt) => attempt.success), [false]);
+    });
+
     test("workflow fast mode keeps raw model metadata with a structured fast flag", async () => {
         const agentSession: AgentSessionAdapter = {
             async create() {
@@ -847,6 +930,64 @@ describe("createStageContext — model fallback", () => {
         assert.deepEqual(meta.warnings, [
             "[fallback] anthropic/primary failed: anthropic/primary No API key found. Retrying with openai/fallback.",
         ]);
+    });
+
+    test("structured provider object failures keep readable attempt and warning metadata", async () => {
+        const calls: string[] = [];
+        const providerFailure = (model: string, status: number): unknown => ({
+            status,
+            response: {
+                body: {
+                    error: {
+                        message: `${model} provider unavailable`,
+                        type: "provider_error",
+                    },
+                },
+            },
+        });
+        const agentSession: AgentSessionAdapter = {
+            async create(options) {
+                const model = typeof options.model === "string"
+                    ? options.model
+                    : "object-model";
+                const status = calls.length === 0 ? 429 : 503;
+                calls.push(model);
+                const { session } = makeMockSession({
+                    async prompt() {
+                        throw providerFailure(model, status);
+                    },
+                });
+                return session;
+            },
+        };
+        const ctx = createStageContext(
+            makeOpts({
+                adapters: { agentSession },
+                stageOptions: {
+                    model: "anthropic/primary",
+                    fallbackModels: ["openai/fallback"],
+                },
+            }),
+        ) as InternalStageContext;
+
+        await assert.rejects(ctx.prompt("go"));
+
+        const meta = ctx.__modelFallbackMeta();
+        assert.deepEqual(calls, ["anthropic/primary", "openai/fallback"]);
+        const firstError = meta.modelAttempts?.[0]?.error ?? "";
+        const secondError = meta.modelAttempts?.[1]?.error ?? "";
+        assert.match(firstError, /429/);
+        assert.match(firstError, /anthropic\/primary provider unavailable/);
+        assert.match(secondError, /503/);
+        assert.match(secondError, /openai\/fallback provider unavailable/);
+        assert.doesNotMatch(firstError, /\[object Object\]/);
+        assert.doesNotMatch(secondError, /\[object Object\]/);
+        assert.deepEqual(meta.warnings, [
+            "[fallback] anthropic/primary failed: 429, anthropic/primary provider unavailable, provider_error. Retrying with openai/fallback.",
+        ]);
+        for (const warning of meta.warnings ?? []) {
+            assert.doesNotMatch(warning, /\[object Object\]/);
+        }
     });
 
     test("non-retryable failure does not try fallback", async () => {

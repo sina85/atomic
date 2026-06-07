@@ -292,30 +292,16 @@ export class CheckpointEngine {
 		const cleanupPlan = this.planSafeUntrackedCleanup(preRestoreState.value.plan, universe.value);
 		if (!cleanupPlan.ok) return cleanupPlan;
 		const restoreWorktree = this.git(["read-tree", "--reset", "-u", metadata.worktreeTreeSha], { cwd: repoRoot });
-		if (!restoreWorktree.ok) return { ok: false, error: "RestoreFailed", message: restoreWorktree.stderr };
+		if (!restoreWorktree.ok) {
+			return this.restoreFailureAfterRollback(preRestoreState.value, repoRoot, "Restore worktree update failed", restoreWorktree.stderr);
+		}
 		const restoreIndex = this.git(["read-tree", "--reset", metadata.indexTreeSha], { cwd: repoRoot });
 		if (!restoreIndex.ok) {
-			const rollback = this.rollbackRestore(preRestoreState.value, repoRoot);
-			if (!rollback.ok) {
-				return {
-					ok: false,
-					error: "RestoreFailed",
-					message: `Restore index update failed after worktree update (${restoreIndex.stderr}); rollback failed: ${rollback.message ?? rollback.error}`,
-				};
-			}
-			return { ok: false, error: "RestoreFailed", message: `Restore index update failed after worktree update; rolled back previous state: ${restoreIndex.stderr}` };
+			return this.restoreFailureAfterRollback(preRestoreState.value, repoRoot, "Restore index update failed after worktree update", restoreIndex.stderr);
 		}
 		const cleanup = this.removeSafeUntrackedFiles(cleanupPlan.value.removeUntrackedFiles, repoRoot);
 		if (!cleanup.ok) {
-			const rollback = this.rollbackRestore(preRestoreState.value, repoRoot);
-			if (!rollback.ok) {
-				return {
-					ok: false,
-					error: "RestoreFailed",
-					message: `Restore cleanup failed after files were restored (${cleanup.message ?? cleanup.error}); rollback failed: ${rollback.message ?? rollback.error}`,
-				};
-			}
-			return { ok: false, error: "RestoreFailed", message: `Restore cleanup failed after files were restored; rolled back previous state: ${cleanup.message ?? cleanup.error}` };
+			return this.restoreFailureAfterRollback(preRestoreState.value, repoRoot, "Restore cleanup failed after files were restored", cleanup.message ?? cleanup.error);
 		}
 		return { ok: true, value: { checkpoint: metadata, removedUntrackedFiles: cleanup.value } };
 	}
@@ -379,6 +365,18 @@ export class CheckpointEngine {
 		}
 		if (result.status !== 0) return { ok: false, error: "RestoreFailed", message: stderr || stdout || "Git diff failed" };
 		return { ok: true, value: { text: stdout, truncated: false } };
+	}
+
+	private restoreFailureAfterRollback(state: RestoreStateIdentity, repoRoot: string, failureContext: string, failureDetail: string): Result<never> {
+		const rollback = this.rollbackRestore(state, repoRoot);
+		if (!rollback.ok) {
+			return {
+				ok: false,
+				error: "RestoreFailed",
+				message: `${failureContext} (${failureDetail}); rollback failed: ${rollback.message ?? rollback.error}`,
+			};
+		}
+		return { ok: false, error: "RestoreFailed", message: `${failureContext}; rolled back previous state: ${failureDetail}` };
 	}
 
 	private rollbackRestore(state: RestoreStateIdentity, repoRoot: string): Result<void> {
@@ -643,8 +641,8 @@ export class CheckpointEngine {
 		const candidateProbePaths = sortedUniquePaths([...targetLeafPaths, ...targetParentPaths]);
 		const bounds = validatePathListBounds(candidateProbePaths);
 		if (!bounds.ok) return bounds;
-		const trackedExactPaths = this.listTrackedExactPaths(candidateProbePaths, repoRoot);
-		if (!trackedExactPaths.ok) return trackedExactPaths;
+		const trackedLeafPaths = this.listTrackedExactPaths(targetLeafPaths, repoRoot);
+		if (!trackedLeafPaths.ok) return trackedLeafPaths;
 
 		const exactTargetConflicts: string[] = [];
 		const targetDirectoryConflicts: string[] = [];
@@ -652,7 +650,7 @@ export class CheckpointEngine {
 			const stat = lstatRepoPath(repoRoot, targetPath);
 			if (stat === null) continue;
 			if (stat.ok) {
-				const hasTrackedExactPath = trackedExactPaths.value.has(targetPath);
+				const hasTrackedExactPath = trackedLeafPaths.value.has(targetPath);
 				const needsConflictCheck = !hasTrackedExactPath || checkpointOwnedTargets.has(targetPath);
 				if (stat.value.isDirectory()) {
 					targetDirectoryConflicts.push(targetPath);
@@ -667,7 +665,7 @@ export class CheckpointEngine {
 		const parentConflicts: string[] = [];
 		for (const parentPath of targetParentPaths) {
 			const stat = lstatRepoPath(repoRoot, parentPath);
-			if (stat === null || trackedExactPaths.value.has(parentPath)) continue;
+			if (stat === null) continue;
 			if (stat.ok) {
 				if (!stat.value.isDirectory()) parentConflicts.push(parentPath);
 			} else {
@@ -690,40 +688,22 @@ export class CheckpointEngine {
 		const bounds = validatePathListBounds(paths);
 		if (!bounds.ok) return bounds;
 		const pathSet = new Set(paths);
-		const trackedExactPaths = new Set<string>();
-		let useNulPathspecs = true;
-		for (const chunk of chunkPathArgs(paths)) {
-			let tracked: Result<string[]> | undefined;
-			if (useNulPathspecs) {
-				tracked = this.listGitNulPaths(["ls-files", "-z", "--pathspec-from-file=-", "--pathspec-file-nul"], repoRoot, {
-					input: `${chunk.join("\0")}\0`,
-					literalPathspecs: true,
-					failureError: "RestoreFailed",
-				});
-				if (!tracked.ok && isUnsupportedLsFilesNulPathspecs(tracked.message)) {
-					useNulPathspecs = false;
-				}
-			}
-			if (!useNulPathspecs) {
-				tracked = this.listGitNulPaths(["ls-files", "-z", "--", ...chunk], repoRoot, {
-					literalPathspecs: true,
-					failureError: "RestoreFailed",
-				});
-			}
-			if (tracked === undefined) return { ok: false, error: "RestoreFailed", message: "Git tracked-path listing did not run" };
-			if (!tracked.ok) return tracked;
-			for (const path of tracked.value) {
-				if (pathSet.has(path)) trackedExactPaths.add(path);
-			}
-		}
-		return { ok: true, value: trackedExactPaths };
+		const tracked = this.listTrackedPathspecMatches(paths, repoRoot);
+		if (!tracked.ok) return tracked;
+		return { ok: true, value: new Set(tracked.value.filter((path) => pathSet.has(path))) };
 	}
 
 	private listTrackedPathsUnder(paths: readonly string[], repoRoot: string): Result<string[]> {
 		const bounds = validatePathListBounds(paths);
 		if (!bounds.ok) return bounds;
 		const roots = new Set(paths);
-		const trackedPaths = new Set<string>();
+		const tracked = this.listTrackedPathspecMatches(paths, repoRoot);
+		if (!tracked.ok) return tracked;
+		return { ok: true, value: sortedUniquePaths(tracked.value.filter((path) => isUnderAnyPath(path, roots))) };
+	}
+
+	private listTrackedPathspecMatches(paths: readonly string[], repoRoot: string): Result<string[]> {
+		const trackedPaths: string[] = [];
 		let useNulPathspecs = true;
 		for (const chunk of chunkPathArgs(paths)) {
 			let tracked: Result<string[]> | undefined;
@@ -745,11 +725,9 @@ export class CheckpointEngine {
 			}
 			if (tracked === undefined) return { ok: false, error: "RestoreFailed", message: "Git tracked-path listing did not run" };
 			if (!tracked.ok) return tracked;
-			for (const path of tracked.value) {
-				if (isUnderAnyPath(path, roots)) trackedPaths.add(path);
-			}
+			trackedPaths.push(...tracked.value);
 		}
-		return { ok: true, value: [...trackedPaths].sort() };
+		return { ok: true, value: trackedPaths };
 	}
 
 	private listIndexPathsDifferentFromTree(treeSha: string, paths: readonly string[], repoRoot: string): Result<string[]> {

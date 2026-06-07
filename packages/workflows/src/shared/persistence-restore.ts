@@ -6,8 +6,8 @@
  * cross-ref: spec §5.6, §5.13
  */
 
-import type { Store } from "./store.js";
-import type { RunSnapshot, StageSnapshot, StageStatus, WorkflowChildReplaySnapshot } from "./store-types.js";
+import type { RunEndMetadata, Store } from "./store.js";
+import type { RunSnapshot, StageSnapshot, StageStatus, WorkflowChildReplaySnapshot, WorkflowFailureDisposition, WorkflowFailureKind, WorkflowFailureRecoverability } from "./store-types.js";
 import type { WorkflowInputValues, WorkflowOutputValues } from "./types.js";
 import { workflowSerializableObjectSchema } from "./serializable.js";
 import { Value } from "typebox/value";
@@ -62,6 +62,7 @@ export interface InFlightRun {
 export function scanInFlightRuns(entries: readonly SessionEntry[]): InFlightRun[] {
   const started = new Map<string, { name: string; inputs: WorkflowInputValues; startTs: number; stageIds: string[] }>();
   const ended = new Set<string>();
+  const blocked = new Set<string>();
 
   for (const entry of entries) {
     if (entry.type === "workflow.run.start") {
@@ -100,11 +101,18 @@ export function scanInFlightRuns(entries: readonly SessionEntry[]): InFlightRun[
         ended.add(runId);
       }
     }
+
+    if (entry.type === "workflow.run.blocked") {
+      const runId = entry.payload["runId"];
+      if (typeof runId === "string") {
+        blocked.add(runId);
+      }
+    }
   }
 
   const result: InFlightRun[] = [];
   for (const [runId, info] of started) {
-    if (!ended.has(runId)) {
+    if (!ended.has(runId) && !blocked.has(runId)) {
       result.push({
         runId,
         name: info.name,
@@ -165,6 +173,7 @@ export function restoreOnSessionStart(
   const entries = getEntries.call(sessionManager);
   const sessionEntries = entries as readonly SessionEntry[];
   restoreTerminalRuns(sessionEntries, store);
+  restoreBlockedRuns(sessionEntries, store);
   const inFlight = scanInFlightRuns(sessionEntries);
   if (inFlight.length === 0) return;
 
@@ -220,9 +229,20 @@ export function restoreOnSessionStart(
 // ---------------------------------------------------------------------------
 
 /** Rebuild partial StageSnapshot array from session entries for a given run. */
+interface BlockedStageFailureMetadata {
+  readonly error?: string;
+  readonly failureKind?: WorkflowFailureKind;
+  readonly failureCode?: string;
+  readonly failureRecoverability?: WorkflowFailureRecoverability;
+  readonly failureDisposition?: WorkflowFailureDisposition;
+  readonly failureMessage?: string;
+  readonly retryAfterMs?: number;
+}
+
 function _buildStageSnapshots(
   entries: readonly SessionEntry[],
   runId: string,
+  options: { finalize?: "crashed" | "blocked"; failedStageId?: string; blockedFailure?: BlockedStageFailureMetadata } = {},
 ): StageSnapshot[] {
   const stageMap = new Map<string, StageSnapshot>();
   const endedStages = new Set<string>();
@@ -256,7 +276,11 @@ function _buildStageSnapshots(
       const summary = entry.payload["summary"];
       const error = entry.payload["error"];
       const failureKind = entry.payload["failureKind"];
+      const failureCode = entry.payload["failureCode"];
+      const failureRecoverability = entry.payload["failureRecoverability"];
+      const failureDisposition = entry.payload["failureDisposition"];
       const failureMessage = entry.payload["failureMessage"];
+      const retryAfterMs = entry.payload["retryAfterMs"];
       const skippedReason = entry.payload["skippedReason"];
       if (typeof stageId !== "string") continue;
       endedStages.add(stageId);
@@ -267,22 +291,74 @@ function _buildStageSnapshots(
         if (typeof summary === "string") snap.result = summary;
         if (typeof error === "string") snap.error = error;
         if (typeof failureKind === "string" && isWorkflowFailureKind(failureKind)) snap.failureKind = failureKind;
+        if (typeof failureCode === "string") snap.failureCode = failureCode;
+        if (isWorkflowFailureRecoverability(failureRecoverability)) snap.failureRecoverability = failureRecoverability;
+        if (isWorkflowFailureDisposition(failureDisposition)) snap.failureDisposition = failureDisposition;
         if (typeof failureMessage === "string") snap.failureMessage = failureMessage;
+        if (typeof retryAfterMs === "number") snap.retryAfterMs = retryAfterMs;
         if (typeof skippedReason === "string") snap.skippedReason = skippedReason;
         Object.assign(snap, replayMetadata(entry.payload), workflowChildMetadata(entry.payload));
       }
     }
   }
 
-  // Mark any stage that didn't get an end entry as "failed" (crashed)
+  const finalize = options.finalize ?? "crashed";
   for (const [stageId, snap] of stageMap) {
-    if (!endedStages.has(stageId)) {
-      snap.status = "failed";
-      snap.error = "Stage did not complete — process was interrupted.";
+    if (endedStages.has(stageId)) continue;
+    if (finalize === "blocked") {
+      if (options.failedStageId !== undefined && stageId === options.failedStageId) {
+        snap.status = "failed";
+        applyBlockedFailureMetadata(snap, options.blockedFailure);
+        continue;
+      }
+      const blockerId = findBlockingStageId(stageId, stageMap, endedStages, options.failedStageId);
+      if (blockerId !== undefined) {
+        snap.status = "blocked";
+        snap.blockedByStageId = blockerId;
+        continue;
+      }
+      snap.status = "running";
+      continue;
     }
+    snap.status = "failed";
+    snap.error = "Stage did not complete — process was interrupted.";
   }
 
   return [...stageMap.values()];
+}
+
+function applyBlockedFailureMetadata(snap: StageSnapshot, metadata: BlockedStageFailureMetadata | undefined): void {
+  if (metadata === undefined) return;
+  if (metadata.error !== undefined) snap.error = metadata.error;
+  if (metadata.failureKind !== undefined) snap.failureKind = metadata.failureKind;
+  if (metadata.failureCode !== undefined) snap.failureCode = metadata.failureCode;
+  if (metadata.failureRecoverability !== undefined) snap.failureRecoverability = metadata.failureRecoverability;
+  if (metadata.failureDisposition !== undefined) snap.failureDisposition = metadata.failureDisposition;
+  if (metadata.failureMessage !== undefined) snap.failureMessage = metadata.failureMessage;
+  if (metadata.retryAfterMs !== undefined) snap.retryAfterMs = metadata.retryAfterMs;
+}
+
+function findBlockingStageId(
+  stageId: string,
+  stageMap: ReadonlyMap<string, StageSnapshot>,
+  endedStages: ReadonlySet<string>,
+  failedStageId?: string,
+): string | undefined {
+  if (failedStageId === undefined) return undefined;
+  if (stageId === failedStageId) return undefined;
+  const visited = new Set<string>();
+  const queue = [...(stageMap.get(stageId)?.parentIds ?? [])];
+  while (queue.length > 0) {
+    const parentId = queue.shift();
+    if (parentId === undefined || visited.has(parentId)) continue;
+    visited.add(parentId);
+    if (parentId === failedStageId) return parentId;
+    const parent = stageMap.get(parentId);
+    if (parent === undefined) continue;
+    if (endedStages.has(parentId) && parent.status === "failed") return parentId;
+    queue.push(...parent.parentIds);
+  }
+  return undefined;
 }
 
 function replayMetadata(payload: Record<string, unknown>): Pick<StageSnapshot, "replayKey" | "replayedFromStageId" | "replayed"> {
@@ -356,6 +432,49 @@ function workflowChildMetadata(payload: Record<string, unknown>): Pick<StageSnap
   };
 }
 
+function isWorkflowFailureRecoverability(value: unknown): value is NonNullable<RunSnapshot["failureRecoverability"]> {
+  return value === "recoverable" || value === "non_recoverable" || value === "unknown";
+}
+
+function isWorkflowFailureDisposition(value: unknown): value is NonNullable<RunSnapshot["failureDisposition"]> {
+  return value === "active_blocked" || value === "terminal_failed" || value === "terminal_killed";
+}
+
+function restoreFailureMetadata(payload: Record<string, unknown>): RunEndMetadata {
+  const failureKind = payload["failureKind"];
+  const failureCode = payload["failureCode"];
+  const failureRecoverability = payload["failureRecoverability"];
+  const failureDisposition = payload["failureDisposition"];
+  const failureMessage = payload["failureMessage"];
+  const retryAfterMs = payload["retryAfterMs"];
+  const blockedAt = payload["blockedAt"];
+  const failedStageId = payload["failedStageId"];
+  const resumable = payload["resumable"];
+  return {
+    ...(typeof failureKind === "string" && isWorkflowFailureKind(failureKind) ? { failureKind } : {}),
+    ...(typeof failureCode === "string" ? { failureCode } : {}),
+    ...(isWorkflowFailureRecoverability(failureRecoverability) ? { failureRecoverability } : {}),
+    ...(isWorkflowFailureDisposition(failureDisposition) ? { failureDisposition } : {}),
+    ...(typeof failureMessage === "string" ? { failureMessage } : {}),
+    ...(typeof retryAfterMs === "number" ? { retryAfterMs } : {}),
+    ...(typeof blockedAt === "number" ? { blockedAt } : {}),
+    ...(typeof failedStageId === "string" ? { failedStageId } : {}),
+    ...(typeof resumable === "boolean" ? { resumable } : {}),
+  };
+}
+
+function blockedStageFailureMetadata(error: string, metadata: RunEndMetadata): BlockedStageFailureMetadata {
+  return {
+    error,
+    ...(metadata.failureKind !== undefined ? { failureKind: metadata.failureKind } : {}),
+    ...(metadata.failureCode !== undefined ? { failureCode: metadata.failureCode } : {}),
+    ...(metadata.failureRecoverability !== undefined ? { failureRecoverability: metadata.failureRecoverability } : {}),
+    ...(metadata.failureDisposition !== undefined ? { failureDisposition: metadata.failureDisposition } : {}),
+    ...(metadata.failureMessage !== undefined ? { failureMessage: metadata.failureMessage } : {}),
+    ...(metadata.retryAfterMs !== undefined ? { retryAfterMs: metadata.retryAfterMs } : {}),
+  };
+}
+
 function restoreStageStatus(status: unknown): StageStatus {
   switch (status) {
     case "completed":
@@ -364,6 +483,66 @@ function restoreStageStatus(status: unknown): StageStatus {
       return status;
     default:
       return "failed";
+  }
+}
+
+function restoreBlockedRuns(entries: readonly SessionEntry[], store: Store): void {
+  const started = new Map<string, { readonly name: string; readonly inputs: Readonly<WorkflowInputValues>; readonly startTs: number }>();
+  const blocked = new Map<string, Record<string, unknown>>();
+  const ended = new Set<string>();
+
+  for (const entry of entries) {
+    if (entry.type === "workflow.run.start") {
+      const runId = entry.payload["runId"];
+      const name = entry.payload["name"];
+      const inputs = entry.payload["inputs"];
+      const ts = entry.payload["ts"];
+      if (typeof runId === "string" && typeof name === "string" && typeof ts === "number") {
+        started.set(runId, {
+          name,
+          inputs: serializableObjectOrEmpty(inputs),
+          startTs: ts,
+        });
+      }
+    }
+    if (entry.type === "workflow.run.blocked") {
+      const runId = entry.payload["runId"];
+      if (typeof runId === "string") blocked.set(runId, entry.payload);
+    }
+    if (entry.type === "workflow.run.end") {
+      const runId = entry.payload["runId"];
+      if (typeof runId === "string") ended.add(runId);
+    }
+  }
+
+  for (const [runId, block] of blocked) {
+    if (ended.has(runId)) continue;
+    if (store.runs().some((run) => run.id === runId)) continue;
+    const start = started.get(runId);
+    if (start === undefined) continue;
+    const error = block["error"];
+    if (typeof error !== "string") continue;
+    const failureMetadata = restoreFailureMetadata(block);
+    const runMeta = findRunStartMetadata(entries, runId);
+    const stages = _buildStageSnapshots(entries, runId, {
+      finalize: "blocked",
+      ...(failureMetadata.failedStageId !== undefined ? { failedStageId: failureMetadata.failedStageId } : {}),
+      blockedFailure: blockedStageFailureMetadata(error, failureMetadata),
+    });
+    store.recordRunStart({
+      id: runId,
+      name: start.name,
+      inputs: start.inputs,
+      status: "running",
+      stages,
+      startedAt: start.startTs,
+      ...(runMeta.parentRunId !== undefined ? { parentRunId: runMeta.parentRunId } : {}),
+      ...(runMeta.parentStageId !== undefined ? { parentStageId: runMeta.parentStageId } : {}),
+      ...(runMeta.rootRunId !== undefined ? { rootRunId: runMeta.rootRunId } : {}),
+      ...(runMeta.resumedFromRunId !== undefined ? { resumedFromRunId: runMeta.resumedFromRunId } : {}),
+      ...(runMeta.resumeFromStageId !== undefined ? { resumeFromStageId: runMeta.resumeFromStageId } : {}),
+    });
+    store.recordRunBlocked(runId, error, failureMetadata);
   }
 }
 
@@ -415,21 +594,12 @@ function restoreTerminalRuns(entries: readonly SessionEntry[], store: Store): vo
     });
 
     const error = end["error"];
-    const failureKind = end["failureKind"];
-    const failureMessage = end["failureMessage"];
-    const failedStageId = end["failedStageId"];
-    const resumable = end["resumable"];
     store.recordRunEnd(
       runId,
       status,
       undefined,
       typeof error === "string" ? error : undefined,
-      {
-        ...(typeof failureKind === "string" && isWorkflowFailureKind(failureKind) ? { failureKind } : {}),
-        ...(typeof failureMessage === "string" ? { failureMessage } : {}),
-        ...(typeof failedStageId === "string" ? { failedStageId } : {}),
-        ...(typeof resumable === "boolean" ? { resumable } : {}),
-      },
+      restoreFailureMetadata(end),
     );
   }
 }

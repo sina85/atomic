@@ -1,12 +1,12 @@
 import type { QuestionAnswer } from "./types.ts";
 
 /**
- * Continuation message used in the LLM-facing envelope. Two-sentence imperative form
- * — the model needs the "Continue the conversation…" directive to know what to do next
- * after the user picks chat instead of answering.
+ * Stop/wait message used in terminating LLM-facing chat envelopes. The tool
+ * result itself terminates the current task turn, so this must not include a
+ * contradictory continuation directive.
  */
 export const CHAT_CONTINUATION_MESSAGE =
-	"User wants to chat about this. Continue the conversation to help them decide.";
+	"User wants to chat about this. Stop and wait for the user's next message.";
 
 /**
  * One-sentence summary form shown in the on-screen Submit-tab review pane. The dialog
@@ -26,7 +26,7 @@ export type FormatAnswerVariant = "summary" | "envelope";
 
 /**
  * Format a `QuestionAnswer` to its scalar string form. Variant controls only the
- * `kind: "chat"` branch — the envelope's two-sentence imperative is needed by the LLM,
+ * `kind: "chat"` branch — the envelope's stop/wait imperative is needed by the LLM,
  * the dialog summary's one-sentence reminder is not. All other branches return identical
  * strings; the `kind: "custom"` empty-string handling and the option fallback both unify
  * on `NO_INPUT_PLACEHOLDER`. Switch is exhaustive — non-`void` return enforces every

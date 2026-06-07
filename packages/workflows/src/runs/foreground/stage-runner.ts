@@ -241,6 +241,59 @@ function lastAssistantTextFromMessages(messages: AgentSession["messages"]): stri
   return undefined;
 }
 
+type AssistantTerminalFailureMessage = MessageWithTextContent & {
+  readonly role?: string;
+  readonly stopReason?: string;
+  readonly errorMessage?: unknown;
+  readonly code?: unknown;
+  readonly status?: unknown;
+  readonly diagnostics?: unknown;
+};
+
+function diagnosticText(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number") return String(value);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const parts: string[] = [];
+    for (const key of ["code", "status", "message", "error", "type"] as const) {
+      const part = record[key];
+      if ((typeof part === "string" && part.trim()) || typeof part === "number") {
+        parts.push(`${key}: ${String(part)}`);
+      }
+    }
+    if (parts.length > 0) return parts.join(", ");
+  }
+  return undefined;
+}
+
+function terminalAssistantFailure(messages: AgentSession["messages"]): Error | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index] as AssistantTerminalFailureMessage | undefined;
+    if (!message || message.role !== "assistant") continue;
+    if (message.stopReason !== "error" && message.stopReason !== "aborted") return undefined;
+    const details = [
+      diagnosticText(message.errorMessage),
+      diagnosticText(message.code),
+      diagnosticText(message.status),
+      diagnosticText(message.diagnostics),
+      extractMessageText(message as AgentSession["messages"][number]).trim(),
+    ].filter((part): part is string => Boolean(part));
+    const reason = message.stopReason === "aborted" ? "aborted" : "error";
+    const error = new Error(details[0] ?? `Assistant turn ended with stopReason: ${reason}`, { cause: message });
+    Object.assign(error, {
+      workflowTerminalAssistantFailure: true,
+      stopReason: message.stopReason,
+      ...(message.errorMessage !== undefined ? { errorMessage: message.errorMessage } : {}),
+      ...(message.code !== undefined ? { code: message.code } : {}),
+      ...(message.status !== undefined ? { status: message.status } : {}),
+      ...(message.diagnostics !== undefined ? { diagnostics: message.diagnostics } : {}),
+    });
+    return error;
+  }
+  return undefined;
+}
+
 /**
  * When an agent turn ends on a tool that returned `terminate: true`, control
  * returns with the tool result as the final conversational message and no
@@ -775,13 +828,19 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
     consumer: AgentSessionConsumer = "prompt",
   ): Promise<void> {
     if (!hasExplicitModelFallbackConfig) {
-      await promptWithPauseResume(await ensureSession(consumer), text, sdkOptions);
+      const activeSession = await ensureSession(consumer);
+      await promptWithPauseResume(activeSession, text, sdkOptions);
+      const terminalFailure = terminalAssistantFailure(activeSession.messages);
+      if (terminalFailure !== undefined) throw terminalFailure;
       return;
     }
 
     const candidates = await modelCandidates();
     if (candidates.length === 0) {
-      await promptWithPauseResume(await ensureSession(consumer), text, sdkOptions);
+      const activeSession = await ensureSession(consumer);
+      await promptWithPauseResume(activeSession, text, sdkOptions);
+      const terminalFailure = terminalAssistantFailure(activeSession.messages);
+      if (terminalFailure !== undefined) throw terminalFailure;
       return;
     }
 
@@ -796,13 +855,15 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
       notifyModelFallbackMetaChange();
       try {
         await promptWithPauseResume(activeSession, text, sdkOptions);
+        const terminalFailure = terminalAssistantFailure(activeSession.messages);
+        if (terminalFailure !== undefined) throw terminalFailure;
         modelAttempts.push({ model: candidate.id, success: true, ...modelAttemptReasoning(candidate) });
         pendingFallbackWarnings.length = 0;
         return;
       } catch (err) {
         const message = errorMessage(err);
         modelAttempts.push({ model: candidate.id, success: false, ...modelAttemptReasoning(candidate), error: message });
-        if (signal?.aborted || !isRetryableModelFailure(message) || index === candidates.length - 1) {
+        if (signal?.aborted || !isRetryableModelFailure(err) || index === candidates.length - 1) {
           modelWarnings.push(...pendingFallbackWarnings);
           pendingFallbackWarnings.length = 0;
           notifyModelFallbackMetaChange();

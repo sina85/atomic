@@ -16,6 +16,9 @@ import type {
   RunStatus,
   StageStatus,
   WorkflowFailureKind,
+  WorkflowFailureCode,
+  WorkflowFailureRecoverability,
+  WorkflowFailureDisposition,
   WorkflowNotice,
   WorkflowChildRunRef,
 } from "./store-types.js";
@@ -43,7 +46,12 @@ function cannotPause(status: StageStatus): boolean {
 
 export interface RunEndMetadata {
   readonly failureKind?: WorkflowFailureKind;
+  readonly failureCode?: WorkflowFailureCode;
+  readonly failureRecoverability?: WorkflowFailureRecoverability;
+  readonly failureDisposition?: WorkflowFailureDisposition;
   readonly failureMessage?: string;
+  readonly retryAfterMs?: number;
+  readonly blockedAt?: number;
   readonly failedStageId?: string;
   readonly resumable?: boolean;
 }
@@ -81,6 +89,12 @@ export interface Store {
   recordToolStart(runId: string, stageId: string, evt: ToolEvent): void;
   recordToolEnd(runId: string, stageId: string, evt: ToolEvent): void;
   recordStageEnd(runId: string, stage: StageSnapshot): void;
+  /**
+   * Records a recoverable run-level failure without moving the run to a
+   * terminal state. Used for provider/auth/rate-limit blocks that should stay
+   * visible and resumable instead of appending workflow.run.end.
+   */
+  recordRunBlocked(runId: string, error: string, metadata?: RunEndMetadata): boolean;
   /**
    * Records the end of a run.
    * Returns `true` if state changed, `false` if the run was not found or
@@ -300,19 +314,43 @@ export function createStore(): Store {
     return JSON.stringify([runId, stageId, promptId]);
   }
 
-  function stageHasActiveTextPrompt(
+  function applyRunFailureMetadata(run: RunSnapshot, metadata: RunEndMetadata | undefined): void {
+    if (metadata === undefined) return;
+    if (metadata.failureKind !== undefined) run.failureKind = metadata.failureKind;
+    if (metadata.failureCode !== undefined) run.failureCode = metadata.failureCode;
+    if (metadata.failureRecoverability !== undefined) run.failureRecoverability = metadata.failureRecoverability;
+    if (metadata.failureDisposition !== undefined) run.failureDisposition = metadata.failureDisposition;
+    if (metadata.failureMessage !== undefined) run.failureMessage = metadata.failureMessage;
+    if (metadata.retryAfterMs !== undefined) run.retryAfterMs = metadata.retryAfterMs;
+    if (metadata.blockedAt !== undefined) run.blockedAt = metadata.blockedAt;
+    if (metadata.failedStageId !== undefined) run.failedStageId = metadata.failedStageId;
+    if (metadata.resumable !== undefined) run.resumable = metadata.resumable;
+  }
+
+  function clearRunFailureMetadata(run: RunSnapshot): void {
+    delete run.error;
+    delete run.failureKind;
+    delete run.failureCode;
+    delete run.failureRecoverability;
+    delete run.failureDisposition;
+    delete run.failureMessage;
+    delete run.retryAfterMs;
+    delete run.blockedAt;
+    delete run.failedStageId;
+    delete run.resumable;
+  }
+
+  function hasActiveStageTextPrompt(
     runId: string,
     stageId: string,
     promptId: string,
-  ): { prompt: PendingPrompt } | undefined {
+  ): boolean {
     const run = findRun(runId);
-    if (!run || TERMINAL_STATUSES.has(run.status)) return undefined;
+    if (!run || TERMINAL_STATUSES.has(run.status)) return false;
     const stage = findStage(run, stageId);
-    if (!stage || isTerminalStageStatus(stage.status)) return undefined;
+    if (!stage || isTerminalStageStatus(stage.status)) return false;
     const prompt = stage.pendingPrompt;
-    if (!prompt || prompt.id !== promptId) return undefined;
-    if (prompt.kind !== "input" && prompt.kind !== "editor") return undefined;
-    return { prompt };
+    return prompt?.id === promptId && (prompt.kind === "input" || prompt.kind === "editor");
   }
 
   function rejectStagePrompt(runId: string, stage: StageSnapshot, reason: string): void {
@@ -448,7 +486,11 @@ export function createStore(): Store {
       existing.result = stage.result;
       existing.error = stage.error;
       existing.failureKind = stage.failureKind;
+      existing.failureCode = stage.failureCode;
+      existing.failureRecoverability = stage.failureRecoverability;
+      existing.failureDisposition = stage.failureDisposition;
       existing.failureMessage = stage.failureMessage;
+      existing.retryAfterMs = stage.retryAfterMs;
       existing.skippedReason = stage.skippedReason;
       if (stage.replayKey !== undefined) existing.replayKey = stage.replayKey;
       if (stage.promptAnswerState !== undefined) existing.promptAnswerState = stage.promptAnswerState;
@@ -461,6 +503,19 @@ export function createStore(): Store {
       rejectStagePrompt(runId, existing, `atomic-workflows: stage ${stage.id} ended before prompt resolved`);
       _version++;
       notify();
+    },
+
+    recordRunBlocked(runId: string, error: string, metadata?: RunEndMetadata): boolean {
+      const run = findRun(runId);
+      if (!run) return false;
+      // Terminal guard — once in a terminal state, refuse overwrite.
+      if (TERMINAL_STATUSES.has(run.status)) return false;
+      run.status = "running";
+      run.error = error;
+      applyRunFailureMetadata(run, metadata);
+      _version++;
+      notify();
+      return true;
     },
 
     recordRunEnd(
@@ -485,17 +540,15 @@ export function createStore(): Store {
         run.pausedAt = undefined;
       }
       run.durationMs = elapsedRunMs(run, run.endedAt);
+      clearRunFailureMetadata(run);
       if (status === "completed" && result !== undefined) {
         run.result = result;
       }
-      if ((status === "failed" || status === "killed") && error !== undefined) {
-        run.error = error;
-      }
-      if (metadata !== undefined) {
-        if (metadata.failureKind !== undefined) run.failureKind = metadata.failureKind;
-        if (metadata.failureMessage !== undefined) run.failureMessage = metadata.failureMessage;
-        if (metadata.failedStageId !== undefined) run.failedStageId = metadata.failedStageId;
-        if (metadata.resumable !== undefined) run.resumable = metadata.resumable;
+      if (status === "failed" || status === "killed") {
+        if (error !== undefined) {
+          run.error = error;
+        }
+        applyRunFailureMetadata(run, metadata);
       }
       // Abandon any waiting HIL prompt — workflow body never resumed past
       // it, but the awaiter promise must reject so the executor's catch
@@ -687,13 +740,13 @@ export function createStore(): Store {
     },
 
     recordStagePromptDraft(runId: string, stageId: string, promptId: string, text: string): boolean {
-      if (stageHasActiveTextPrompt(runId, stageId, promptId) === undefined) return false;
+      if (!hasActiveStageTextPrompt(runId, stageId, promptId)) return false;
       _stagePromptDrafts.set(stagePromptDraftKey(runId, stageId, promptId), text);
       return true;
     },
 
     getStagePromptDraft(runId: string, stageId: string, promptId: string): string | undefined {
-      if (stageHasActiveTextPrompt(runId, stageId, promptId) === undefined) return undefined;
+      if (!hasActiveStageTextPrompt(runId, stageId, promptId)) return undefined;
       return _stagePromptDrafts.get(stagePromptDraftKey(runId, stageId, promptId));
     },
 

@@ -52,6 +52,9 @@ import type {
   RunSnapshot,
   WorkflowOverlayAdapter,
   WorkflowFailureKind,
+  WorkflowFailureCode,
+  WorkflowFailureRecoverability,
+  WorkflowFailureDisposition,
   PendingPrompt,
   PromptKind,
   WorkflowChildReplaySnapshot,
@@ -343,7 +346,7 @@ function makeUnavailableUIContext(): WorkflowUIContext {
 
 type AskUserQuestionToolEvent =
   | { phase: "start"; callId?: string; args?: unknown }
-  | { phase: "end"; callId?: string; nameMatched: boolean };
+  | { phase: "end"; callId?: string; nameMatched: boolean; hasChatAnswer: boolean };
 
 function stringField(value: Record<string, unknown>, keys: readonly string[]): string | undefined {
   for (const key of keys) {
@@ -369,7 +372,12 @@ function askUserQuestionToolEvent(event: unknown): AskUserQuestionToolEvent | un
     return { phase: "start", callId, args: record["args"] };
   }
   if (type === "tool_execution_end" || type === "tool_execution_error" || type === "tool_result") {
-    return { phase: "end", callId, nameMatched: isAskUserQuestionToolName(toolName) };
+    return {
+      phase: "end",
+      callId,
+      nameMatched: isAskUserQuestionToolName(toolName),
+      hasChatAnswer: toolResultHasChatAnswer(record["result"]),
+    };
   }
   return undefined;
 }
@@ -417,6 +425,19 @@ export const READINESS_GATE_QUESTION_PARAMS = {
  * the advance option still completes the stage. Anything else (the explore
  * option, a typed answer, a cancelled/empty result) means "stay".
  */
+export function toolResultHasChatAnswer(result: unknown): boolean {
+  if (result === null || typeof result !== "object") return false;
+  const details = (result as { readonly details?: { readonly answers?: readonly unknown[] } | null }).details;
+  if (details === null || typeof details !== "object" || !Array.isArray(details.answers)) return false;
+  return details.answers.some((answer) => answerKind(answer) === "chat");
+}
+
+function answerKind(answer: unknown): string | undefined {
+  if (answer === null || typeof answer !== "object") return undefined;
+  const kind = (answer as { readonly kind?: unknown }).kind;
+  return typeof kind === "string" ? kind : undefined;
+}
+
 export function readinessResultMeansAdvance(result: unknown): boolean {
   if (result === null || typeof result !== "object") return false;
   const details = (result as {
@@ -1096,6 +1117,17 @@ function failedDirectDetails(
   };
 }
 
+function workflowDetailsStatus(status: RunResult["status"]): WorkflowDetails["status"] {
+  switch (status) {
+    case "killed":
+    case "failed":
+    case "running":
+      return status;
+    default:
+      return "completed";
+  }
+}
+
 function workflowDetailsFromRun(
   mode: WorkflowDetails["mode"],
   runResult: RunResult,
@@ -1118,7 +1150,7 @@ function workflowDetailsFromRun(
     mode,
     action: "run",
     runId: runResult.runId,
-    status: runResult.status === "killed" ? "killed" : runResult.status === "failed" ? "failed" : "completed",
+    status: workflowDetailsStatus(runResult.status),
     ...(options.context !== undefined ? { context: options.context } : {}),
     results: [...results],
     output: runResult.result,
@@ -1399,7 +1431,12 @@ function appendRunEndWhenRecorded(
     readonly result?: WorkflowOutputValues;
     readonly error?: string;
     readonly failureKind?: WorkflowFailureKind;
+    readonly failureCode?: WorkflowFailureCode;
+    readonly failureRecoverability?: WorkflowFailureRecoverability;
+    readonly failureDisposition?: WorkflowFailureDisposition;
     readonly failureMessage?: string;
+    readonly retryAfterMs?: number;
+    readonly blockedAt?: number;
     readonly failedStageId?: string;
     readonly resumable?: boolean;
     readonly ts: number;
@@ -1412,29 +1449,148 @@ function appendRunEndWhenRecorded(
 interface RunFailureMetadata {
   readonly errorMessage: string;
   readonly failureKind: WorkflowFailureKind;
+  readonly failureCode?: WorkflowFailureCode;
+  readonly failureRecoverability: WorkflowFailureRecoverability;
+  readonly failureDisposition: WorkflowFailureDisposition;
   readonly failureMessage: string;
+  readonly retryAfterMs?: number;
+  readonly blockedAt?: number;
   readonly failedStageId?: string;
   readonly resumable: boolean;
+  readonly terminalAssistantFailure?: boolean;
+}
+
+interface RunFailureCandidate extends RunFailureMetadata {
+  readonly sourceIndex: number;
 }
 
 function applyFailureToStage(stage: StageSnapshot, failure: WorkflowFailure): void {
   stage.status = "failed";
   stage.error = failure.userMessage;
   stage.failureKind = failure.kind;
+  stage.failureCode = failure.code;
+  stage.failureRecoverability = failure.recoverability;
+  stage.failureDisposition = failure.disposition;
   stage.failureMessage = failure.message;
+  stage.retryAfterMs = failure.retryAfterMs;
+}
+
+function resumableFromRecoverability(recoverability: WorkflowFailureRecoverability): boolean {
+  return recoverability !== "non_recoverable";
+}
+
+function runFailureKindPriority(kind: WorkflowFailureKind, code: WorkflowFailureCode | undefined): number {
+  if (kind === "cancelled") return 400;
+  if (kind === "auth" && code === "invalid_api_key") return 350;
+  if (kind === "provider" && code === "model_not_found") return 325;
+  if (kind === "auth") return 300;
+  if (kind === "rate_limit") return 200;
+  if (kind === "provider") return 175;
+  return 0;
+}
+
+function runFailureRecoverabilityScore(recoverability: WorkflowFailureRecoverability): number {
+  switch (recoverability) {
+    case "non_recoverable":
+      return 1_000;
+    case "recoverable":
+      return 500;
+    case "unknown":
+      return 0;
+  }
+}
+
+function runFailureCandidateScore(candidate: RunFailureCandidate): number {
+  const stageScore = candidate.failedStageId !== undefined ? 25 : 0;
+  return runFailureRecoverabilityScore(candidate.failureRecoverability)
+    + runFailureKindPriority(candidate.failureKind, candidate.failureCode)
+    + stageScore
+    - candidate.sourceIndex;
+}
+
+function candidateFromClassifiedFailure(classified: WorkflowFailure, sourceIndex: number): RunFailureCandidate {
+  return {
+    errorMessage: classified.userMessage,
+    failureKind: classified.kind,
+    ...(classified.code !== undefined ? { failureCode: classified.code } : {}),
+    failureRecoverability: classified.recoverability,
+    failureDisposition: classified.disposition,
+    failureMessage: classified.message,
+    ...(classified.retryAfterMs !== undefined ? { retryAfterMs: classified.retryAfterMs } : {}),
+    resumable: classified.resumable,
+    sourceIndex,
+  };
+}
+
+type FailedStageWithMetadata = StageSnapshot & {
+  readonly status: "failed";
+  readonly failureKind: WorkflowFailureKind;
+  readonly failureRecoverability: WorkflowFailureRecoverability;
+  readonly failureDisposition: WorkflowFailureDisposition;
+  readonly failureMessage: string;
+};
+
+function hasCompleteFailureMetadata(stage: StageSnapshot): stage is FailedStageWithMetadata {
+  return stage.status === "failed"
+    && stage.failureKind !== undefined
+    && stage.failureRecoverability !== undefined
+    && stage.failureDisposition !== undefined
+    && stage.failureMessage !== undefined;
+}
+
+function candidateFromFailedStage(stage: StageSnapshot, sourceIndex: number): RunFailureCandidate | undefined {
+  if (!hasCompleteFailureMetadata(stage)) return undefined;
+  return {
+    errorMessage: stage.error ?? stage.failureMessage,
+    failureKind: stage.failureKind,
+    ...(stage.failureCode !== undefined ? { failureCode: stage.failureCode } : {}),
+    failureRecoverability: stage.failureRecoverability,
+    failureDisposition: stage.failureDisposition,
+    failureMessage: stage.failureMessage,
+    ...(stage.retryAfterMs !== undefined ? { retryAfterMs: stage.retryAfterMs } : {}),
+    failedStageId: stage.id,
+    resumable: resumableFromRecoverability(stage.failureRecoverability),
+    sourceIndex,
+  };
+}
+
+function selectRunFailureCandidate(candidates: readonly RunFailureCandidate[]): RunFailureCandidate {
+  const [first] = candidates;
+  if (first === undefined) throw new Error("atomic-workflows: missing workflow failure metadata");
+  let selected = first;
+  let selectedScore = runFailureCandidateScore(first);
+  for (let index = 1; index < candidates.length; index += 1) {
+    const candidate = candidates[index]!;
+    const score = runFailureCandidateScore(candidate);
+    if (score > selectedScore) {
+      selected = candidate;
+      selectedScore = score;
+    }
+  }
+  return selected;
 }
 
 function runFailureMetadata(err: unknown, stages: readonly StageSnapshot[]): RunFailureMetadata {
   const classified = classifyWorkflowFailure(err);
-  const failedStage = stages.find((stage) => stage.status === "failed");
-  const failureKind = failedStage?.failureKind ?? classified.kind;
+  const candidates: RunFailureCandidate[] = [candidateFromClassifiedFailure(classified, 0)];
+  for (const [index, stage] of stages.entries()) {
+    const candidate = candidateFromFailedStage(stage, index + 1);
+    if (candidate !== undefined) candidates.push(candidate);
+  }
+  const selected = selectRunFailureCandidate(candidates);
+  const terminalAssistantFailure = Boolean((err as { workflowTerminalAssistantFailure?: unknown } | undefined)?.workflowTerminalAssistantFailure);
 
   return {
-    errorMessage: classified.userMessage,
-    failureKind,
-    failureMessage: failedStage?.failureMessage ?? classified.message,
-    ...(failedStage !== undefined ? { failedStageId: failedStage.id } : {}),
-    resumable: classified.resumable,
+    errorMessage: selected.errorMessage,
+    failureKind: selected.failureKind,
+    ...(selected.failureCode !== undefined ? { failureCode: selected.failureCode } : {}),
+    failureRecoverability: selected.failureRecoverability,
+    failureDisposition: selected.failureDisposition,
+    failureMessage: selected.failureMessage,
+    ...(selected.retryAfterMs !== undefined ? { retryAfterMs: selected.retryAfterMs } : {}),
+    ...(selected.failedStageId !== undefined ? { failedStageId: selected.failedStageId } : {}),
+    resumable: selected.resumable,
+    ...(terminalAssistantFailure ? { terminalAssistantFailure: true } : {}),
   };
 }
 
@@ -1649,6 +1805,9 @@ function finalizeKilled(
   const errorMessage = "workflow killed";
   const metadata = {
     failureKind: "cancelled" as const,
+    failureCode: "cancelled",
+    failureRecoverability: "non_recoverable" as const,
+    failureDisposition: "terminal_killed" as const,
     failureMessage: errorMessage,
     resumable: false,
   };
@@ -2210,7 +2369,11 @@ export async function run<TInputs extends WorkflowInputValues>(
         durationMs: stageSnapshot.durationMs,
         ...(stageSnapshot.error !== undefined ? { error: stageSnapshot.error } : {}),
         ...(stageSnapshot.failureKind !== undefined ? { failureKind: stageSnapshot.failureKind } : {}),
+        ...(stageSnapshot.failureCode !== undefined ? { failureCode: stageSnapshot.failureCode } : {}),
+        ...(stageSnapshot.failureRecoverability !== undefined ? { failureRecoverability: stageSnapshot.failureRecoverability } : {}),
+        ...(stageSnapshot.failureDisposition !== undefined ? { failureDisposition: stageSnapshot.failureDisposition } : {}),
         ...(stageSnapshot.failureMessage !== undefined ? { failureMessage: stageSnapshot.failureMessage } : {}),
+        ...(stageSnapshot.retryAfterMs !== undefined ? { retryAfterMs: stageSnapshot.retryAfterMs } : {}),
         ...(stageSnapshot.result !== undefined && stageSnapshot.status === "completed" ? { summary: stageSnapshot.result } : {}),
         ...stageReplayFields(stageSnapshot),
         ...(stageSnapshot.workflowChild !== undefined ? { workflowChild: stageSnapshot.workflowChild } : {}),
@@ -2230,10 +2393,7 @@ export async function run<TInputs extends WorkflowInputValues>(
         stageSnapshot.result = summaryOrError;
         if (workflowChild !== undefined) stageSnapshot.workflowChild = workflowChild;
       } else {
-        const failure = classifyWorkflowFailure(failureError);
-        stageSnapshot.error = failure.userMessage;
-        stageSnapshot.failureKind = failure.kind;
-        stageSnapshot.failureMessage = failure.message;
+        applyFailureToStage(stageSnapshot, classifyWorkflowFailure(failureError));
       }
       stageSnapshot.endedAt = Date.now();
       stageSnapshot.durationMs = elapsedStageMs(stageSnapshot, stageSnapshot.endedAt);
@@ -2348,7 +2508,11 @@ export async function run<TInputs extends WorkflowInputValues>(
             durationMs: stageSnapshot.durationMs,
             ...(stageSnapshot.error !== undefined ? { error: stageSnapshot.error } : {}),
             ...(stageSnapshot.failureKind !== undefined ? { failureKind: stageSnapshot.failureKind } : {}),
+            ...(stageSnapshot.failureCode !== undefined ? { failureCode: stageSnapshot.failureCode } : {}),
+            ...(stageSnapshot.failureRecoverability !== undefined ? { failureRecoverability: stageSnapshot.failureRecoverability } : {}),
+            ...(stageSnapshot.failureDisposition !== undefined ? { failureDisposition: stageSnapshot.failureDisposition } : {}),
             ...(stageSnapshot.failureMessage !== undefined ? { failureMessage: stageSnapshot.failureMessage } : {}),
+            ...(stageSnapshot.retryAfterMs !== undefined ? { retryAfterMs: stageSnapshot.retryAfterMs } : {}),
             ...(stageSnapshot.skippedReason !== undefined ? { skippedReason: stageSnapshot.skippedReason } : {}),
             ...stageReplayFields(stageSnapshot),
           });
@@ -2636,6 +2800,9 @@ export async function run<TInputs extends WorkflowInputValues>(
       // after a turn that asked the user a question ends, the workflow must
       // confirm readiness before completing/advancing the stage.
       let askUserQuestionObservedThisTurn = false;
+      // Chat answers already mean "stay in this stage's composer"; they should
+      // bypass the readiness confirmation prompt for the same turn.
+      let chatAnswerObservedThisTurn = false;
       const hasActiveAskUserQuestion = (): boolean =>
         activeAskUserQuestionCalls.size > 0 || activeAskUserQuestionAnonymousCalls > 0;
       const unsubscribeAskUserQuestionWatcher = innerCtx.subscribe((event) => {
@@ -2666,6 +2833,8 @@ export async function run<TInputs extends WorkflowInputValues>(
         } else {
           return;
         }
+
+        if (toolEvent.hasChatAnswer) chatAnswerObservedThisTurn = true;
 
         if (!hasActiveAskUserQuestion()) {
           activeStore.recordStageAwaitingInput(runId, stageId, false);
@@ -2802,7 +2971,11 @@ export async function run<TInputs extends WorkflowInputValues>(
             durationMs: stageSnapshot.durationMs,
             ...(stageSnapshot.error !== undefined ? { error: stageSnapshot.error } : {}),
             ...(stageSnapshot.failureKind !== undefined ? { failureKind: stageSnapshot.failureKind } : {}),
+            ...(stageSnapshot.failureCode !== undefined ? { failureCode: stageSnapshot.failureCode } : {}),
+            ...(stageSnapshot.failureRecoverability !== undefined ? { failureRecoverability: stageSnapshot.failureRecoverability } : {}),
+            ...(stageSnapshot.failureDisposition !== undefined ? { failureDisposition: stageSnapshot.failureDisposition } : {}),
             ...(stageSnapshot.failureMessage !== undefined ? { failureMessage: stageSnapshot.failureMessage } : {}),
+            ...(stageSnapshot.retryAfterMs !== undefined ? { retryAfterMs: stageSnapshot.retryAfterMs } : {}),
             ...(stageSnapshot.skippedReason !== undefined ? { skippedReason: stageSnapshot.skippedReason } : {}),
             ...(stageSnapshot.result !== undefined && stageSnapshot.status === "completed" ? { summary: stageSnapshot.result } : {}),
             ...stageReplayFields(stageSnapshot),
@@ -2964,6 +3137,7 @@ export async function run<TInputs extends WorkflowInputValues>(
           try {
             // Run the stage's initial agent turn.
             askUserQuestionObservedThisTurn = false;
+            chatAnswerObservedThisTurn = false;
             result = await raceAbort(call(), ownController.signal);
 
             // Per-turn readiness gate (#1099). When an agent turn ENDS (control
@@ -2986,11 +3160,12 @@ export async function run<TInputs extends WorkflowInputValues>(
               });
               try {
                 while (askUserQuestionObservedThisTurn) {
-                  if ((await confirmReadiness()) === "advance") break;
+                  if (!chatAnswerObservedThisTurn && (await confirmReadiness()) === "advance") break;
                   if (ownController.signal.aborted) break;
                   // Stay: return control to the user and await their next
                   // composer-driven turn end before re-checking.
                   askUserQuestionObservedThisTurn = false;
+                  chatAnswerObservedThisTurn = false;
                   await raceAbort(
                     new Promise<void>((resolve) => {
                       resolveNextTurnEnd = resolve;
@@ -3032,6 +3207,11 @@ export async function run<TInputs extends WorkflowInputValues>(
           }
           return result;
         } catch (err) {
+          const meta = innerCtx.__sessionMeta();
+          if (meta.sessionId !== undefined || meta.sessionFile !== undefined) {
+            activeStore.recordStageSession(runId, stageId, meta);
+          }
+          applyModelFallbackMeta(innerCtx.__modelFallbackMeta());
           if (!ownController.signal.aborted && !skippedForParallelFailFast) {
             applyFailureToStage(stageSnapshot, classifyWorkflowFailure(err));
           }
@@ -3405,7 +3585,12 @@ export async function run<TInputs extends WorkflowInputValues>(
       status: "failed",
       error: metadata.errorMessage,
       failureKind: metadata.failureKind,
+      ...(metadata.failureCode !== undefined ? { failureCode: metadata.failureCode } : {}),
+      failureRecoverability: metadata.failureRecoverability,
+      failureDisposition: metadata.failureDisposition,
       failureMessage: metadata.failureMessage,
+      ...(metadata.retryAfterMs !== undefined ? { retryAfterMs: metadata.retryAfterMs } : {}),
+      ...(metadata.blockedAt !== undefined ? { blockedAt: metadata.blockedAt } : {}),
       ...(metadata.failedStageId !== undefined ? { failedStageId: metadata.failedStageId } : {}),
       resumable: metadata.resumable,
       ts: Date.now(),

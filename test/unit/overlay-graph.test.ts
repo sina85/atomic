@@ -124,6 +124,7 @@ function makeStore(snap: StoreSnapshot): Store {
     recordStageAwaitingInput: () => false,
     recordStageInputRequest: () => false,
     clearStageInputRequest: () => false,
+    recordRunBlocked: () => false,
     recordRunEnd: () => false,
     removeRun: () => false,
     recordNotice: () => {},

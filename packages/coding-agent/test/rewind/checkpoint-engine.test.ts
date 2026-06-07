@@ -30,6 +30,17 @@ function git(cwd: string, args: string[], input?: string): string {
 	return result.stdout;
 }
 
+type TestGitOptions = { readonly cwd?: string; readonly input?: string; readonly literalPathspecs?: boolean };
+type TestGitResult = { readonly ok: boolean; readonly stdout: string; readonly stderr: string; readonly gitMissing?: boolean };
+type TestGit = (args: string[], options?: TestGitOptions) => TestGitResult;
+type CheckpointEngineWithTestGit = CheckpointEngine & { git: TestGit };
+
+function replaceEngineGitForTest(engine: CheckpointEngine, replacement: (args: string[], options: TestGitOptions | undefined, realGit: TestGit) => TestGitResult): void {
+	const mutableEngine = engine as CheckpointEngineWithTestGit;
+	const realGit = mutableEngine.git.bind(engine);
+	mutableEngine.git = (args, options) => replacement(args, options, realGit);
+}
+
 function treeFiles(cwd: string, treeSha: string): string[] {
 	return git(cwd, ["ls-tree", "-r", "--name-only", treeSha]).split("\n").filter(Boolean).sort();
 }
@@ -200,21 +211,55 @@ describe("CheckpointEngine", () => {
 		const statusBefore = git(repo, ["status", "--porcelain=v1"]);
 		const stagedDiffBefore = git(repo, ["diff", "--cached", "--", "file.txt"]);
 		const unstagedDiffBefore = git(repo, ["diff", "--", "file.txt"]);
-		const testEngine = engine as any;
-		const realGit = testEngine.git.bind(engine);
 		let failedIndexRestore = false;
-		testEngine.git = (args: string[], options?: unknown) => {
+		replaceEngineGitForTest(engine, (args, options, realGit) => {
 			if (!failedIndexRestore && args.length === 3 && args[0] === "read-tree" && args[1] === "--reset" && args[2] === target.value.indexTreeSha) {
 				failedIndexRestore = true;
 				return { ok: false, stdout: "", stderr: "injected index restore failure", gitMissing: false };
 			}
 			return realGit(args, options);
-		};
+		});
 
 		const restored = engine.restoreCheckpoint(target.value.id);
 
 		expect(restored).toMatchObject({ ok: false, error: "RestoreFailed" });
 		expect(failedIndexRestore).toBe(true);
+		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("before worktree\n");
+		expect(git(repo, ["status", "--porcelain=v1"])).toBe(statusBefore);
+		expect(git(repo, ["diff", "--cached", "--", "file.txt"])).toBe(stagedDiffBefore);
+		expect(git(repo, ["diff", "--", "file.txt"])).toBe(unstagedDiffBefore);
+	});
+
+	it("rolls back worktree and index when first worktree restore fails after partial mutation", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		writeFileSync(join(repo, "file.txt"), "target staged\n");
+		git(repo, ["add", "file.txt"]);
+		writeFileSync(join(repo, "file.txt"), "target worktree\n");
+		const engine = new CheckpointEngine({ cwd: repo, sessionId: "session-1" });
+		const target = engine.createCheckpoint({ trigger: "turn" });
+		expect(target.ok).toBe(true);
+		if (!target.ok) throw new Error(target.error);
+		writeFileSync(join(repo, "file.txt"), "before staged\n");
+		git(repo, ["add", "file.txt"]);
+		writeFileSync(join(repo, "file.txt"), "before worktree\n");
+		const statusBefore = git(repo, ["status", "--porcelain=v1"]);
+		const stagedDiffBefore = git(repo, ["diff", "--cached", "--", "file.txt"]);
+		const unstagedDiffBefore = git(repo, ["diff", "--", "file.txt"]);
+		let failedWorktreeRestore = false;
+		replaceEngineGitForTest(engine, (args, options, realGit) => {
+			if (!failedWorktreeRestore && args.length === 4 && args[0] === "read-tree" && args[1] === "--reset" && args[2] === "-u" && args[3] === target.value.worktreeTreeSha) {
+				failedWorktreeRestore = true;
+				realGit(["checkout", target.value.worktreeTreeSha, "--", "file.txt"], options);
+				return { ok: false, stdout: "", stderr: "injected worktree restore failure", gitMissing: false };
+			}
+			return realGit(args, options);
+		});
+
+		const restored = engine.restoreCheckpoint(target.value.id);
+
+		expect(restored).toMatchObject({ ok: false, error: "RestoreFailed" });
+		expect(failedWorktreeRestore).toBe(true);
 		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("before worktree\n");
 		expect(git(repo, ["status", "--porcelain=v1"])).toBe(statusBefore);
 		expect(git(repo, ["diff", "--cached", "--", "file.txt"])).toBe(stagedDiffBefore);
@@ -697,6 +742,30 @@ describe("CheckpointEngine", () => {
 		expect(restored).toMatchObject({ ok: false, error: "UnsafeUntrackedOverwrite" });
 		expect(readFileSync(join(repo, "notes"), "utf8")).toBe("local parent\n");
 		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("local tracked\n");
+	});
+
+	it("refuses restore when a staged parent file conflicts with a checkpoint-owned untracked child", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		mkdirSync(join(repo, "dir"), { recursive: true });
+		writeFileSync(join(repo, "dir", "file.txt"), "checkpointed child\n");
+		const engine = new CheckpointEngine({ cwd: repo, sessionId: "session-1" });
+		const created = engine.createCheckpoint({ trigger: "turn" });
+		expect(created.ok).toBe(true);
+		if (!created.ok) throw new Error(created.error);
+		rmSync(join(repo, "dir"), { recursive: true, force: true });
+		writeFileSync(join(repo, "dir"), "staged parent\n");
+		git(repo, ["add", "dir"]);
+
+		const preview = engine.previewDiff(created.value.id);
+		const restored = engine.restoreCheckpoint(created.value.id);
+
+		expect(preview.ok).toBe(true);
+		if (!preview.ok) throw new Error(preview.error);
+		expect(preview.value.unsafeRestorePaths).toEqual(["dir"]);
+		expect(restored).toMatchObject({ ok: false, error: "UnsafeUntrackedOverwrite" });
+		expect(readFileSync(join(repo, "dir"), "utf8")).toBe("staged parent\n");
+		expect(git(repo, ["show", ":dir"])).toBe("staged parent\n");
 	});
 
 	it("restores without scanning ignored non-overlapping paths", () => {

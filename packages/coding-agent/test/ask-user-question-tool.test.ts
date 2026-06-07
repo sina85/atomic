@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createAskUserQuestionToolDefinition } from "../src/core/tools/ask-user-question/index.ts";
+import { buildQuestionnaireResponse, ENVELOPE_SUFFIX } from "../src/core/tools/ask-user-question/tool/response-envelope.ts";
 import type { ExtensionUIContext } from "../src/core/extensions/types.ts";
+import type { QuestionnaireResult, QuestionParams } from "../src/core/tools/ask-user-question/tool/types.ts";
 
-const QUESTION_PARAMS = {
+const QUESTION_PARAMS: QuestionParams = {
 	questions: [
 		{
 			question: "Continue?",
@@ -137,5 +139,50 @@ describe("ask_user_question tool", () => {
 
 		expect(customCalled).toBe(true);
 		expect(result).toBeDefined();
+	});
+});
+
+describe("buildQuestionnaireResponse chat answers", () => {
+	const chatResult: QuestionnaireResult = {
+		answers: [{ questionIndex: 0, question: "Continue?", kind: "chat", answer: "Chat about this" }],
+		cancelled: false,
+	};
+
+	it("terminates chat answers with stop/wait wording and preserved details", () => {
+		const result = buildQuestionnaireResponse(chatResult, QUESTION_PARAMS);
+		const text = result.content[0]?.text ?? "";
+
+		expect((result as { terminate?: boolean }).terminate).toBe(true);
+		expect(text).not.toContain(ENVELOPE_SUFFIX);
+		expect(text).not.toContain("Continue the conversation");
+		expect(text.toLowerCase()).toContain("stop");
+		expect(text.toLowerCase()).toContain("wait");
+		expect(result.details).toEqual(chatResult);
+	});
+
+	it("terminates even when a raw chat answer does not match a current question index", () => {
+		const unmatchedChatResult: QuestionnaireResult = {
+			answers: [{ questionIndex: 99, question: "Continue?", kind: "chat", answer: "Chat about this" }],
+			cancelled: false,
+		};
+
+		const result = buildQuestionnaireResponse(unmatchedChatResult, QUESTION_PARAMS);
+
+		expect((result as { terminate?: boolean }).terminate).toBe(true);
+		expect(result.content[0]?.text).not.toContain(ENVELOPE_SUFFIX);
+		expect(result.content[0]?.text).not.toContain("Continue the conversation");
+		expect(result.details).toEqual(unmatchedChatResult);
+	});
+
+	it("does not terminate ordinary option answers", () => {
+		const optionResult: QuestionnaireResult = {
+			answers: [{ questionIndex: 0, question: "Continue?", kind: "option", answer: "Yes" }],
+			cancelled: false,
+		};
+
+		const result = buildQuestionnaireResponse(optionResult, QUESTION_PARAMS);
+
+		expect((result as { terminate?: boolean }).terminate).toBeUndefined();
+		expect(result.content[0]?.text).toContain(ENVELOPE_SUFFIX);
 	});
 });

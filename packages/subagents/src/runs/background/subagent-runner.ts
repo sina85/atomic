@@ -48,7 +48,7 @@ import { outputEntryFromAsyncResult, resolveOutputReferences } from "../shared/c
 import { createStructuredOutputRuntime, readStructuredOutput } from "../shared/structured-output.ts";
 import { collectDynamicResults, DynamicFanoutError, materializeDynamicParallelStep, validateDynamicCollection } from "../shared/dynamic-fanout.ts";
 import { nestedSummaryFromAsyncStatus, writeNestedEvent } from "../shared/nested-events.ts";
-import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
+import { formatModelAttemptNote, isRetryableAttemptFailure, providerFailureSignalText, structuredProviderFailureSignal, type StructuredProviderFailureSignal } from "../shared/model-fallback.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
 import { evaluateCompletionMutationGuard } from "../shared/completion-guard.ts";
@@ -209,7 +209,11 @@ interface ChildUsage {
 
 type ChildMessage = Message & {
 	model?: string;
-	errorMessage?: string;
+	errorMessage?: unknown;
+	code?: unknown;
+	status?: unknown;
+	diagnostics?: unknown;
+	stopReason?: unknown;
 	usage?: ChildUsage;
 };
 
@@ -227,6 +231,7 @@ interface RunPiStreamingResult {
 	usage: Usage;
 	model?: string;
 	error?: string;
+	providerFailureSignal?: StructuredProviderFailureSignal;
 	finalOutput: string;
 	interrupted?: boolean;
 	observedMutationAttempt?: boolean;
@@ -270,6 +275,7 @@ function runPiStreaming(
 		let model: string | undefined;
 		let error: string | undefined;
 		let assistantError: string | undefined;
+		let assistantFailureSignal: StructuredProviderFailureSignal | undefined;
 		let interrupted = false;
 		let observedMutationAttempt = false;
 		const rawStdoutLines: string[] = [];
@@ -330,7 +336,11 @@ function runPiStreaming(
 
 				if (event.type !== "message_end" || event.message.role !== "assistant") return;
 				if (event.message.model) model = event.message.model;
-				if (event.message.errorMessage) assistantError = event.message.errorMessage;
+				const failureSignal = structuredProviderFailureSignal(event.message, text);
+				if (failureSignal !== undefined) {
+					assistantFailureSignal = failureSignal;
+					assistantError = providerFailureSignalText(failureSignal) ?? assistantError;
+				}
 				const eventUsage = event.message.usage;
 				if (eventUsage) {
 					usage.turns++;
@@ -344,7 +354,10 @@ function runPiStreaming(
 				const hasToolCall = Array.isArray(event.message.content)
 					&& event.message.content.some((part) => (part as { type?: string }).type === "toolCall");
 				if (stopReason === "stop" && !hasToolCall) {
-					if (!event.message.errorMessage && extractTextFromContent(event.message.content).trim()) assistantError = undefined;
+					if (!event.message.errorMessage && extractTextFromContent(event.message.content).trim()) {
+						assistantError = undefined;
+						assistantFailureSignal = undefined;
+					}
 					cleanTerminalAssistantStopReceived ||= !event.message.errorMessage;
 					startFinalDrain();
 				}
@@ -436,7 +449,7 @@ function runPiStreaming(
 			if (stderrBuf.trim()) appendChildLine("subagent.child.stderr", stderrBuf);
 			outputStream.end();
 			const finalOutput = getFinalOutput(messages) || rawStdoutLines.join("\n").trim();
-			const finalError = error ?? assistantError;
+			const finalError = error ?? providerFailureSignalText(assistantFailureSignal) ?? assistantError;
 			const forcedDrainAfterFinalSuccess = forcedTerminationSignal && cleanTerminalAssistantStopReceived && !finalError;
 			resolve({
 				stderr,
@@ -445,6 +458,7 @@ function runPiStreaming(
 				usage,
 				model,
 				error: interrupted || forcedDrainAfterFinalSuccess ? undefined : finalError,
+				providerFailureSignal: interrupted || forcedDrainAfterFinalSuccess ? undefined : assistantFailureSignal,
 				finalOutput,
 				interrupted,
 				observedMutationAttempt,
@@ -459,7 +473,7 @@ function runPiStreaming(
 			outputStream.end();
 			const finalOutput = getFinalOutput(messages) || rawStdoutLines.join("\n").trim();
 			const spawnErrorMessage = spawnError instanceof Error ? spawnError.message : String(spawnError);
-			resolve({ stderr, exitCode: 1, messages, usage, model, error: error ?? assistantError ?? spawnErrorMessage, finalOutput, observedMutationAttempt });
+			resolve({ stderr, exitCode: 1, messages, usage, model, error: error ?? providerFailureSignalText(assistantFailureSignal) ?? assistantError ?? spawnErrorMessage, providerFailureSignal: assistantFailureSignal, finalOutput, observedMutationAttempt });
 		});
 	});
 }
@@ -770,7 +784,7 @@ async function runSingleStep(
 		finalOutputSnapshot = outputSnapshot;
 		finalResult = { ...run, exitCode: effectiveExitCode, model: candidate ?? run.model, error, structuredOutput } as RunPiStreamingResult & { structuredOutput?: unknown };
 		if (attempt.success) break;
-		if (!completionGuardTriggered && isRetryableModelFailure(error) && index < candidates.length - 1) {
+		if (!completionGuardTriggered && isRetryableAttemptFailure(error, run.providerFailureSignal) && index < candidates.length - 1) {
 			pendingAttemptNotes.push(formatModelAttemptNote(attempt, candidates[index + 1]));
 			continue;
 		}

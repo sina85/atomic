@@ -12,9 +12,11 @@ import {
     resumeRun,
     pauseRun,
     interruptRun,
+    inspectRun,
 } from "../../packages/workflows/src/runs/background/status.js";
 import { createStore } from "../../packages/workflows/src/shared/store.js";
 import type { RunSnapshot, StageSnapshot } from "../../packages/workflows/src/shared/store-types.js";
+import type { WorkflowPersistencePort } from "../../packages/workflows/src/shared/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -125,6 +127,46 @@ describe("statusRuns", () => {
 });
 
 // ---------------------------------------------------------------------------
+// inspectRun
+// ---------------------------------------------------------------------------
+
+describe("inspectRun", () => {
+    test("preserves stored failure metadata in run details", () => {
+        const st = createStore();
+        st.recordRunStart(makeRun({
+            id: "blocked-run",
+            stages: [makeStage("s1")],
+        }));
+        assert.equal(st.recordRunBlocked("blocked-run", "rate limit", {
+            failureKind: "rate_limit",
+            failureCode: "rate_limited",
+            failureRecoverability: "recoverable",
+            failureDisposition: "active_blocked",
+            failureMessage: "retry later",
+            retryAfterMs: 1234,
+            blockedAt: 5678,
+            failedStageId: "s1",
+            resumable: true,
+        }), true);
+
+        const result = inspectRun("blocked-run", { store: st });
+
+        assert.equal(result.ok, true);
+        if (!result.ok) throw new Error("inspectRun failed");
+        assert.equal(result.detail.error, "rate limit");
+        assert.equal(result.detail.failureKind, "rate_limit");
+        assert.equal(result.detail.failureCode, "rate_limited");
+        assert.equal(result.detail.failureRecoverability, "recoverable");
+        assert.equal(result.detail.failureDisposition, "active_blocked");
+        assert.equal(result.detail.failureMessage, "retry later");
+        assert.equal(result.detail.retryAfterMs, 1234);
+        assert.equal(result.detail.blockedAt, 5678);
+        assert.equal(result.detail.failedStageId, "s1");
+        assert.equal(result.detail.resumable, true);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // killRun
 // ---------------------------------------------------------------------------
 
@@ -145,7 +187,7 @@ describe("killRun", () => {
         if (!result.ok) assert.equal(result.reason, "already_ended");
     });
 
-    test("returns ok:true and marks run as killed", () => {
+    test("returns ok:true and marks run as killed and non-resumable", () => {
         const st = createStore();
         st.recordRunStart(makeRun({ id: "r1" }));
         const result = killRun("r1", { store: st });
@@ -156,6 +198,61 @@ describe("killRun", () => {
         }
         const runs = st.runs();
         assert.equal(runs[0]!.status, "killed");
+        assert.equal(runs[0]!.resumable, false);
+        assert.equal(runs[0]!.failureKind, "cancelled");
+    });
+
+    test("kills blocked run with terminal metadata and without stale active_blocked fields", () => {
+        const st = createStore();
+        st.recordRunStart(makeRun({ id: "r1" }));
+        assert.equal(st.recordRunBlocked("r1", "rate limited", {
+            failureKind: "rate_limit",
+            failureCode: "rate_limited",
+            failureRecoverability: "recoverable",
+            failureDisposition: "active_blocked",
+            failureMessage: "retry later",
+            retryAfterMs: 5000,
+            blockedAt: 123,
+            failedStageId: "stage-1",
+            resumable: true,
+        }), true);
+
+        const calls: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const persistence: WorkflowPersistencePort = {
+            appendEntry(type, payload) {
+                calls.push({ type, payload });
+                return `entry-${calls.length}`;
+            },
+        };
+
+        const result = killRun("r1", { store: st, persistence });
+
+        assert.equal(result.ok, true);
+        const run = st.runs()[0]!;
+        assert.equal(run.status, "killed");
+        assert.equal(run.error, "workflow killed");
+        assert.equal(run.failureKind, "cancelled");
+        assert.equal(run.failureCode, "cancelled");
+        assert.equal(run.failureRecoverability, "non_recoverable");
+        assert.equal(run.failureDisposition, "terminal_killed");
+        assert.equal(run.failureMessage, "workflow killed");
+        assert.equal(run.resumable, false);
+        assert.equal("retryAfterMs" in run, false);
+        assert.equal("blockedAt" in run, false);
+        assert.equal("failedStageId" in run, false);
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0]!.type, "workflow.run.end");
+        assert.equal(calls[0]!.payload.status, "killed");
+        assert.equal(calls[0]!.payload.failureKind, "cancelled");
+        assert.equal(calls[0]!.payload.failureCode, "cancelled");
+        assert.equal(calls[0]!.payload.failureRecoverability, "non_recoverable");
+        assert.equal(calls[0]!.payload.failureDisposition, "terminal_killed");
+        assert.equal(calls[0]!.payload.failureMessage, "workflow killed");
+        assert.equal(calls[0]!.payload.resumable, false);
+        assert.equal("retryAfterMs" in calls[0]!.payload, false);
+        assert.equal("blockedAt" in calls[0]!.payload, false);
+        assert.equal("failedStageId" in calls[0]!.payload, false);
     });
 });
 
@@ -294,6 +391,20 @@ describe("resumeRun", () => {
             assert.equal(result.mode, "not_resumable");
             assert.equal(result.snapshot.status, "failed");
             assert.match(result.message ?? "", /not resumable/);
+        }
+    });
+
+    test("killed terminal run returns a clear non-resumable snapshot mode", () => {
+        const st = createStore();
+        st.recordRunStart(makeRun({ id: "r1" }));
+        killRun("r1", { store: st });
+        const result = resumeRun("r1", { store: st });
+        assert.equal(result.ok, true);
+        if (result.ok) {
+            assert.equal(result.mode, "not_resumable");
+            assert.equal(result.snapshot.status, "killed");
+            assert.equal(result.snapshot.resumable, false);
+            assert.match(result.message ?? "", /killed workflow is not resumable/);
         }
     });
 });

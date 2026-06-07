@@ -1442,7 +1442,7 @@ describe("executor.run", () => {
                         prompt: async (text) => {
                             firstRunCalls.push(text);
                             if (text.startsWith("second:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "first-result";
                         },
                     },
@@ -1532,7 +1532,7 @@ describe("executor.run", () => {
                         prompt: async (text) => {
                             firstRunCalls.push(text);
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "child-ok";
                         },
                     },
@@ -1620,7 +1620,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "child-ok";
                         },
                     },
@@ -1703,7 +1703,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "unexpected";
                         },
                     },
@@ -1830,7 +1830,7 @@ describe("executor.run", () => {
                         prompt: async (text) => {
                             firstRunCalls.push(text);
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return `child-${firstRunCalls.length}`;
                         },
                     },
@@ -1930,7 +1930,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "child-first";
                         },
                     },
@@ -1982,7 +1982,7 @@ describe("executor.run", () => {
         assert.deepEqual(after.parentIds, [boundary.id]);
     });
 
-    test("auth stage failures surface workflow login guidance and preserve details", async () => {
+    test("auth stage failures surface workflow login guidance and finalize as resumable failed runs without persistence", async () => {
         const st = createStore();
         const def = defineWorkflow("auth-fail-wf")
             .run(async (ctx) => {
@@ -2013,6 +2013,8 @@ describe("executor.run", () => {
         );
         const storedRun = st.runs()[0]!;
         const stage = storedRun.stages[0]!;
+        assert.equal(storedRun.status, "failed");
+        assert.equal(typeof storedRun.endedAt, "number");
         assert.equal(
             stage.error,
             "You must be logged in to run workflows. Run /login and try again.",
@@ -2381,7 +2383,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "before-result";
                         },
                     },
@@ -2472,7 +2474,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "before-result";
                         },
                     },
@@ -2609,7 +2611,7 @@ describe("executor.run", () => {
                 adapters: {
                     prompt: {
                         prompt: async () => {
-                            throw new Error("rate limit exceeded");
+                            throw new Error("workflow fixture failure");
                         },
                     },
                 },
@@ -2696,7 +2698,7 @@ describe("executor.run", () => {
                 adapters: {
                     prompt: {
                         prompt: async () => {
-                            throw new Error("rate limit exceeded");
+                            throw new Error("workflow fixture failure");
                         },
                     },
                 },
@@ -2788,7 +2790,7 @@ describe("executor.run", () => {
                 adapters: {
                     prompt: {
                         prompt: async () => {
-                            throw new Error("rate limit exceeded");
+                            throw new Error("workflow fixture failure");
                         },
                     },
                 },
@@ -2896,7 +2898,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("second:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "first-result";
                         },
                     },
@@ -2962,7 +2964,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("after:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return text.toLowerCase();
                         },
                     },
@@ -3041,7 +3043,7 @@ describe("executor.run", () => {
                             if (text === "after")
                                 throw new Error("unexpected exact prompt");
                             if (text.includes(","))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return `${text}:done`;
                         },
                     },
@@ -3118,7 +3120,7 @@ describe("executor.run", () => {
                         prompt: async (text) => {
                             if (text === "alpha" || text === "beta")
                                 return `${text}:done`;
-                            throw new Error("rate limit exceeded");
+                            throw new Error("workflow fixture failure");
                         },
                     },
                 },
@@ -3185,7 +3187,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text === "fail")
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return `${text}:done`;
                         },
                     },
@@ -3247,7 +3249,7 @@ describe("executor.run", () => {
                     prompt: {
                         prompt: async (text) => {
                             if (text.startsWith("second:"))
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             return "first-result";
                         },
                     },
@@ -3323,7 +3325,7 @@ describe("executor.run", () => {
                             firstRunCalls.push(text);
                             if (text === "fail-once" && failOnce) {
                                 failOnce = false;
-                                throw new Error("rate limit exceeded");
+                                throw new Error("workflow fixture failure");
                             }
                             return `${text}:ok`;
                         },
@@ -3377,7 +3379,7 @@ describe("executor.run", () => {
         assert.equal(replayed.replayedFromStageId, completed.id);
     });
 
-    test("failed fallback attempts are recorded on the stage snapshot", async () => {
+    test("recoverable fallback attempts are recorded on the failed stage snapshot", async () => {
         const def = defineWorkflow("failed-fallback-metadata")
             .output("ok", Type.Boolean())
             .run(async (ctx) => {
@@ -3771,7 +3773,7 @@ describe("executor.run", () => {
         assert.equal(result.stages[0]?.fastMode, undefined);
     });
 
-    test("invalid dynamic stage model fails before SDK session creation", async () => {
+    test("recoverable invalid dynamic stage model blocks before SDK session creation", async () => {
         let creates = 0;
         // A bare id that cannot be resolved against the catalog is still a hard
         // configuration error (it is neither provider-qualified nor uniquely
@@ -4978,6 +4980,313 @@ describe("executor.run — lifecycle persistence", () => {
             stageEnd.payload["stageId"],
         );
         assert.equal(runEnd.payload["resumable"], true);
+    });
+
+    for (const scenario of [
+        {
+            name: "auth",
+            message: "No API key found for provider",
+            expectedError: WORKFLOW_AUTH_FAILURE_MESSAGE,
+        },
+        {
+            name: "rate_limit",
+            message: "provider returned 429 rate limit",
+            expectedError: "provider returned 429 rate limit",
+        },
+        {
+            name: "provider",
+            message: "service unavailable 503",
+            expectedError: "service unavailable 503",
+        },
+    ] as const) {
+        test(`recoverable ${scenario.name} stage failure appends terminal resumable run.end`, async () => {
+            const { persistence, calls } = makePersistence();
+            const st = createStore();
+
+            const def = defineWorkflow(`recoverable-${scenario.name}-persist-wf`)
+                .run(async (ctx) => {
+                    await ctx.stage("blocked").prompt("x");
+                    return {};
+                })
+                .compile();
+
+            const wfResult = await run(
+                def,
+                {},
+                {
+                    adapters: {
+                        prompt: {
+                            prompt: async () => {
+                                throw new Error(scenario.message);
+                            },
+                        },
+                    },
+                    store: st,
+                    persistence,
+                },
+            );
+
+            assert.equal(wfResult.status, "failed");
+            assert.equal(wfResult.error, scenario.expectedError);
+            assert.equal(
+                calls.some((c) => c.type === "workflow.run.blocked"),
+                false,
+            );
+            const runEnd = calls.find((c) => c.type === "workflow.run.end");
+            assert.equal(runEnd?.payload["status"], "failed");
+            assert.equal(runEnd.payload["error"], scenario.expectedError);
+            assert.equal(runEnd.payload["failureKind"], scenario.name);
+            assert.equal(runEnd.payload["failureMessage"], scenario.message);
+            assert.equal(runEnd.payload["failureRecoverability"], "recoverable");
+            assert.equal(runEnd.payload["failureDisposition"], "terminal_failed");
+            assert.equal(runEnd.payload["blockedAt"], undefined);
+            assert.equal(runEnd.payload["resumable"], true);
+
+            const storedRun = st.runs()[0]!;
+            const failedStage = storedRun.stages[0]!;
+            assert.equal(storedRun.status, "failed");
+            assert.equal(typeof storedRun.endedAt, "number");
+            assert.equal(storedRun.error, scenario.expectedError);
+            assert.equal(storedRun.failureKind, scenario.name);
+            assert.equal(storedRun.failureMessage, scenario.message);
+            assert.equal(storedRun.failureRecoverability, "recoverable");
+            assert.equal(storedRun.failureDisposition, "terminal_failed");
+            assert.equal(storedRun.blockedAt, undefined);
+            assert.equal(storedRun.failedStageId, failedStage.id);
+            assert.equal(storedRun.resumable, true);
+            assert.equal(failedStage.status, "failed");
+            assert.equal(failedStage.failureKind, scenario.name);
+        });
+    }
+
+    test("recoverable provider failures redact persisted failure messages", async () => {
+        const { persistence, calls } = makePersistence();
+        const st = createStore();
+        const secretError = Object.assign(
+            new Error("provider failed Authorization: Bearer sk-secret apiKey=abc123"),
+            { status: 503, retryAfterMs: 1234 },
+        );
+
+        const def = defineWorkflow("recoverable-provider-redacted-persist-wf")
+            .run(async (ctx) => {
+                await ctx.stage("blocked").prompt("x");
+                return {};
+            })
+            .compile();
+
+        await run(def, {}, {
+            adapters: { prompt: { prompt: async () => { throw secretError; } } },
+            store: st,
+            persistence,
+        });
+
+        assert.equal(calls.some((c) => c.type === "workflow.run.blocked"), false);
+        const runEnd = calls.find((c) => c.type === "workflow.run.end");
+        assert.equal(runEnd?.payload["failureKind"], "provider");
+        assert.equal(runEnd.payload["failureCode"], "503");
+        assert.equal(runEnd.payload["retryAfterMs"], 1234);
+        assert.equal(runEnd.payload["resumable"], true);
+        assert.doesNotMatch(String(runEnd.payload["failureMessage"]), /sk-secret|abc123/);
+        const storedRun = st.runs()[0]!;
+        assert.doesNotMatch(storedRun.failureMessage ?? "", /sk-secret|abc123/);
+        assert.equal(storedRun.failureCode, "503");
+        assert.equal(storedRun.retryAfterMs, 1234);
+    });
+
+    test("invalid provider credentials end terminally instead of preserving a blocked run", async () => {
+        const { persistence, calls } = makePersistence();
+        const st = createStore();
+        const secretError = {
+            status: 401,
+            code: "invalid_api_key",
+            message: "Incorrect API key provided: sk-testsecret123456789",
+        };
+
+        const def = defineWorkflow("invalid-provider-credential-terminal-wf")
+            .run(async (ctx) => {
+                await ctx.stage("blocked").prompt("x");
+                return {};
+            })
+            .compile();
+
+        const wfResult = await run(def, {}, {
+            adapters: { prompt: { prompt: async () => { throw secretError; } } },
+            store: st,
+            persistence,
+        });
+
+        assert.equal(wfResult.status, "failed");
+        assert.equal(wfResult.error, "Incorrect API key provided: [REDACTED]");
+        assert.equal(calls.some((c) => c.type === "workflow.run.blocked"), false);
+        const runEnd = calls.find((c) => c.type === "workflow.run.end");
+        assert.equal(runEnd?.payload["status"], "failed");
+        assert.equal(runEnd.payload["failureKind"], "auth");
+        assert.equal(runEnd.payload["failureCode"], "invalid_api_key");
+        assert.equal(runEnd.payload["failureRecoverability"], "non_recoverable");
+        assert.equal(runEnd.payload["failureMessage"], "Incorrect API key provided: [REDACTED]");
+        assert.equal(runEnd.payload["resumable"], false);
+        assert.doesNotMatch(String(runEnd.payload["error"]), /sk-testsecret123456789/);
+
+        const storedRun = st.runs()[0]!;
+        assert.equal(storedRun.status, "failed");
+        assert.equal(storedRun.failureKind, "auth");
+        assert.equal(storedRun.failureCode, "invalid_api_key");
+        assert.equal(storedRun.failureRecoverability, "non_recoverable");
+        assert.equal(storedRun.failureMessage, "Incorrect API key provided: [REDACTED]");
+        assert.equal(storedRun.resumable, false);
+        assert.doesNotMatch(storedRun.error ?? "", /sk-testsecret123456789/);
+    });
+
+    test("parallel failFast false terminal branch outranks recoverable branch at run finalization", async () => {
+        const { persistence, calls } = makePersistence();
+        const st = createStore();
+        const def = defineWorkflow("parallel-terminal-wins-wf")
+            .run(async (ctx) => {
+                await ctx.parallel(
+                    [
+                        { name: "rate-limited", prompt: "rate" },
+                        { name: "bad-key", prompt: "auth" },
+                    ],
+                    { concurrency: 2, failFast: false },
+                );
+                return {};
+            })
+            .compile();
+
+        const wfResult = await run(def, {}, {
+            adapters: {
+                prompt: {
+                    prompt: async (text) => {
+                        if (text === "rate") throw Object.assign(new Error("rate limit exceeded"), { status: 429 });
+                        throw new Error("Incorrect API key provided: sk-testsecret123456789");
+                    },
+                },
+            },
+            store: st,
+            persistence,
+        });
+
+        assert.equal(wfResult.status, "failed");
+        assert.equal(calls.some((c) => c.type === "workflow.run.blocked"), false);
+        const runEnd = calls.find((c) => c.type === "workflow.run.end");
+        assert.equal(runEnd?.payload["failureKind"], "auth");
+        assert.equal(runEnd.payload["failureCode"], "invalid_api_key");
+        assert.equal(runEnd.payload["failureRecoverability"], "non_recoverable");
+        assert.equal(runEnd.payload["resumable"], false);
+        assert.doesNotMatch(String(runEnd.payload["failureMessage"]), /sk-testsecret123456789/);
+
+        const storedRun = st.runs()[0]!;
+        const rateStage = storedRun.stages.find((stage) => stage.name === "rate-limited")!;
+        const authStage = storedRun.stages.find((stage) => stage.name === "bad-key")!;
+        assert.equal(rateStage.failureKind, "rate_limit");
+        assert.equal(authStage.failureKind, "auth");
+        assert.equal(storedRun.failedStageId, authStage.id);
+        assert.equal(storedRun.failureKind, "auth");
+        assert.equal(storedRun.failureCode, "invalid_api_key");
+        assert.equal(storedRun.resumable, false);
+    });
+
+    for (const scenario of [
+        {
+            name: "auth",
+            message: "No API key found for provider",
+            expectedError: WORKFLOW_AUTH_FAILURE_MESSAGE,
+        },
+        {
+            name: "rate_limit",
+            message: "provider returned 429 rate limit",
+            expectedError: "provider returned 429 rate limit",
+        },
+        {
+            name: "provider",
+            message: "service unavailable 503",
+            expectedError: "service unavailable 503",
+        },
+    ] as const) {
+        test(`recoverable ${scenario.name} prompt failure finalizes failed without persistence`, async () => {
+            const st = createStore();
+
+            const def = defineWorkflow(`recoverable-${scenario.name}-live-only-prompt-wf`)
+                .run(async (ctx) => {
+                    await ctx.stage("blocked").prompt("x");
+                    return {};
+                })
+                .compile();
+
+            const wfResult = await run(
+                def,
+                {},
+                {
+                    adapters: {
+                        prompt: {
+                            prompt: async () => {
+                                throw new Error(scenario.message);
+                            },
+                        },
+                    },
+                    store: st,
+                },
+            );
+
+            assert.equal(wfResult.status, "failed");
+            assert.equal(wfResult.error, scenario.expectedError);
+            const storedRun = st.runs()[0]!;
+            const failedStage = storedRun.stages[0]!;
+            assert.equal(storedRun.status, "failed");
+            assert.equal(typeof storedRun.endedAt, "number");
+            assert.equal(storedRun.error, scenario.expectedError);
+            assert.equal(storedRun.failureKind, scenario.name);
+            assert.equal(storedRun.failureMessage, scenario.message);
+            assert.equal(storedRun.failedStageId, failedStage.id);
+            assert.equal(storedRun.resumable, true);
+            assert.equal(failedStage.status, "failed");
+            assert.equal(failedStage.failureKind, scenario.name);
+        });
+    }
+
+    test("recoverable provider terminal assistant failure finalizes failed without persistence", async () => {
+        const st = createStore();
+
+        const def = defineWorkflow("recoverable-provider-live-only-wf")
+            .run(async (ctx) => {
+                await ctx.stage("blocked").prompt("x");
+                return {};
+            })
+            .compile();
+
+        const wfResult = await run(
+            def,
+            {},
+            {
+                adapters: {
+                    agentSession: {
+                        async create() {
+                            const messages: AgentSession["messages"] = [] as AgentSession["messages"];
+                            return {
+                                ...mockSession(),
+                                messages,
+                                async prompt() {
+                                    messages.push({
+                                        role: "assistant",
+                                        content: [{ type: "text", text: "service unavailable 503" }],
+                                        stopReason: "error",
+                                        status: 503,
+                                    } as never);
+                                },
+                            };
+                        },
+                    },
+                },
+                store: st,
+            },
+        );
+
+        assert.equal(wfResult.status, "failed");
+        const storedRun = st.runs()[0]!;
+        assert.equal(storedRun.status, "failed");
+        assert.equal(typeof storedRun.endedAt, "number");
+        assert.equal(storedRun.failureKind, "provider");
+        assert.equal(storedRun.resumable, true);
     });
 
     test("fail-fast skipped queued parallel stages persist start before end", async () => {
@@ -6449,6 +6758,102 @@ describe("executor — stage-control registry integration", () => {
             },
         };
     };
+
+    test("readiness gate bypasses confirmation for ask_user_question chat answers", async () => {
+        const events: string[] = [];
+        const registry = createStageControlRegistry();
+        let ids: { runId: string; stageId: string } | undefined;
+        const listeners = new Set<
+            (event: { type: string; [key: string]: unknown }) => void
+        >();
+        const emit = (event: { type: string; [key: string]: unknown }): void => {
+            for (const listener of [...listeners]) listener(event);
+        };
+        const session: StageSessionRuntime = {
+            ...mockSession(),
+            async prompt(text: string) {
+                if (text.includes("ask the user")) {
+                    events.push("ask-chat");
+                    emit({
+                        type: "tool_execution_start",
+                        toolCallId: "chat-call",
+                        toolName: "ask_user_question",
+                    });
+                    emit({
+                        type: "tool_execution_end",
+                        toolCallId: "chat-call",
+                        toolName: "ask_user_question",
+                        result: {
+                            details: {
+                                answers: [{ kind: "chat", answer: "Chat about this" }],
+                                cancelled: false,
+                            },
+                        },
+                    });
+                    emit({ type: "agent_end", messages: [] });
+                    setTimeout(() => {
+                        if (ids) void registry.get(ids.runId, ids.stageId)?.prompt("follow-up");
+                    }, 0);
+                    return;
+                }
+                events.push(`turn:${text}`);
+                emit({ type: "agent_end", messages: [] });
+            },
+            subscribe(listener) {
+                listeners.add(
+                    listener as (event: {
+                        type: string;
+                        [key: string]: unknown;
+                    }) => void,
+                );
+                return () => {
+                    listeners.delete(
+                        listener as (event: {
+                            type: string;
+                            [key: string]: unknown;
+                        }) => void,
+                    );
+                };
+            },
+        };
+        const def = defineWorkflow("readiness-gate-chat-bypass-wf")
+            .run(async (ctx) => {
+                await ctx.stage("first").prompt("ask the user");
+                return {};
+            })
+            .compile();
+        const store = createStore();
+        let confirmCalls = 0;
+
+        const result = await run(
+            def,
+            {},
+            {
+                adapters: {
+                    agentSession: {
+                        async create() {
+                            return session;
+                        },
+                    },
+                },
+                store,
+                stageControlRegistry: registry,
+                onStageStart: (runId, stage) => {
+                    if (stage.name === "first" && stage.startedAt === undefined) {
+                        ids = { runId, stageId: stage.id };
+                    }
+                },
+                confirmStageReadiness: async () => {
+                    confirmCalls += 1;
+                    return true;
+                },
+            },
+        );
+
+        assert.equal(result.status, "completed");
+        assert.equal(confirmCalls, 0);
+        assert.deepEqual(events, ["ask-chat", "turn:follow-up"]);
+    });
 
     test("readiness gate auto-advances a turn with no question and gates a turn that asked", async () => {
         const events: string[] = [];

@@ -59,6 +59,10 @@ type PruneToLimitOptions = {
 	protectIds?: readonly string[];
 };
 
+type BeforeRestoreSafety =
+	| { kind: "created"; checkpointId: string }
+	| { kind: "deduped-existing"; checkpointId: string };
+
 export class RewindCoordinator {
 	private readonly engine: CheckpointEngine;
 	private settings: RewindSettings;
@@ -195,6 +199,7 @@ export class RewindCoordinator {
 		if (!this.available) return { ok: false, error: "NotGitRepository" };
 		const restoreState = this.engine.getCurrentRestoreState(this.snapshotPolicy());
 		if (!restoreState.ok) return restoreState;
+		this.preserveInitialRestoreStateIfMissing(restoreState.value);
 		const tokenId = `bash-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		this.pendingInteractiveBashBaseline = {
 			tokenId,
@@ -290,36 +295,34 @@ export class RewindCoordinator {
 		const target = this.engine.loadCheckpoint(id);
 		if (!target.ok) return target;
 
-		const safety = this.createCheckpoint(
-			{
-				trigger: "before-restore",
-				turnIndex: input.turnIndex,
-				leafEntryId: input.leafEntryId ?? null,
-				description: `Before rewind to ${id}`,
-				toolNames: [],
-			},
-			{ prune: false },
-		);
-		if (!safety.ok) {
-			if (safety.error !== "SnapshotUnchanged" || this.checkpoints.length === 0) {
-				return { ok: false, error: safety.error, message: safety.message };
-			}
-		}
+		const eligible = this.engine.checkRestoreEligibility(id);
+		if (!eligible.ok) return eligible;
 
-		const safetyId = safety.ok ? safety.value.id : undefined;
+		const safety = this.resolveBeforeRestoreSafety({
+			trigger: "before-restore",
+			turnIndex: input.turnIndex,
+			leafEntryId: input.leafEntryId ?? null,
+			description: `Before rewind to ${id}`,
+			toolNames: [],
+		});
+		if (!safety.ok) return safety;
+		const safetyInfo = safety.value;
+
 		const restored = this.engine.restoreCheckpoint(id, this.snapshotPolicy());
 		if (!restored.ok) {
 			if (restored.error === "NotGitRepository" || restored.error === "GitUnavailable") {
 				this.available = false;
 				this.setStatus({ state: "unavailable", checkpointCount: 0, message: restored.error });
+			} else if (restored.error === "RestoreFailed") {
+				this.refreshAfterRestoreAttempt([target.value.id, safetyInfo.checkpointId]);
 			} else {
-				const protectIds = restored.error === "RestoreFailed" && safetyId !== undefined ? [target.value.id, safetyId] : [target.value.id];
-				this.refreshAfterRestoreAttempt(protectIds);
+				this.discardTransientRestoreSafety(safetyInfo);
+				this.refreshAfterRestoreAttempt();
 			}
 			return restored;
 		}
 		this.postRestoreBaseline = restoreStateIdentity(restored.value.checkpoint);
-		this.refreshAfterRestoreAttempt(this.successfulRestoreProtectIds(target.value.id, safetyId));
+		this.refreshAfterRestoreAttempt(this.successfulRestoreProtectIds(target.value.id, safetyInfo.checkpointId));
 		return restored;
 	}
 
@@ -395,8 +398,27 @@ export class RewindCoordinator {
 		return this.engine.isCurrentRestoreStateDirty(this.snapshotPolicy());
 	}
 
-	private successfulRestoreProtectIds(targetId: string, safetyId: string | undefined): string[] {
-		if (safetyId === undefined) return [targetId];
+	private preserveInitialRestoreStateIfMissing(restoreState: RestoreStateIdentity): void {
+		if (this.initialRestoreState !== null) return;
+		this.initialRestoreState = restoreState;
+	}
+
+	private resolveBeforeRestoreSafety(request: CheckpointRequest & { trigger: "before-restore" }): Result<BeforeRestoreSafety> {
+		const safety = this.createCheckpoint(request, { prune: false });
+		if (safety.ok) return { ok: true, value: { kind: "created", checkpointId: safety.value.id } };
+		if (safety.error === "SnapshotUnchanged") {
+			const latest = this.checkpoints[0];
+			if (latest !== undefined) return { ok: true, value: { kind: "deduped-existing", checkpointId: latest.id } };
+		}
+		return { ok: false, error: safety.error, message: safety.message };
+	}
+
+	private discardTransientRestoreSafety(safety: BeforeRestoreSafety): void {
+		if (safety.kind !== "created") return;
+		this.engine.deleteCheckpoint(safety.checkpointId);
+	}
+
+	private successfulRestoreProtectIds(targetId: string, safetyId: string): string[] {
 		if (this.settings.maxCheckpoints <= 1) return [safetyId];
 		return [safetyId, targetId];
 	}

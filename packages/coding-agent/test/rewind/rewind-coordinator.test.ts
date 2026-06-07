@@ -374,6 +374,57 @@ describe("RewindCoordinator", () => {
 		expect(coordinator.getStatus()).toMatchObject({ state: "ready", checkpointCount: 0 });
 	});
 
+	it("dedupes a no-op turn after first read-only interactive bash against the prepared baseline", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		const command = "git status --short";
+		const leafEntryId = "leaf-dirty-readonly";
+		const engine = new CheckpointEngine({ cwd: repo, sessionId: "session-1" });
+		writeFileSync(join(repo, "file.txt"), "stale checkpoint\n");
+		const stale = engine.createCheckpoint({ trigger: "turn", leafEntryId: "leaf-stale" });
+		expect(stale.ok).toBe(true);
+		if (!stale.ok) throw new Error(stale.error);
+		writeFileSync(join(repo, "file.txt"), "dirty before bash\n");
+		const coordinator = new RewindCoordinator({ cwd: repo, sessionId: "session-1", settings: defaultSettings });
+
+		const prepared = coordinator.prepareInteractiveBashCheckpoint({ command, turnIndex: 1, leafEntryId });
+		expect(prepared).toMatchObject({ ok: true, value: expect.objectContaining({ tokenId: expect.any(String) }) });
+
+		const checkpointed = coordinator.checkpointInteractiveBashResult({
+			command,
+			result: bashResult(" M file.txt\n"),
+			turnIndex: 1,
+			leafEntryId,
+		});
+		expect(checkpointed).toMatchObject({ ok: true, value: null });
+		expect(coordinator.initialize({ turnIndex: 1, leafEntryId: "leaf-start" })).toMatchObject({ ok: true, value: null });
+
+		coordinator.startTurn();
+		coordinator.observeToolExecutionEnd({ toolName: "write" });
+		const finalized = coordinator.finalizeTurnCheckpoint({ turnIndex: 2, leafEntryId: "leaf-noop-after-bash" });
+
+		expect(finalized).toMatchObject({ ok: true, value: null });
+		const listed = coordinator.listCheckpoints();
+		expect(listed.ok).toBe(true);
+		if (!listed.ok) throw new Error(listed.error);
+		expect(listed.value).toEqual([expect.objectContaining({ id: stale.value.id, leafEntryId: "leaf-stale" })]);
+	});
+
+	it("creates a first normal mutating-turn checkpoint without interactive bash", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		const coordinator = new RewindCoordinator({ cwd: repo, sessionId: "session-1", settings: defaultSettings });
+		writeFileSync(join(repo, "file.txt"), "normal first mutation\n");
+
+		coordinator.startTurn();
+		coordinator.observeToolExecutionEnd({ toolName: "write" });
+		const finalized = coordinator.finalizeTurnCheckpoint({ turnIndex: 1, leafEntryId: "leaf-first-normal" });
+
+		const checkpoint = expectCreatedCheckpoint(finalized);
+		expect(checkpoint).toMatchObject({ trigger: "turn", toolNames: ["write"], leafEntryId: "leaf-first-normal" });
+		expect(coordinator.listCheckpoints()).toMatchObject({ ok: true, value: [expect.objectContaining({ id: checkpoint.id })] });
+	});
+
 	it("creates a first interactive bash checkpoint for a dirty mutating command", () => {
 		const repo = tempRepo();
 		cleanup.push(repo);
@@ -756,6 +807,40 @@ describe("RewindCoordinator", () => {
 		]);
 	});
 
+	it("keeps a deduped latest safety checkpoint at maxCheckpoints 1 and can undo", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		const engine = new CheckpointEngine({ cwd: repo, sessionId: "session-1" });
+		writeFileSync(join(repo, "file.txt"), "older target\n");
+		const target = engine.createCheckpoint({ trigger: "turn", turnIndex: 1, leafEntryId: "leaf-target" });
+		expect(target.ok).toBe(true);
+		if (!target.ok) throw new Error(target.error);
+		waitPastTimestamp();
+		writeFileSync(join(repo, "file.txt"), "latest pre-restore\n");
+		const latest = engine.createCheckpoint({ trigger: "turn", turnIndex: 2, leafEntryId: "leaf-latest" });
+		expect(latest.ok).toBe(true);
+		if (!latest.ok) throw new Error(latest.error);
+		const coordinator = new RewindCoordinator({
+			cwd: repo,
+			sessionId: "session-1",
+			settings: settingsWithoutSessionStart({ maxCheckpoints: 1 }),
+		});
+
+		const restored = coordinator.restoreFilesToCheckpoint(target.value.id, { turnIndex: 3, leafEntryId: "leaf-restore" });
+
+		expect(restored.ok).toBe(true);
+		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("older target\n");
+		const listed = coordinator.listCheckpoints();
+		expect(listed.ok).toBe(true);
+		if (!listed.ok) throw new Error(listed.error);
+		expect(listed.value).toEqual([expect.objectContaining({ id: latest.value.id, leafEntryId: "leaf-latest" })]);
+		expect(checkpointRefCount(repo, "session-1")).toBe(1);
+
+		const undo = coordinator.restoreFilesToCheckpoint(latest.value.id, { turnIndex: 4, leafEntryId: "leaf-undo" });
+		expect(undo.ok).toBe(true);
+		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("latest pre-restore\n");
+	});
+
 	it("does not create or retain a safety checkpoint for a missing restore target", () => {
 		const repo = tempRepo();
 		cleanup.push(repo);
@@ -810,6 +895,47 @@ describe("RewindCoordinator", () => {
 		expect(listed.value).toEqual([expect.objectContaining({ id: target.id, trigger: "turn", leafEntryId: "leaf-target" })]);
 		expect(listed.value.some((checkpoint) => checkpoint.trigger === "before-restore")).toBe(false);
 		expect(coordinator.getStatus()).toMatchObject({ state: "ready", checkpointCount: 1 });
+	});
+
+	it("keeps existing checkpoints and no transient safety for preflight refusal at maxCheckpoints 2", () => {
+		const repo = tempRepo();
+		cleanup.push(repo);
+		const coordinator = new RewindCoordinator({
+			cwd: repo,
+			sessionId: "session-1",
+			settings: settingsWithoutSessionStart({ maxCheckpoints: 2 }),
+		});
+		writeFileSync(join(repo, "file.txt"), "target\n");
+		coordinator.startTurn();
+		coordinator.observeToolExecutionEnd({ toolName: "write" });
+		const target = expectCreatedCheckpoint(coordinator.finalizeTurnCheckpoint({ turnIndex: 1, leafEntryId: "leaf-target" }));
+		waitPastTimestamp();
+		writeFileSync(join(repo, "file.txt"), "newer\n");
+		coordinator.startTurn();
+		coordinator.observeToolExecutionEnd({ toolName: "write" });
+		const newer = expectCreatedCheckpoint(coordinator.finalizeTurnCheckpoint({ turnIndex: 2, leafEntryId: "leaf-newer" }));
+		waitPastTimestamp();
+		writeFileSync(join(repo, "file.txt"), "move head\n");
+		git(repo, ["add", "file.txt"]);
+		git(repo, ["commit", "-m", "move head"]);
+		writeFileSync(join(repo, "file.txt"), "before refused restore\n");
+
+		const restored = coordinator.restoreFilesToCheckpoint(target.id, { turnIndex: 3, leafEntryId: "leaf-refused" });
+
+		expect(restored).toMatchObject({ ok: false, error: "HeadMoved" });
+		expect(readFileSync(join(repo, "file.txt"), "utf8")).toBe("before refused restore\n");
+		const listed = coordinator.listCheckpoints();
+		expect(listed.ok).toBe(true);
+		if (!listed.ok) throw new Error(listed.error);
+		expect(listed.value).toHaveLength(2);
+		expect(listed.value).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: target.id, trigger: "turn", leafEntryId: "leaf-target" }),
+				expect.objectContaining({ id: newer.id, trigger: "turn", leafEntryId: "leaf-newer" }),
+			]),
+		);
+		expect(listed.value.some((checkpoint) => checkpoint.trigger === "before-restore")).toBe(false);
+		expect(coordinator.getStatus()).toMatchObject({ state: "ready", checkpointCount: 2 });
 	});
 
 	it("dedupes no-op mutating turns against the restored target after restore", () => {

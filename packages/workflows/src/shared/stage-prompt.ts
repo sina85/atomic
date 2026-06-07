@@ -73,6 +73,17 @@ function normalizeLabel(value: string): string {
   return value.trim().toLowerCase();
 }
 
+const CHAT_ABOUT_THIS_LABEL = "Chat about this";
+const CHAT_ABOUT_THIS_NORMALIZED = normalizeLabel(CHAT_ABOUT_THIS_LABEL);
+
+function isChatSentinel(value: string): boolean {
+  return normalizeLabel(value) === CHAT_ABOUT_THIS_NORMALIZED;
+}
+
+function chatAnswer(question: StageInputQuestion): BuiltAnswer {
+  return { questionIndex: 0, question: question.question, kind: "chat", answer: CHAT_ABOUT_THIS_LABEL };
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -245,6 +256,7 @@ export function parseAskUserQuestionArgs(
  * falls back to a typed ("custom") answer.
  */
 function answerSingle(question: StageInputQuestion, desired: string): BuiltAnswer {
+  if (isChatSentinel(desired)) return chatAnswer(question);
   const normalized = normalizeLabel(desired);
   const byLabel = question.options.find((option) => normalizeLabel(option.label) === normalized);
   if (byLabel) {
@@ -264,6 +276,7 @@ function answerSingle(question: StageInputQuestion, desired: string): BuiltAnswe
 }
 
 function answerMulti(question: StageInputQuestion, candidates: readonly string[]): BuiltAnswer {
+  if (candidates.some(isChatSentinel)) return chatAnswer(question);
   const selected: string[] = [];
   for (const candidate of candidates) {
     const normalized = normalizeLabel(candidate);

@@ -5,6 +5,7 @@ import {
   buildModelCandidateIds,
   buildModelCandidatesFromCatalog,
   splitReasoningSuffix,
+  errorMessage,
   isRetryableModelFailure,
   validateWorkflowModels,
   WorkflowModelValidationError,
@@ -293,10 +294,93 @@ describe("model fallback helpers", () => {
     ]);
   });
 
+  test("errorMessage formats structured provider objects without exposing raw object strings", () => {
+    const message = errorMessage({
+      status: 429,
+      response: {
+        body: {
+          error: {
+            message: "rate limit exceeded",
+            type: "rate_limit_error",
+          },
+        },
+      },
+      diagnostics: [
+        {
+          error: {
+            code: "insufficient_quota",
+            message: "quota exhausted",
+          },
+        },
+      ],
+    });
+
+    assert.match(message, /429/);
+    assert.match(message, /rate limit exceeded/);
+    assert.match(message, /rate_limit_error/);
+    assert.match(message, /quota exhausted/);
+    assert.doesNotMatch(message, /\[object Object\]/);
+  });
+
+  test("errorMessage preserves Error.message priority over structured provider fields", () => {
+    const err = new Error("sdk wrapped provider failure");
+    Object.assign(err, {
+      status: 429,
+      response: { body: { error: { message: "inner rate limit" } } },
+    });
+
+    assert.equal(errorMessage(err), "sdk wrapped provider failure");
+  });
+
+  test("errorMessage uses a bounded non-raw fallback for object values with no structured fields", () => {
+    assert.equal(errorMessage({ provider: { raw: "redacted" } }), "unknown provider error");
+  });
+
   test("retry classifier accepts provider failures but rejects task failures", () => {
     assert.equal(isRetryableModelFailure("429 rate limit exceeded"), true);
     assert.equal(isRetryableModelFailure("model not found"), true);
+    assert.equal(isRetryableModelFailure("401"), true);
+    assert.equal(isRetryableModelFailure("403"), true);
+    assert.equal(isRetryableModelFailure("500"), true);
+    assert.equal(isRetryableModelFailure("501"), true);
+    assert.equal(isRetryableModelFailure("520"), true);
+    assert.equal(isRetryableModelFailure("529"), true);
+    assert.equal(isRetryableModelFailure("599"), true);
+    assert.equal(isRetryableModelFailure("provider returned 520"), true);
+    assert.equal(isRetryableModelFailure("provider returned 529"), true);
+    assert.equal(isRetryableModelFailure("provider returned 599"), true);
     assert.equal(isRetryableModelFailure("command failed: bun test"), false);
+    assert.equal(isRetryableModelFailure("tool call failed with 503"), false);
+    assert.equal(isRetryableModelFailure("aborted after provider returned 503"), false);
+    assert.equal(isRetryableModelFailure("missing file from 503 response"), false);
     assert.equal(isRetryableModelFailure("user cancelled"), false);
+  });
+
+  test("retry classifier traverses nested diagnostics before accepting provider/auth/rate-limit codes", () => {
+    const retryableNested = {
+      message: "outer provider failure",
+      diagnostics: [
+        {
+          response: {
+            body: {
+              error: { status: 403 },
+            },
+          },
+        },
+      ],
+    };
+    assert.equal(isRetryableModelFailure(retryableNested), true);
+
+    const localFailure = {
+      message: "command failed after provider returned 503",
+      response: { status: 503 },
+    };
+    assert.equal(isRetryableModelFailure(localFailure), false);
+
+    const localFileFailure = {
+      message: "missing file after provider returned 599",
+      response: { status: 599 },
+    };
+    assert.equal(isRetryableModelFailure(localFileFailure), false);
   });
 });

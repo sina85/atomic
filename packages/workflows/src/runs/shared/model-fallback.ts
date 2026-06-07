@@ -63,6 +63,17 @@ function formatModelValidationError(failures: readonly ModelResolutionFailure[])
   return lines.join("\n");
 }
 
+function invalidFallbackThinkingLevelFailure(
+  input: string,
+  index: number,
+  level: string,
+): ModelResolutionFailure {
+  return {
+    input,
+    reason: `invalid fallbackThinkingLevels[${index}] "${level}"; expected one of ${WORKFLOW_THINKING_LEVELS.join(", ")}`,
+  };
+}
+
 function isModelObject(value: WorkflowModelValue): value is NonNullable<CreateAgentSessionOptions["model"]> {
   return typeof value !== "string";
 }
@@ -182,7 +193,9 @@ export function buildModelCandidates(input: {
     const compatLevel = input.fallbackThinkingLevels?.[index];
     if (split.level === undefined && compatLevel !== undefined) {
       if (!WORKFLOW_THINKING_LEVEL_SET.has(compatLevel)) {
-        throw new WorkflowModelValidationError([{ input: trimmedFallback, reason: `invalid fallbackThinkingLevels[${index}] "${compatLevel}"; expected one of ${WORKFLOW_THINKING_LEVELS.join(", ")}` }]);
+        throw new WorkflowModelValidationError([
+          invalidFallbackThinkingLevelFailure(trimmedFallback, index, compatLevel),
+        ]);
       }
       rawValues.push(`${trimmedFallback}:${compatLevel}`);
     } else {
@@ -308,7 +321,7 @@ export async function validateWorkflowModels(input: {
 const RETRYABLE_MODEL_FAILURE_PATTERNS: readonly RegExp[] = [
   /rate\s*limit/i,
   /too\s*many\s*requests/i,
-  /\b429\b/,
+  /\b(?:401|403|429|5\d{2})\b/,
   /quota/i,
   /billing/i,
   /credit/i,
@@ -327,12 +340,12 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS: readonly RegExp[] = [
   /upstream/i,
   /timeout/i,
   /timed\s*out/i,
-  /\b50[234]\b/,
 ];
 
 const NON_RETRYABLE_FAILURE_PATTERNS: readonly RegExp[] = [
   /command failed/i,
   /tests? failed/i,
+  /tool(?:\s+call)?\s+failed/i,
   /shell/i,
   /missing file/i,
   /no such file/i,
@@ -342,15 +355,120 @@ const NON_RETRYABLE_FAILURE_PATTERNS: readonly RegExp[] = [
   /interrupted/i,
 ];
 
+function isRetryableFailureCode(code: number): boolean {
+  return code === 401 || code === 403 || code === 429 || (code >= 500 && code <= 599);
+}
+
+const MODEL_FAILURE_SIGNAL_MAX_DEPTH = 8;
+const MODEL_FAILURE_TEXT_KEYS = [
+  "message",
+  "errorMessage",
+  "statusText",
+  "code",
+  "status",
+  "statusCode",
+  "httpStatus",
+  "name",
+  "type",
+  "stopReason",
+] as const;
+const MODEL_FAILURE_NESTED_KEYS = ["diagnostics", "cause", "error", "response", "body"] as const;
+const MODEL_FAILURE_CODE_KEYS = ["status", "statusCode", "httpStatus", "code"] as const;
+const MODEL_FAILURE_DISPLAY_MAX_PARTS = 12;
+
+function structuredErrorMessage(error: unknown): string | undefined {
+  const uniqueTexts: string[] = [];
+  const seen = new Set<string>();
+  for (const text of collectFailureTexts(error)) {
+    if (seen.has(text)) continue;
+    seen.add(text);
+    uniqueTexts.push(text);
+    if (uniqueTexts.length >= MODEL_FAILURE_DISPLAY_MAX_PARTS) break;
+  }
+  return uniqueTexts.length > 0 ? uniqueTexts.join(", ") : undefined;
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
+  const structured = structuredErrorMessage(error);
+  if (structured !== undefined) return structured;
+  if (error !== null && typeof error === "object") return "unknown provider error";
   return String(error);
 }
 
-export function isRetryableModelFailure(error: string | Error | undefined): boolean {
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function integerFrom(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value !== "string" || value.trim().length === 0) return undefined;
+  const parsed = Number(value.trim());
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function nestedSignalValues(value: unknown): readonly unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  if (record === undefined) return [];
+  const nested: unknown[] = [];
+  for (const key of MODEL_FAILURE_NESTED_KEYS) {
+    const item = key === "cause" && value instanceof Error ? value.cause : record[key];
+    if (item !== undefined && item !== null) nested.push(item);
+  }
+  return nested;
+}
+
+function collectFailureTexts(value: unknown, seen = new Set<unknown>(), depth = 0): readonly string[] {
+  if (value === undefined || value === null || depth > MODEL_FAILURE_SIGNAL_MAX_DEPTH) return [];
+  if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+  if (typeof value === "number") return [String(value)];
+  if (typeof value !== "object") return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  const texts: string[] = [];
+  if (value instanceof Error && value.message.trim()) texts.push(value.message.trim());
+  const record = asRecord(value);
+  if (record !== undefined) {
+    for (const key of MODEL_FAILURE_TEXT_KEYS) {
+      const field = record[key];
+      if (typeof field === "string" && field.trim()) texts.push(field.trim());
+      else if (typeof field === "number") texts.push(String(field));
+    }
+  }
+  for (const nested of nestedSignalValues(value)) {
+    texts.push(...collectFailureTexts(nested, seen, depth + 1));
+  }
+  return texts;
+}
+
+function hasRetryableStructuredSignal(value: unknown, seen = new Set<unknown>(), depth = 0): boolean {
+  if (value === undefined || value === null || depth > MODEL_FAILURE_SIGNAL_MAX_DEPTH) return false;
+  const directCode = integerFrom(value);
+  if (directCode !== undefined && isRetryableFailureCode(directCode)) return true;
+  if (typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+
+  const record = asRecord(value);
+  if (record !== undefined) {
+    for (const key of MODEL_FAILURE_CODE_KEYS) {
+      const code = integerFrom(record[key]);
+      if (code !== undefined && isRetryableFailureCode(code)) return true;
+    }
+  }
+  for (const nested of nestedSignalValues(value)) {
+    if (hasRetryableStructuredSignal(nested, seen, depth + 1)) return true;
+  }
+  return false;
+}
+
+export function isRetryableModelFailure(error: unknown): boolean {
   if (error === undefined) return false;
-  const message = typeof error === "string" ? error : error.message;
-  if (!message.trim()) return false;
-  if (NON_RETRYABLE_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) return false;
-  return RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(message));
+  const texts = collectFailureTexts(error);
+  if (texts.length === 0) return false;
+  if (texts.some((text) => NON_RETRYABLE_FAILURE_PATTERNS.some((pattern) => pattern.test(text)))) return false;
+  if (hasRetryableStructuredSignal(error)) return true;
+  return texts.some((text) => RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(text)));
 }
