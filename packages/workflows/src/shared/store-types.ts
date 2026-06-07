@@ -17,9 +17,19 @@ export type StageStatus =
   | "skipped";
 
 export type WorkflowFailureKind = "auth" | "rate_limit" | "provider" | "cancelled" | "unknown";
-export type WorkflowFailureCode = string;
 export type WorkflowFailureRecoverability = "recoverable" | "non_recoverable" | "unknown";
-export type WorkflowFailureDisposition = "active_blocked" | "terminal_failed" | "terminal_killed";
+export type WorkflowFailureDisposition = "active_blocked" | "terminal_killed" | "terminal_failed";
+export type WorkflowFailureCode =
+  | "login_required"
+  | "missing_api_key"
+  | "invalid_api_key"
+  | "forbidden_config"
+  | "unknown_model"
+  | "rate_limited"
+  | "quota_limited"
+  | "provider_unavailable"
+  | "cancelled"
+  | "unknown";
 
 /**
  * Human-in-the-loop prompt kind. Mirrors the four `WorkflowUIContext` methods.
@@ -130,16 +140,16 @@ export interface StageSnapshot {
   error?: string;
   /** Structured workflow failure category for failed stages. */
   failureKind?: WorkflowFailureKind;
-  /** Specific redacted workflow failure code, when known. */
+  /** Specific additive workflow failure code within `failureKind`. */
   failureCode?: WorkflowFailureCode;
-  /** Recoverability classification for failed stages. */
+  /** Whether retry/resume can recover this failed stage without a workflow rerun. */
   failureRecoverability?: WorkflowFailureRecoverability;
-  /** Lifecycle disposition for failed stages. */
+  /** Executor lifecycle disposition chosen for the failed stage. */
   failureDisposition?: WorkflowFailureDisposition;
-  /** Redacted diagnostic text when different from `error`. */
-  failureMessage?: string;
-  /** Provider retry hint in milliseconds, when available. */
+  /** Optional provider retry hint in milliseconds. Informational; blocked stages resume only via explicit user action. */
   retryAfterMs?: number;
+  /** Original unsanitized error text when different from `error`. */
+  failureMessage?: string;
   /** Reason for stages skipped by fail-fast/cascade handling. */
   skippedReason?: string;
   /** Stable continuation replay identity, separate from display name. */
@@ -229,18 +239,18 @@ export interface RunSnapshot {
   error?: string;
   /** Structured workflow failure category for failed runs. */
   failureKind?: WorkflowFailureKind;
-  /** Specific redacted workflow failure code, when known. */
+  /** Specific additive workflow failure code within `failureKind`. */
   failureCode?: WorkflowFailureCode;
-  /** Recoverability classification for failed runs. */
+  /** Whether retry/resume can recover this run without a workflow rerun. */
   failureRecoverability?: WorkflowFailureRecoverability;
-  /** Lifecycle disposition for failed/blocked runs. */
+  /** Executor lifecycle disposition chosen for this failure. */
   failureDisposition?: WorkflowFailureDisposition;
-  /** Redacted diagnostic text when different from `error`. */
-  failureMessage?: string;
-  /** Provider retry hint in milliseconds, when available. */
+  /** Optional provider retry hint in milliseconds. Informational; blocked runs resume only via explicit user action. */
   retryAfterMs?: number;
-  /** Timestamp when a recoverable workflow block was recorded. */
+  /** Timestamp when an active run was blocked by a recoverable workflow failure. */
   blockedAt?: number;
+  /** Original unsanitized error text when different from `error`. */
+  failureMessage?: string;
   failedStageId?: string;
   resumable?: boolean;
   /** Parent workflow run when this snapshot is an internal child workflow run. Hidden from top-level status lists. */

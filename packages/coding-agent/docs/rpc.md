@@ -378,6 +378,37 @@ Response:
 }
 ```
 
+#### context_compact
+
+Run deletion-only context compaction. This command has no prompt/config fields; send no custom instructions. Atomic asks the selected model for deletion targets using a fixed internal prompt, validates them, appends a `context_compaction` entry, and rebuilds active context.
+
+```json
+{"type": "context_compact"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "context_compact",
+  "success": true,
+  "data": {
+    "promptVersion": 1,
+    "deletedTargets": [{ "kind": "entry", "entryId": "abc123" }],
+    "protectedEntryIds": ["user-task-entry"],
+    "stats": {
+      "objectsBefore": 20,
+      "objectsAfter": 19,
+      "objectsDeleted": 1,
+      "tokensBefore": 150000,
+      "tokensAfter": 120000,
+      "percentReduction": 20
+    },
+    "backupPath": "/path/to/session.jsonl.2026-06-06T00-00-00-000Z.context-compact.bak"
+  }
+}
+```
+
 #### set_auto_compaction
 
 Enable or disable automatic compaction when context is nearly full.
@@ -455,7 +486,7 @@ If output was truncated, includes `fullOutputPath`:
     "exitCode": 0,
     "cancelled": false,
     "truncated": true,
-    "fullOutputPath": "/tmp/pi-bash-abc123.log"
+    "fullOutputPath": "/tmp/atomic-bash-abc123.log"
   }
 }
 ```
@@ -756,8 +787,10 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `tool_execution_update` | Tool execution progress (streaming output) |
 | `tool_execution_end` | Tool completes |
 | `queue_update` | Pending steering/follow-up queue changed |
-| `compaction_start` | Compaction begins |
-| `compaction_end` | Compaction completes |
+| `compaction_start` | Summary compaction begins |
+| `compaction_end` | Summary compaction completes |
+| `context_compaction_start` | Deletion-only context compaction begins |
+| `context_compaction_end` | Deletion-only context compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
 | `extension_error` | Extension threw an error |
@@ -935,6 +968,10 @@ If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
 If compaction failed (e.g., API quota exceeded), `result` is `null`, `aborted` is `false`, and `errorMessage` contains the error description.
+
+### context_compaction_start / context_compaction_end
+
+Emitted for `/context-compact` and RPC `context_compact`. The shape mirrors manual compaction events, but `reason` is always `"manual"` and the `result` contains `deletedTargets`, `protectedEntryIds`, `stats`, `promptVersion`, and optional `backupPath` instead of a summary.
 
 ### auto_retry_start / auto_retry_end
 
@@ -1199,9 +1236,9 @@ Parse errors:
 
 ## Types
 
-Source files:
-- [`packages/ai/src/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
-- [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/agent/src/types.ts) - `AgentMessage`, `AgentEvent`
+Source files and installed definitions:
+- `node_modules/@earendil-works/pi-ai/dist/types.d.ts` - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
+- `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts` - `AgentMessage`, `AgentEvent`
 - [`src/core/messages.ts`](https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/src/core/messages.ts) - `BashExecutionMessage`
 - [`src/modes/rpc/rpc-types.ts`](https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/src/modes/rpc/rpc-types.ts) - RPC command/response types, extension UI request/response types
 
@@ -1233,8 +1270,7 @@ Source files:
 {
   "role": "user",
   "content": "Hello!",
-  "timestamp": 1733234567890,
-  "attachments": []
+  "timestamp": 1733234567890
 }
 ```
 

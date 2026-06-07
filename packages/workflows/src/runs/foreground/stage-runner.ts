@@ -241,57 +241,71 @@ function lastAssistantTextFromMessages(messages: AgentSession["messages"]): stri
   return undefined;
 }
 
-type AssistantTerminalFailureMessage = MessageWithTextContent & {
-  readonly role?: string;
-  readonly stopReason?: string;
-  readonly errorMessage?: unknown;
-  readonly code?: unknown;
-  readonly status?: unknown;
-  readonly diagnostics?: unknown;
-};
+function messageStopReason(message: AgentSession["messages"][number]): string | undefined {
+  const record = message as { readonly stopReason?: unknown };
+  return typeof record.stopReason === "string" ? record.stopReason : undefined;
+}
 
-function diagnosticText(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number") return String(value);
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const parts: string[] = [];
-    for (const key of ["code", "status", "message", "error", "type"] as const) {
-      const part = record[key];
-      if ((typeof part === "string" && part.trim()) || typeof part === "number") {
-        parts.push(`${key}: ${String(part)}`);
-      }
+function normalizedStopReason(stopReason: string | undefined): string | undefined {
+  return stopReason?.toLowerCase().replace(/[_-]+/g, "");
+}
+
+function isTerminalAssistantFailureStopReason(stopReason: string | undefined): boolean {
+  const normalized = normalizedStopReason(stopReason);
+  return normalized === "error" || normalized === "aborted";
+}
+
+function isCleanAssistantStopReason(stopReason: string | undefined): boolean {
+  const normalized = normalizedStopReason(stopReason);
+  return normalized === "stop" || normalized === "tooluse" || normalized === "length";
+}
+
+function assistantErrorMessage(message: AgentSession["messages"][number]): string | undefined {
+  const record = message as { readonly errorMessage?: unknown };
+  return typeof record.errorMessage === "string" && record.errorMessage.trim().length > 0
+    ? record.errorMessage
+    : undefined;
+}
+
+function latestTerminalAssistantFailureSince(
+  messages: AgentSession["messages"],
+  startIndex: number,
+): AgentSession["messages"][number] | undefined {
+  for (let index = messages.length - 1; index >= startIndex; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== "assistant") continue;
+    const stopReason = messageStopReason(message);
+    if (isTerminalAssistantFailureStopReason(stopReason)) return message;
+    if (isCleanAssistantStopReason(stopReason)) return undefined;
+    if (assistantErrorMessage(message) === undefined && extractMessageText(message).trim().length > 0) {
+      return undefined;
     }
-    if (parts.length > 0) return parts.join(", ");
   }
   return undefined;
 }
 
-function terminalAssistantFailure(messages: AgentSession["messages"]): Error | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index] as AssistantTerminalFailureMessage | undefined;
-    if (!message || message.role !== "assistant") continue;
-    if (message.stopReason !== "error" && message.stopReason !== "aborted") return undefined;
-    const details = [
-      diagnosticText(message.errorMessage),
-      diagnosticText(message.code),
-      diagnosticText(message.status),
-      diagnosticText(message.diagnostics),
-      extractMessageText(message as AgentSession["messages"][number]).trim(),
-    ].filter((part): part is string => Boolean(part));
-    const reason = message.stopReason === "aborted" ? "aborted" : "error";
-    const error = new Error(details[0] ?? `Assistant turn ended with stopReason: ${reason}`, { cause: message });
-    Object.assign(error, {
+function assistantFailureField(message: unknown, key: string): unknown {
+  return message !== null && typeof message === "object"
+    ? (message as Record<string, unknown>)[key]
+    : undefined;
+}
+
+class WorkflowPromptModelFailure extends Error {
+  override readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super(errorMessage(cause));
+    this.name = "WorkflowPromptModelFailure";
+    this.cause = cause;
+    Object.assign(this, {
       workflowTerminalAssistantFailure: true,
-      stopReason: message.stopReason,
-      ...(message.errorMessage !== undefined ? { errorMessage: message.errorMessage } : {}),
-      ...(message.code !== undefined ? { code: message.code } : {}),
-      ...(message.status !== undefined ? { status: message.status } : {}),
-      ...(message.diagnostics !== undefined ? { diagnostics: message.diagnostics } : {}),
+      ...(typeof assistantFailureField(cause, "stopReason") === "string" ? { stopReason: assistantFailureField(cause, "stopReason") } : {}),
+      ...(assistantFailureField(cause, "errorMessage") !== undefined ? { errorMessage: assistantFailureField(cause, "errorMessage") } : {}),
+      ...(assistantFailureField(cause, "code") !== undefined ? { code: assistantFailureField(cause, "code") } : {}),
+      ...(assistantFailureField(cause, "status") !== undefined ? { status: assistantFailureField(cause, "status") } : {}),
+      ...(assistantFailureField(cause, "diagnostics") !== undefined ? { diagnostics: assistantFailureField(cause, "diagnostics") } : {}),
     });
-    return error;
   }
-  return undefined;
 }
 
 /**
@@ -787,7 +801,7 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
     activeSession: StageSessionRuntime,
     initialText: string,
     sdkOptions: PromptOptions | undefined,
-  ): Promise<void> {
+  ): Promise<{ readonly terminalScanStartIndex: number }> {
     // Pause/resume loop: when a controlled pause aborts the SDK call,
     // swallow the resulting abort, suspend on `pauseRequest.deferred`,
     // and either re-issue with the user's resume message or return the
@@ -798,27 +812,41 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
       if (pendingPauseBeforePrompt) {
         const { message } = await pendingPauseBeforePrompt.deferred.promise;
         nextText = message;
-        if (nextText === undefined) return;
+        if (nextText === undefined) return { terminalScanStartIndex: activeSession.messages.length };
         continue;
       }
+      const promptStartIndex = activeSession.messages.length;
       try {
         await activeSession.prompt(nextText, sdkOptions);
         const pendingPauseAfterPrompt = pauseRequest;
         if (pendingPauseAfterPrompt) {
           const { message } = await pendingPauseAfterPrompt.deferred.promise;
           nextText = message;
-          if (nextText === undefined) return;
+          if (nextText === undefined) return { terminalScanStartIndex: activeSession.messages.length };
           continue;
         }
-        nextText = undefined;
+        return { terminalScanStartIndex: promptStartIndex };
       } catch (err) {
-        if (pauseRequest) {
-          const { message } = await pauseRequest.deferred.promise;
+        const pendingPauseAfterThrow = pauseRequest;
+        if (pendingPauseAfterThrow) {
+          const { message } = await pendingPauseAfterThrow.deferred.promise;
           nextText = message;
+          if (nextText === undefined) return { terminalScanStartIndex: activeSession.messages.length };
           continue;
         }
         throw err;
       }
+    }
+    return { terminalScanStartIndex: activeSession.messages.length };
+  }
+
+  function throwTerminalAssistantFailureIfPresent(
+    activeSession: StageSessionRuntime,
+    terminalScanStartIndex: number,
+  ): void {
+    const terminalFailure = latestTerminalAssistantFailureSince(activeSession.messages, terminalScanStartIndex);
+    if (terminalFailure !== undefined) {
+      throw new WorkflowPromptModelFailure(terminalFailure);
     }
   }
 
@@ -829,18 +857,16 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
   ): Promise<void> {
     if (!hasExplicitModelFallbackConfig) {
       const activeSession = await ensureSession(consumer);
-      await promptWithPauseResume(activeSession, text, sdkOptions);
-      const terminalFailure = terminalAssistantFailure(activeSession.messages);
-      if (terminalFailure !== undefined) throw terminalFailure;
+      const { terminalScanStartIndex } = await promptWithPauseResume(activeSession, text, sdkOptions);
+      throwTerminalAssistantFailureIfPresent(activeSession, terminalScanStartIndex);
       return;
     }
 
     const candidates = await modelCandidates();
     if (candidates.length === 0) {
       const activeSession = await ensureSession(consumer);
-      await promptWithPauseResume(activeSession, text, sdkOptions);
-      const terminalFailure = terminalAssistantFailure(activeSession.messages);
-      if (terminalFailure !== undefined) throw terminalFailure;
+      const { terminalScanStartIndex } = await promptWithPauseResume(activeSession, text, sdkOptions);
+      throwTerminalAssistantFailureIfPresent(activeSession, terminalScanStartIndex);
       return;
     }
 
@@ -854,9 +880,8 @@ export function createStageContext(opts: StageRunnerOpts): InternalStageContext 
       selectedModel = candidate.id;
       notifyModelFallbackMetaChange();
       try {
-        await promptWithPauseResume(activeSession, text, sdkOptions);
-        const terminalFailure = terminalAssistantFailure(activeSession.messages);
-        if (terminalFailure !== undefined) throw terminalFailure;
+        const { terminalScanStartIndex } = await promptWithPauseResume(activeSession, text, sdkOptions);
+        throwTerminalAssistantFailureIfPresent(activeSession, terminalScanStartIndex);
         modelAttempts.push({ model: candidate.id, success: true, ...modelAttemptReasoning(candidate) });
         pendingFallbackWarnings.length = 0;
         return;

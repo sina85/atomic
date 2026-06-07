@@ -285,8 +285,8 @@ describe("store run pausing", () => {
     assert.equal(run.failureMessage, "workflow killed");
     assert.equal(run.resumable, false);
     assert.equal("failureCode" in run, false);
-    assert.equal("failureRecoverability" in run, false);
-    assert.equal("failureDisposition" in run, false);
+    assert.equal(run.failureRecoverability, "non_recoverable");
+    assert.equal(run.failureDisposition, "terminal_killed");
     assert.equal("retryAfterMs" in run, false);
     assert.equal("blockedAt" in run, false);
     assert.equal("failedStageId" in run, false);
@@ -297,7 +297,7 @@ describe("store run pausing", () => {
     s.recordRunStart(makeRun("r1"));
     assert.equal(s.recordRunBlocked("r1", "provider blocked", {
       failureKind: "provider",
-      failureCode: "provider_wait",
+      failureCode: "provider_unavailable",
       failureRecoverability: "recoverable",
       failureDisposition: "active_blocked",
       failureMessage: "provider blocked",

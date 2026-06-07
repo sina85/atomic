@@ -48,12 +48,15 @@ import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
 	type CompactionResult,
+	type ContextCompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
+	contextCompact as runContextCompact,
 	estimateContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
+	prepareContextCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -94,7 +97,7 @@ import { RewindCoordinator, type RewindCoordinatorStatus } from "./rewind/rewind
 import type { CheckpointMetadata, DiffPreview, RestoredFiles, Result } from "./rewind/types.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
-import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
+import { CURRENT_SESSION_VERSION, getLatestCompactionBoundaryEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -159,6 +162,7 @@ export type AgentSessionEvent =
 			followUp: readonly string[];
 	  }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
+	| { type: "context_compaction_start"; reason: "manual" }
 	| { type: "session_info_changed"; name: string | undefined }
 	| {
 			type: "model_changed";
@@ -173,6 +177,14 @@ export type AgentSessionEvent =
 			result: CompactionResult | undefined;
 			aborted: boolean;
 			willRetry: boolean;
+			errorMessage?: string;
+	  }
+	| {
+			type: "context_compaction_end";
+			reason: "manual";
+			result: ContextCompactionResult | undefined;
+			aborted: boolean;
+			willRetry: false;
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
@@ -2166,6 +2178,83 @@ export class AgentSession {
 	}
 
 	/**
+	 * Manually compact the session context by applying validated logical deletions.
+	 * Retained transcript entries/content blocks stay verbatim; no user prompt text is accepted.
+	 */
+	async contextCompact(): Promise<ContextCompactionResult> {
+		this._disconnectFromAgent();
+		await this.abort();
+		this._compactionAbortController = new AbortController();
+		this._emit({ type: "context_compaction_start", reason: "manual" });
+
+		try {
+			if (!this.model) {
+				throw new Error(formatNoModelSelectedMessage());
+			}
+
+			const { apiKey, headers } = await this._getRequiredRequestAuth(this.model);
+			const pathEntries = this.sessionManager.getBranch();
+			const settings = this.settingsManager.getCompactionSettings();
+			const preparation = prepareContextCompaction(pathEntries, settings);
+			if (!preparation) {
+				throw new Error("Nothing to context-compact (session too small)");
+			}
+
+			const validated = await runContextCompact(
+				preparation,
+				this.model,
+				apiKey,
+				headers,
+				this._compactionAbortController.signal,
+				this.thinkingLevel,
+			);
+
+			if (this._compactionAbortController.signal.aborted) {
+				throw new Error("Compaction cancelled");
+			}
+
+			const backupPath = this.sessionManager.writeBackupSnapshot("context-compact");
+			this.sessionManager.appendContextCompaction(
+				validated.deletedTargets,
+				validated.protectedEntryIds,
+				validated.stats,
+				backupPath,
+			);
+			const sessionContext = this.sessionManager.buildSessionContext();
+			this.agent.state.messages = sessionContext.messages;
+
+			const result: ContextCompactionResult = {
+				...validated,
+				promptVersion: 1,
+				backupPath,
+			};
+			this._emit({
+				type: "context_compaction_end",
+				reason: "manual",
+				result,
+				aborted: false,
+				willRetry: false,
+			});
+			return result;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const aborted = message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError");
+			this._emit({
+				type: "context_compaction_end",
+				reason: "manual",
+				result: undefined,
+				aborted,
+				willRetry: false,
+				errorMessage: aborted ? undefined : `Context compaction failed: ${message}`,
+			});
+			throw error;
+		} finally {
+			this._compactionAbortController = undefined;
+			this._reconnectToAgent();
+		}
+	}
+
+	/**
 	 * Cancel in-progress compaction (manual or auto).
 	 */
 	abortCompaction(): void {
@@ -2186,7 +2275,7 @@ export class AgentSession {
 	 *
 	 * Two cases:
 	 * 1. Overflow: LLM returned context overflow error, remove error message from agent state, compact, auto-retry
-	 * 2. Threshold: Context over threshold, compact, NO auto-retry (user continues manually)
+	 * 2. Threshold: Context over threshold, compact, resume queued active-turn work if present; otherwise wait for user
 	 *
 	 * @param assistantMessage The assistant message to check
 	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
@@ -2210,10 +2299,11 @@ export class AgentSession {
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
 		// from retriggering compaction on the first prompt after compaction.
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
-		const assistantIsFromBeforeCompaction =
-			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
-		if (assistantIsFromBeforeCompaction) {
+		const compactionBoundaryEntry = getLatestCompactionBoundaryEntry(this.sessionManager.getBranch());
+		const assistantIsFromBeforeCompactionBoundary =
+			compactionBoundaryEntry !== null &&
+			assistantMessage.timestamp <= new Date(compactionBoundaryEntry.timestamp).getTime();
+		if (assistantIsFromBeforeCompactionBoundary) {
 			return;
 		}
 
@@ -2256,9 +2346,9 @@ export class AgentSession {
 			// trigger compaction right after one just finished.
 			const usageMsg = messages[estimate.lastUsageIndex];
 			if (
-				compactionEntry &&
+				compactionBoundaryEntry &&
 				usageMsg.role === "assistant" &&
-				(usageMsg as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime()
+				(usageMsg as AssistantMessage).timestamp <= new Date(compactionBoundaryEntry.timestamp).getTime()
 			) {
 				return;
 			}
@@ -2269,6 +2359,49 @@ export class AgentSession {
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			await this._runAutoCompaction("threshold", false);
 		}
+	}
+
+	/**
+	 * Internal: remove the trailing overflow error from retry context if it is still present.
+	 */
+	private _dropTrailingOverflowAssistantErrorIfPresent(): void {
+		const messages = this.agent.state.messages;
+		const lastMsg = messages[messages.length - 1];
+		if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
+			this.agent.state.messages = messages.slice(0, -1);
+		}
+	}
+
+	/**
+	 * Internal: schedule a live post-event continuation probe after compaction_end listeners can flush queues.
+	 */
+	private _schedulePostAutoCompactionContinuationProbe(
+		reason: "overflow" | "threshold",
+		willRetry: boolean,
+	): void {
+		setTimeout(() => {
+			if (this.isCompacting || this.isStreaming) {
+				return;
+			}
+
+			if (reason === "overflow" && willRetry) {
+				this._resumeAfterAutoCompaction();
+				return;
+			}
+
+			if (!this.agent.hasQueuedMessages()) {
+				return;
+			}
+
+			this._resumeAfterAutoCompaction();
+		}, 100);
+	}
+
+	/**
+	 * Internal: resume generation after successful auto-compaction only when active work remains.
+	 */
+	private _resumeAfterAutoCompaction(): void {
+		this.agent.continue().catch(() => {});
 	}
 
 	/**
@@ -2391,6 +2524,9 @@ export class AgentSession {
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			if (reason === "overflow" && willRetry) {
+				this._dropTrailingOverflowAssistantErrorIfPresent();
+			}
 
 			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
@@ -2413,23 +2549,7 @@ export class AgentSession {
 			};
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
 
-			if (willRetry) {
-				const messages = this.agent.state.messages;
-				const lastMsg = messages[messages.length - 1];
-				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
-					this.agent.state.messages = messages.slice(0, -1);
-				}
-
-				setTimeout(() => {
-					this.agent.continue().catch(() => {});
-				}, 100);
-			} else if (this.agent.hasQueuedMessages()) {
-				// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
-				// Kick the loop so queued messages are actually delivered.
-				setTimeout(() => {
-					this.agent.continue().catch(() => {});
-				}, 100);
-			}
+			this._schedulePostAutoCompactionContinuationProbe(reason, willRetry);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			this._emit({
@@ -3429,11 +3549,11 @@ export class AgentSession {
 		// We can only trust usage from an assistant that responded after the latest compaction.
 		// If no such assistant exists, context token count is unknown until the next LLM response.
 		const branchEntries = this.sessionManager.getBranch();
-		const latestCompaction = getLatestCompactionEntry(branchEntries);
+		const latestCompactionBoundary = getLatestCompactionBoundaryEntry(branchEntries);
 
-		if (latestCompaction) {
+		if (latestCompactionBoundary) {
 			// Check if there's a valid assistant usage after the compaction boundary
-			const compactionIndex = branchEntries.lastIndexOf(latestCompaction);
+			const compactionIndex = branchEntries.lastIndexOf(latestCompactionBoundary);
 			let hasPostCompactionUsage = false;
 			for (let i = branchEntries.length - 1; i > compactionIndex; i--) {
 				const entry = branchEntries[i];

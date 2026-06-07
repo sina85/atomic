@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -17,17 +16,6 @@ const builtinSubagentsSkillsRoot = join(
     "subagents",
     "skills",
 );
-const browserSkillPath = join(builtinSubagentsSkillsRoot, "browser", "SKILL.md");
-const browserUseSkillPath = join(builtinSubagentsSkillsRoot, "browser-use", "SKILL.md");
-const browserPackageFiles = ["SKILL.md", "EXAMPLES.md", "REFERENCE.md", "LICENSE.txt"] as const;
-const browserUseReferenceFiles = ["cdp-python.md", "multi-session.md"] as const;
-
-function gitLines(args: string[]): string[] {
-    return execFileSync("git", args, { cwd: repoRoot, encoding: "utf-8" })
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-}
 
 let previousAtomicAgentDir: string | undefined;
 let previousHome: string | undefined;
@@ -65,77 +53,24 @@ afterEach(() => {
 });
 
 describe("subagent skill resolution", () => {
-    test("resolves builtin tdd, browser, and browser-use skills from the repo root", () => {
-        const result = resolveSkills(["tdd", "browser", "browser-use"], repoRoot);
+    test("resolves builtin tdd and browser skills from the repo root", () => {
+        const result = resolveSkills(["tdd", "browser"], repoRoot);
 
         const resolvedByName = new Map(
             result.resolved.map((skill) => [skill.name, skill]),
         );
 
         assert.deepEqual(result.missing, []);
-        assert.deepEqual([...resolvedByName.keys()].sort(), [
-            "browser",
-            "browser-use",
-            "tdd",
-        ]);
+        assert.deepEqual([...resolvedByName.keys()].sort(), ["browser", "tdd"]);
         assert.equal(resolvedByName.get("tdd")?.source, "builtin");
         assert.equal(
             resolvedByName.get("tdd")?.path,
             join(builtinSubagentsSkillsRoot, "tdd", "SKILL.md"),
         );
         assert.equal(resolvedByName.get("browser")?.source, "builtin");
-        assert.equal(resolvedByName.get("browser")?.path, browserSkillPath);
-        assert.equal(resolvedByName.get("browser-use")?.source, "builtin");
-        assert.equal(resolvedByName.get("browser-use")?.path, browserUseSkillPath);
-        assert.notEqual(
+        assert.equal(
             resolvedByName.get("browser")?.path,
-            resolvedByName.get("browser-use")?.path,
-        );
-
-        const browserSkill = readFileSync(browserSkillPath, "utf-8");
-        const browserUseSkill = readFileSync(browserUseSkillPath, "utf-8");
-        assert.match(browserSkill, /^name: browser$/m);
-        assert.match(browserSkill, /^allowed-tools: Bash$/m);
-        assert.match(browserSkill, /browse CLI/);
-        assert.match(browserUseSkill, /^name: browser-use$/m);
-        for (const file of browserPackageFiles) {
-            assert.equal(
-                existsSync(join(builtinSubagentsSkillsRoot, "browser", file)),
-                true,
-                file,
-            );
-        }
-        for (const file of browserUseReferenceFiles) {
-            assert.equal(
-                existsSync(join(builtinSubagentsSkillsRoot, "browser-use", "references", file)),
-                true,
-                file,
-            );
-        }
-    });
-
-    test("keeps browser and browser-use builtin skill files package-visible", () => {
-        const expectedFiles = [
-            ...browserPackageFiles.map((file) => `packages/subagents/skills/browser/${file}`),
-            "packages/subagents/skills/browser-use/SKILL.md",
-            ...browserUseReferenceFiles.map((file) => `packages/subagents/skills/browser-use/references/${file}`),
-        ];
-        const tracked = new Set(
-            gitLines(["ls-files", "packages/subagents/skills/browser", "packages/subagents/skills/browser-use"]),
-        );
-
-        for (const file of expectedFiles) {
-            assert.equal(existsSync(join(repoRoot, file)), true, file);
-            assert.equal(tracked.has(file), true, `${file} must be tracked by git ls-files`);
-        }
-
-        assert.notEqual(
-            readFileSync(browserSkillPath, "utf-8"),
-            readFileSync(browserUseSkillPath, "utf-8"),
-        );
-        assert.match(
-            readFileSync(join(repoRoot, "packages", "subagents", "package.json"), "utf-8"),
-            /"skills\/\*\*\/\*"/,
+            join(builtinSubagentsSkillsRoot, "browser", "SKILL.md"),
         );
     });
 

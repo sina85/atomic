@@ -11,17 +11,6 @@ interface ModelAttemptSummary {
 	usage?: Usage;
 }
 
-export interface StructuredProviderFailureSignal {
-	readonly message?: string;
-	readonly code?: unknown;
-	readonly status?: unknown;
-	readonly diagnostics?: unknown;
-	readonly errorMessage?: unknown;
-	readonly stopReason?: unknown;
-}
-
-export type StructuredProviderFailureMessage = Omit<StructuredProviderFailureSignal, "message">;
-
 function applyFallbackThinkingLevel(model: string, thinkingLevel: string | undefined): string {
 	if (!thinkingLevel || !THINKING_LEVELS.some((level) => level === thinkingLevel)) return model;
 	const { thinkingSuffix } = splitKnownThinkingSuffix(model);
@@ -73,7 +62,7 @@ export function currentModelFullId(model: { provider: string; id: string } | und
 	return `${String(model.provider)}/${model.id}`;
 }
 
-const RETRYABLE_MODEL_FAILURE_PATTERNS = [
+const RETRYABLE_MODEL_FAILURE_PATTERNS: readonly RegExp[] = [
 	/rate\s*limit/i,
 	/too many requests/i,
 	/\b(?:401|403|429|5\d{2})\b/,
@@ -82,6 +71,7 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/credit/i,
 	/auth(?:entication)?/i,
 	/unauthori[sz]ed/i,
+	/\b40[13]\b/,
 	/forbidden/i,
 	/api key/i,
 	/token expired/i,
@@ -101,30 +91,87 @@ const RETRYABLE_MODEL_FAILURE_PATTERNS = [
 	/upstream/i,
 	/timed? out/i,
 	/timeout/i,
+	/\b50[0-4]\b/,
 ];
 
-const LOCAL_FAILURE_PATTERNS = [
-	/\bcommand\s+failed\b/i,
-	/\btask\s+failed\b/i,
-	/\btool(?:\s+call)?\s+failed\b/i,
-	/\bshell\b/i,
-	/\btests?\s+failed\b/i,
-	/\bcompletion[-\s]?guard\b/i,
-	/\bcancel\b/i,
-	/\bcancell?ed\b/i,
-	/\bcancell?ation\b/i,
-	/\babort(?:ed)?\b/i,
-	/\binterrupted\b/i,
-	/\bmissing\s+file\b/i,
-	/\bno\s+such\s+file\b/i,
+const NON_RETRYABLE_FAILURE_PATTERNS: readonly RegExp[] = [
+	/command failed/i,
+	/tests? failed/i,
+	/tool(?:\s+call)?\s+failed/i,
+	/shell/i,
+	/missing file/i,
+	/no such file/i,
+	/completion guard/i,
+	/cancel/i,
+	/abort/i,
+	/interrupted/i,
 ];
 
-const SIGNAL_MAX_DEPTH = 8;
-const SIGNAL_TEXT_KEYS = ["code", "status", "statusCode", "httpStatus", "message", "errorMessage", "statusText", "error", "type", "name", "stopReason"] as const;
-const SIGNAL_NESTED_KEYS = ["diagnostics", "cause", "error", "response", "body"] as const;
+const CANCELLED_FAILURE_PATTERNS: readonly RegExp[] = [
+	/cancel/i,
+	/abort/i,
+	/interrupted/i,
+];
+
+export type ModelFallbackFailureKind =
+	| "auth_on_candidate_provider"
+	| "rate_limit"
+	| "provider_unavailable"
+	| "network_timeout"
+	| "model_unavailable"
+	| "cancelled"
+	| "task_failure"
+	| "unknown";
+
+export type ModelFallbackFailureSource =
+	| "assistant_message"
+	| "diagnostic"
+	| "throw"
+	| "structured"
+	| "string_fallback";
+
+export interface ModelFallbackFailureSignal {
+	readonly kind: ModelFallbackFailureKind;
+	readonly message: string;
+	readonly source: ModelFallbackFailureSource;
+	readonly stopReason?: string;
+	readonly status?: number;
+	readonly code?: string | number;
+	readonly name?: string;
+}
+
+const FALLBACKABLE_FAILURE_KINDS: ReadonlySet<ModelFallbackFailureKind> = new Set([
+	"auth_on_candidate_provider",
+	"rate_limit",
+	"provider_unavailable",
+	"network_timeout",
+	"model_unavailable",
+]);
+
+const MODEL_FAILURE_SIGNAL_MAX_DEPTH = 8;
+const MODEL_FAILURE_NESTED_KEYS = ["error", "response", "body"] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return value !== null && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function field(value: unknown, key: string): unknown {
+	return asRecord(value)?.[key];
+}
+
+function stringField(value: unknown, key: string): string | undefined {
+	const raw = field(value, key);
+	return typeof raw === "string" && raw.trim().length > 0 ? raw : undefined;
+}
+
+function errorName(value: unknown): string | undefined {
+	return value instanceof Error ? value.name : stringField(value, "name");
+}
+
+function directMessageFrom(value: unknown): string | undefined {
+	return stringField(value, "errorMessage")
+		?? stringField(value, "message")
+		?? stringField(value, "statusText");
 }
 
 function integerFrom(value: unknown): number | undefined {
@@ -134,146 +181,350 @@ function integerFrom(value: unknown): number | undefined {
 	return Number.isInteger(parsed) ? parsed : undefined;
 }
 
-function nestedSignalValues(value: unknown): readonly unknown[] {
-	if (Array.isArray(value)) return value;
+function statusFrom(value: unknown): number | undefined {
+	return integerFrom(field(value, "status"))
+		?? integerFrom(field(value, "statusCode"))
+		?? integerFrom(field(value, "httpStatus"));
+}
+
+function codeFrom(value: unknown): string | number | undefined {
+	const rawCode = field(value, "code");
+	return typeof rawCode === "string" || typeof rawCode === "number" ? rawCode : undefined;
+}
+
+function stopReasonFrom(value: unknown): string | undefined {
+	return stringField(value, "stopReason");
+}
+
+function finishReasonFrom(value: unknown): string | undefined {
+	return stringField(value, "finish_reason") ?? stringField(value, "finishReason");
+}
+
+function causeOf(value: unknown): unknown {
+	return value instanceof Error ? value.cause : field(value, "cause");
+}
+
+function diagnosticErrors(value: unknown): readonly unknown[] {
+	const diagnostics = field(value, "diagnostics");
+	if (!Array.isArray(diagnostics)) return [];
+	const errors: unknown[] = [];
+	for (const diagnostic of diagnostics) {
+		const diagnosticError = field(diagnostic, "error");
+		errors.push(diagnosticError ?? diagnostic);
+	}
+	return errors;
+}
+
+type NestedFailureSignalValue = {
+	readonly value: unknown;
+	readonly source?: ModelFallbackFailureSource;
+};
+
+function nestedSignalValues(value: unknown): readonly NestedFailureSignalValue[] {
+	if (Array.isArray(value)) return value.map((item) => ({ value: item }));
 	const record = asRecord(value);
 	if (record === undefined) return [];
-	const nested: unknown[] = [];
-	for (const key of SIGNAL_NESTED_KEYS) {
+
+	const nested: NestedFailureSignalValue[] = [];
+	for (const diagnosticError of diagnosticErrors(value)) {
+		nested.push({ value: diagnosticError, source: "diagnostic" });
+	}
+	const cause = causeOf(value);
+	if (cause !== undefined && cause !== null) nested.push({ value: cause });
+	for (const key of MODEL_FAILURE_NESTED_KEYS) {
 		const item = record[key];
-		if (item !== undefined && item !== null) nested.push(item);
+		if (item !== undefined && item !== null) nested.push({ value: item });
 	}
 	return nested;
 }
 
-function collectSignalParts(value: unknown, seen = new Set<unknown>(), depth = 0): readonly string[] {
-	if (value === undefined || value === null || depth > SIGNAL_MAX_DEPTH) return [];
-	if (typeof value === "string") return value.trim() ? [value.trim()] : [];
-	if (typeof value === "number") return [String(value)];
-	if (typeof value !== "object") return [];
-	if (seen.has(value)) return [];
-	seen.add(value);
-
-	const parts: string[] = [];
-	const record = asRecord(value);
-	if (record !== undefined) {
-		for (const key of SIGNAL_TEXT_KEYS) {
-			const part = record[key];
-			if (typeof part === "string" && part.trim()) parts.push(`${key}: ${part.trim()}`);
-			else if (typeof part === "number") parts.push(`${key}: ${String(part)}`);
-		}
-	}
-	for (const nested of nestedSignalValues(value)) {
-		parts.push(...collectSignalParts(nested, seen, depth + 1));
-	}
-	return parts;
+function normalizeCode(value: string | number | undefined): string | undefined {
+	if (value === undefined) return undefined;
+	const normalized = String(value)
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_+|_+$/g, "");
+	return normalized.length > 0 ? normalized : undefined;
 }
 
-function signalPart(value: unknown): string | undefined {
-	const parts = collectSignalParts(value);
-	return parts.length > 0 ? parts.join(", ") : undefined;
-}
-
-function isPresentString(value: string | undefined): value is string {
-	return value !== undefined && value.length > 0;
-}
-
-function isRetryableFailureCode(code: number): boolean {
-	return code === 401 || code === 403 || code === 429 || (code >= 500 && code <= 599);
-}
-
-function hasStructuredStopReason(value: unknown, expected: string, seen = new Set<unknown>(), depth = 0): boolean {
-	if (value === undefined || value === null || depth > SIGNAL_MAX_DEPTH || typeof value !== "object") return false;
-	if (seen.has(value)) return false;
-	seen.add(value);
-	const record = asRecord(value);
-	const stopReason = record?.stopReason;
-	if (typeof stopReason === "string" && stopReason.toLowerCase() === expected) return true;
-	for (const nested of nestedSignalValues(value)) {
-		if (hasStructuredStopReason(nested, expected, seen, depth + 1)) return true;
+function kindFromStatus(status: number | undefined): ModelFallbackFailureKind | undefined {
+	switch (status) {
+		case 401:
+		case 403:
+			return "auth_on_candidate_provider";
+		case 408:
+			return "network_timeout";
+		case 404:
+			return "model_unavailable";
+		case 429:
+			return "rate_limit";
+		default:
+			if (status !== undefined && status >= 500 && status <= 599) return "provider_unavailable";
+			return undefined;
 	}
-	return false;
 }
 
-function hasRetryableStructuredSignal(value: unknown, seen = new Set<unknown>(), depth = 0): boolean {
-	if (value === undefined || value === null || depth > SIGNAL_MAX_DEPTH) return false;
-	const directCode = integerFrom(value);
-	if (directCode !== undefined && isRetryableFailureCode(directCode)) return true;
-	if (typeof value !== "object") return false;
-	if (seen.has(value)) return false;
-	seen.add(value);
-
-	const record = asRecord(value);
-	if (record !== undefined) {
-		for (const key of ["status", "statusCode", "httpStatus", "code"] as const) {
-			const code = integerFrom(record[key]);
-			if (code !== undefined && isRetryableFailureCode(code)) return true;
-		}
+function refusalKindFromCode(code: string | number | undefined): ModelFallbackFailureKind | undefined {
+	const normalizedCode = normalizeCode(code);
+	if (normalizedCode === undefined) return undefined;
+	if (normalizedCode.includes("content_filter") || normalizedCode.includes("contentfilter")) return "task_failure";
+	if (normalizedCode.includes("safety") || normalizedCode.includes("policy")) return "task_failure";
+	switch (normalizedCode) {
+		case "blocked":
+		case "blocked_by_provider":
+		case "blocked_by_safety":
+		case "blocked_by_policy":
+		case "provider_refusal":
+		case "refusal":
+		case "tool_refusal":
+		case "tool_call_refusal":
+		case "tool_use_refusal":
+			return "task_failure";
+		default:
+			return undefined;
 	}
-	for (const nested of nestedSignalValues(value)) {
-		if (hasRetryableStructuredSignal(nested, seen, depth + 1)) return true;
-	}
-	return false;
 }
 
-export function structuredProviderFailureSignal(message: object, text?: string): StructuredProviderFailureSignal | undefined {
-	const signal = message as StructuredProviderFailureMessage;
-	const stopReason = typeof signal.stopReason === "string" ? signal.stopReason : undefined;
-	if (signal.errorMessage === undefined && signal.code === undefined && signal.status === undefined && signal.diagnostics === undefined && stopReason !== "error" && stopReason !== "aborted") {
-		return undefined;
+function kindFromCode(code: string | number | undefined): ModelFallbackFailureKind | undefined {
+	const normalizedCode = normalizeCode(code);
+	if (normalizedCode === undefined) return undefined;
+	const refusalKind = refusalKindFromCode(code);
+	if (refusalKind !== undefined) return refusalKind;
+	const httpStatusKind = kindFromStatus(integerFrom(code));
+	if (httpStatusKind !== undefined) return httpStatusKind;
+
+	switch (normalizedCode) {
+		case "auth":
+		case "auth_required":
+		case "authentication_required":
+		case "unauthorized":
+		case "forbidden":
+		case "invalid_api_key":
+		case "missing_api_key":
+		case "invalid_key":
+			return "auth_on_candidate_provider";
+		case "etimedout":
+		case "econnreset":
+		case "econnrefused":
+		case "enotfound":
+		case "eai_again":
+		case "fetch_failed":
+		case "network_error":
+		case "timeout":
+		case "timeout_error":
+		case "und_err_connect_timeout":
+			return "network_timeout";
+		case "rate_limit":
+		case "rate_limit_exceeded":
+		case "too_many_requests":
+		case "quota_exceeded":
+			return "rate_limit";
+		case "aborterror":
+		case "aborted":
+		case "cancelled":
+		case "canceled":
+			return "cancelled";
+		case "model_not_found":
+		case "model_unavailable":
+		case "model_disabled":
+		case "unknown_model":
+			return "model_unavailable";
+		case "provider_error":
+		case "api_error":
+		case "service_unavailable":
+		case "temporarily_unavailable":
+		case "overloaded":
+			return "provider_unavailable";
+		default:
+			return undefined;
 	}
+}
+
+const PROVIDER_REFUSAL_FAILURE_PATTERNS: readonly RegExp[] = [
+	/\bfinish[_\s-]?reason\b[^\n]*\bcontent[_\s-]?filter\b/i,
+	/\bcontent[_\s-]?filter(?:ed|ing)?\b/i,
+	/\b(?:safety|policy)\b[^\n]*\b(?:refus(?:e|al|ed|es|ing)?|block(?:ed|ing)?|filter(?:ed|ing)?|violat(?:e|ion|ed|ing)?|disallow(?:ed|ing)?|reject(?:ed|ion|ing)?)\b/i,
+	/\b(?:refus(?:e|al|ed|es|ing)?|block(?:ed|ing)?|filter(?:ed|ing)?|violat(?:e|ion|ed|ing)?|disallow(?:ed|ing)?|reject(?:ed|ion|ing)?)\b[^\n]*\b(?:safety|policy)\b/i,
+	/\btool[_\s-]?(?:call|use)?[_\s-]?refus(?:e|al|ed|es|ing)?\b/i,
+	/\btool(?:\s+call|\s+use)?\b[^\n]*\brefus(?:e|al|ed|es|ing)?\b/i,
+	/\brefus(?:e|al|ed|es|ing)?\b[^\n]*\btool(?:\s+call|\s+use)?\b/i,
+	/\bprovider[_\s-]?refus(?:e|al|ed|es|ing)?\b/i,
+	/\bprovider\b[^\n]*\brefus(?:e|al|ed|es|ing)?\b[^\n]*\b(?:prompt|request|content|policy|safety)\b/i,
+];
+
+function refusalKindFromMessage(message: string): ModelFallbackFailureKind | undefined {
+	if (CANCELLED_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) return "cancelled";
+	if (NON_RETRYABLE_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) return "task_failure";
+	if (PROVIDER_REFUSAL_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) return "task_failure";
+	return undefined;
+}
+
+function fallbackKindFromMessage(message: string, name: string | undefined): ModelFallbackFailureKind | undefined {
+	const refusalKind = refusalKindFromMessage(message);
+	if (refusalKind !== undefined) return refusalKind;
+	const nameKind = kindFromCode(name);
+	if (nameKind !== undefined) return nameKind;
+	if (!RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(message))) return undefined;
+	if (/rate\s*limit|too many requests|\b429\b|quota|billing|credit/i.test(message)) return "rate_limit";
+	if (/auth|unauthori[sz]ed|\b40[13]\b|api key|token expired|forbidden|invalid key/i.test(message)) return "auth_on_candidate_provider";
+	if (/model.*(?:unavailable|disabled|not found|unknown)|(?:unavailable|disabled|not found|unknown).*model/i.test(message)) return "model_unavailable";
+	if (/network|fetch failed|socket|connection refused|timeout|timed? out/i.test(message)) return "network_timeout";
+	return "provider_unavailable";
+}
+
+function signalSource(value: unknown, fallback: ModelFallbackFailureSource | undefined): ModelFallbackFailureSource {
+	if (fallback !== undefined) return fallback;
+	if (stopReasonFrom(value) !== undefined || diagnosticErrors(value).length > 0) return "assistant_message";
+	if (value instanceof Error) return "throw";
+	return "structured";
+}
+
+function makeSignal(
+	kind: ModelFallbackFailureKind,
+	value: unknown,
+	source: ModelFallbackFailureSource | undefined,
+): ModelFallbackFailureSignal {
+	const status = statusFrom(value);
+	const code = codeFrom(value);
+	const name = errorName(value);
+	const stopReason = stopReasonFrom(value);
 	return {
-		...(typeof text === "string" && text.trim() ? { message: text.trim() } : {}),
-		...(signal.errorMessage !== undefined ? { errorMessage: signal.errorMessage } : {}),
-		...(signal.code !== undefined ? { code: signal.code } : {}),
-		...(signal.status !== undefined ? { status: signal.status } : {}),
-		...(signal.diagnostics !== undefined ? { diagnostics: signal.diagnostics } : {}),
+		kind,
+		message: modelFailureMessage(value),
+		source: signalSource(value, source),
 		...(stopReason !== undefined ? { stopReason } : {}),
+		...(status !== undefined ? { status } : {}),
+		...(code !== undefined ? { code } : {}),
+		...(name !== undefined ? { name } : {}),
 	};
 }
 
-export function providerFailureSignalText(signal: StructuredProviderFailureSignal | undefined): string | undefined {
-	if (signal === undefined) return undefined;
-	const parts = [
-		signalPart(signal.errorMessage),
-		signalPart(signal.message),
-		signalPart(signal.code),
-		signalPart(signal.status),
-		signalPart(signal.diagnostics),
-		signalPart(signal.stopReason),
-	].filter(isPresentString);
-	return parts.length > 0 ? parts.join("; ") : undefined;
+function fallbackSignalFromMessage(
+	value: unknown,
+	source: ModelFallbackFailureSource | undefined,
+): ModelFallbackFailureSignal | undefined {
+	const message = modelFailureMessage(value);
+	if (!message.trim()) return undefined;
+	const kind = fallbackKindFromMessage(message, errorName(value));
+	return kind === undefined ? undefined : makeSignal(kind, value, source);
 }
 
-export function hasNonRetryableModelFailureGuard(error: unknown): boolean {
-	if (error === undefined) return false;
-	const parts = collectSignalParts(error);
-	return parts.some((part) => LOCAL_FAILURE_PATTERNS.some((pattern) => pattern.test(part)))
-		|| hasStructuredStopReason(error, "aborted");
+function classifyAssistantRefusalSignal(
+	value: unknown,
+	source: ModelFallbackFailureSource | undefined,
+): ModelFallbackFailureSignal | undefined {
+	const codeRefusalKind = refusalKindFromCode(codeFrom(value))
+		?? refusalKindFromCode(errorName(value))
+		?? refusalKindFromCode(finishReasonFrom(value));
+	if (codeRefusalKind !== undefined) return makeSignal(codeRefusalKind, value, source);
+
+	const messageRefusalKind = refusalKindFromMessage(directMessageFrom(value) ?? "");
+	return messageRefusalKind === undefined ? undefined : makeSignal(messageRefusalKind, value, source);
+}
+
+function isRefusalSignal(signal: ModelFallbackFailureSignal): boolean {
+	return signal.kind === "cancelled" || signal.kind === "task_failure";
+}
+
+function structuredSignal(
+	value: unknown,
+	seen: Set<unknown>,
+	source?: ModelFallbackFailureSource,
+	depth = 0,
+): ModelFallbackFailureSignal | undefined {
+	if (value === undefined || value === null || depth > MODEL_FAILURE_SIGNAL_MAX_DEPTH || seen.has(value)) return undefined;
+	if (typeof value === "object") seen.add(value);
+
+	const stopReason = stopReasonFrom(value)?.toLowerCase();
+	if (stopReason === "aborted") return makeSignal("cancelled", value, source);
+
+	const directRefusalSignal = classifyAssistantRefusalSignal(value, source);
+	if (directRefusalSignal !== undefined) return directRefusalSignal;
+
+	const codeKind = kindFromCode(codeFrom(value));
+	const nameKind = kindFromCode(errorName(value));
+	if (codeKind === "cancelled" || nameKind === "cancelled") return makeSignal("cancelled", value, source);
+
+	let firstNestedFallbackSignal: ModelFallbackFailureSignal | undefined;
+	const nestedSeen = new Set(seen);
+	for (const nested of nestedSignalValues(value)) {
+		const nestedSource = nested.source ?? source;
+		const nestedSignal = structuredSignal(nested.value, nestedSeen, nestedSource, depth + 1)
+			?? fallbackSignalFromMessage(nested.value, nestedSource);
+		if (nestedSignal === undefined) continue;
+		if (isRefusalSignal(nestedSignal)) return nestedSignal;
+		firstNestedFallbackSignal ??= nestedSignal;
+	}
+
+	const statusKind = kindFromStatus(statusFrom(value));
+	if (statusKind !== undefined) return makeSignal(statusKind, value, source);
+	if (codeKind !== undefined) return makeSignal(codeKind, value, source);
+	if (nameKind !== undefined) return makeSignal(nameKind, value, source);
+
+	if (firstNestedFallbackSignal !== undefined) return firstNestedFallbackSignal;
+
+	if (stopReason === "error") return makeSignal("provider_unavailable", value, source);
+
+	return undefined;
+}
+
+function messageFromUnknown(value: unknown, seen: Set<unknown>, depth = 0): string | undefined {
+	if (value === undefined || value === null || depth > MODEL_FAILURE_SIGNAL_MAX_DEPTH || seen.has(value)) return undefined;
+	if (typeof value === "string") return value.trim().length > 0 ? value : undefined;
+	if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+	if (typeof value === "symbol" || typeof value === "function") return undefined;
+	seen.add(value);
+
+	if (value instanceof Error && value.message.trim().length > 0) return value.message;
+	const directMessage = directMessageFrom(value);
+	if (directMessage !== undefined) return directMessage;
+
+	for (const nested of nestedSignalValues(value)) {
+		const nestedMessage = messageFromUnknown(nested.value, seen, depth + 1);
+		if (nestedMessage !== undefined) return nestedMessage;
+	}
+
+	const stopReason = stopReasonFrom(value);
+	if (stopReason !== undefined) return `Assistant message ended with stopReason:${stopReason}`;
+	const finishReason = finishReasonFrom(value);
+	if (finishReason !== undefined) return `Model request finished with finish_reason:${finishReason}`;
+	const status = statusFrom(value);
+	if (status !== undefined) return `Model request failed with status ${status}`;
+	const code = codeFrom(value);
+	if (code !== undefined) return `Model request failed with code ${String(code)}`;
+
+	return undefined;
+}
+
+export function modelFailureMessage(error: unknown): string {
+	const structuredMessage = messageFromUnknown(error, new Set());
+	if (structuredMessage !== undefined) return structuredMessage;
+	const rendered = String(error);
+	return rendered === "[object Object]" ? "Model request failed" : rendered;
+}
+
+export function normalizeModelFailureSignal(error: unknown): ModelFallbackFailureSignal {
+	const structured = structuredSignal(error, new Set());
+	if (structured !== undefined) return structured;
+
+	const message = modelFailureMessage(error);
+	const name = errorName(error);
+	const fallbackKind = message.trim().length > 0
+		? fallbackKindFromMessage(message, name)
+		: undefined;
+	return {
+		kind: fallbackKind ?? "unknown",
+		message,
+		source: "string_fallback",
+		...(name !== undefined ? { name } : {}),
+	};
 }
 
 export function isRetryableModelFailure(error: unknown): boolean {
 	if (error === undefined) return false;
-	const parts = collectSignalParts(error);
-	if (parts.length === 0) return false;
-	if (hasNonRetryableModelFailureGuard(error)) return false;
-	if (hasRetryableStructuredSignal(error)) return true;
-	if (hasStructuredStopReason(error, "error")) return true;
-	return parts.some((part) => RETRYABLE_MODEL_FAILURE_PATTERNS.some((pattern) => pattern.test(part)));
-}
-
-export function isRetryableProviderFailureSignal(signal: StructuredProviderFailureSignal | undefined): boolean {
-	return isRetryableModelFailure(signal);
-}
-
-export function isRetryableAttemptFailure(
-	error: unknown,
-	providerFailureSignal: StructuredProviderFailureSignal | undefined,
-): boolean {
-	if (hasNonRetryableModelFailureGuard(error)) return false;
-	return providerFailureSignal !== undefined
-		? isRetryableProviderFailureSignal(providerFailureSignal)
-		: isRetryableModelFailure(error);
+	const signal = normalizeModelFailureSignal(error);
+	return FALLBACKABLE_FAILURE_KINDS.has(signal.kind);
 }
 
 export function formatModelAttemptNote(attempt: ModelAttemptSummary, nextModel?: string): string {

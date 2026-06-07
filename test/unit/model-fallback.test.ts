@@ -5,8 +5,8 @@ import {
   buildModelCandidateIds,
   buildModelCandidatesFromCatalog,
   splitReasoningSuffix,
-  errorMessage,
   isRetryableModelFailure,
+  normalizeModelFailureSignal,
   validateWorkflowModels,
   WorkflowModelValidationError,
 } from "../../packages/workflows/src/runs/shared/model-fallback.js";
@@ -294,93 +294,191 @@ describe("model fallback helpers", () => {
     ]);
   });
 
-  test("errorMessage formats structured provider objects without exposing raw object strings", () => {
-    const message = errorMessage({
-      status: 429,
-      response: {
-        body: {
-          error: {
-            message: "rate limit exceeded",
-            type: "rate_limit_error",
-          },
-        },
-      },
-      diagnostics: [
-        {
-          error: {
-            code: "insufficient_quota",
-            message: "quota exhausted",
-          },
-        },
-      ],
-    });
-
-    assert.match(message, /429/);
-    assert.match(message, /rate limit exceeded/);
-    assert.match(message, /rate_limit_error/);
-    assert.match(message, /quota exhausted/);
-    assert.doesNotMatch(message, /\[object Object\]/);
-  });
-
-  test("errorMessage preserves Error.message priority over structured provider fields", () => {
-    const err = new Error("sdk wrapped provider failure");
-    Object.assign(err, {
-      status: 429,
-      response: { body: { error: { message: "inner rate limit" } } },
-    });
-
-    assert.equal(errorMessage(err), "sdk wrapped provider failure");
-  });
-
-  test("errorMessage uses a bounded non-raw fallback for object values with no structured fields", () => {
-    assert.equal(errorMessage({ provider: { raw: "redacted" } }), "unknown provider error");
-  });
-
   test("retry classifier accepts provider failures but rejects task failures", () => {
     assert.equal(isRetryableModelFailure("429 rate limit exceeded"), true);
     assert.equal(isRetryableModelFailure("model not found"), true);
-    assert.equal(isRetryableModelFailure("401"), true);
-    assert.equal(isRetryableModelFailure("403"), true);
-    assert.equal(isRetryableModelFailure("500"), true);
-    assert.equal(isRetryableModelFailure("501"), true);
-    assert.equal(isRetryableModelFailure("520"), true);
-    assert.equal(isRetryableModelFailure("529"), true);
-    assert.equal(isRetryableModelFailure("599"), true);
-    assert.equal(isRetryableModelFailure("provider returned 520"), true);
-    assert.equal(isRetryableModelFailure("provider returned 529"), true);
-    assert.equal(isRetryableModelFailure("provider returned 599"), true);
     assert.equal(isRetryableModelFailure("command failed: bun test"), false);
-    assert.equal(isRetryableModelFailure("tool call failed with 503"), false);
-    assert.equal(isRetryableModelFailure("aborted after provider returned 503"), false);
-    assert.equal(isRetryableModelFailure("missing file from 503 response"), false);
     assert.equal(isRetryableModelFailure("user cancelled"), false);
   });
 
-  test("retry classifier traverses nested diagnostics before accepting provider/auth/rate-limit codes", () => {
-    const retryableNested = {
+  test("retry classifier uses structured diagnostics before localized text", () => {
+    const signal = normalizeModelFailureSignal({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "地域化されたプロバイダー エラー",
+      diagnostics: [{ error: { code: 429, message: "quota exhausted" } }],
+    });
+
+    assert.equal(signal.kind, "rate_limit");
+    assert.equal(signal.source, "diagnostic");
+    assert.equal(isRetryableModelFailure({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "地域化されたプロバイダー エラー",
+      diagnostics: [{ error: { code: 429, message: "quota exhausted" } }],
+    }), true);
+    assert.equal(isRetryableModelFailure({
+      message: "localized wrapper",
+      diagnostics: [{ error: { message: "service unavailable" } }],
+    }), true);
+    assert.equal(isRetryableModelFailure({
       message: "outer provider failure",
-      diagnostics: [
-        {
-          response: {
-            body: {
-              error: { status: 403 },
-            },
-          },
+      diagnostics: [{ response: { body: { error: { status: 403 } } } }],
+    }), true);
+  });
+
+  test("retry classifier uses structured status and codes including auth failures", () => {
+    assert.equal(isRetryableModelFailure({ status: 503, message: "localized" }), true);
+    assert.equal(isRetryableModelFailure({ statusCode: 401, message: "localized" }), true);
+    assert.equal(isRetryableModelFailure({ httpStatus: 403, message: "localized" }), true);
+    assert.equal(isRetryableModelFailure({ code: "invalid_api_key", message: "localized" }), true);
+    assert.equal(normalizeModelFailureSignal({ status: 408, message: "localized" }).kind, "network_timeout");
+    assert.equal(normalizeModelFailureSignal({ status: 404, message: "localized" }).kind, "model_unavailable");
+    assert.equal(normalizeModelFailureSignal({ code: "429", message: "localized" }).kind, "rate_limit");
+  });
+
+  test("retry classifier treats every structured HTTP-like 5xx status/code as provider unavailable", () => {
+    const cases: readonly unknown[] = [
+      { status: 529, message: "localized" },
+      { statusCode: 520, message: "localized" },
+      { httpStatus: 599, message: "localized" },
+      { code: 529, message: "localized" },
+      { code: "520", message: "localized" },
+      { diagnostics: [{ error: { code: "529", message: "localized" } }] },
+    ];
+
+    for (const failure of cases) {
+      assert.equal(normalizeModelFailureSignal(failure).kind, "provider_unavailable");
+      assert.equal(isRetryableModelFailure(failure), true);
+    }
+  });
+
+  test("retry classifier preserves refusal precedence over structured 5xx", () => {
+    assert.equal(isRetryableModelFailure({ stopReason: "aborted", status: 599, code: 529 }), false);
+    assert.equal(isRetryableModelFailure({ name: "AbortError", statusCode: 520, message: "request aborted" }), false);
+    assert.equal(isRetryableModelFailure({ httpStatus: 529, message: "shell command failed" }), false);
+    assert.equal(isRetryableModelFailure("completion guard failed after 599"), false);
+  });
+
+  test("retry classifier lets nested refusals outrank wrapper structured provider signals", () => {
+    const refusalCases: ReadonlyArray<{
+      label: string;
+      failure: unknown;
+      expectedKind: "cancelled" | "task_failure";
+      expectedSource?: "diagnostic";
+    }> = [
+      {
+        label: "5xx wrapper with abort cause",
+        failure: { status: 503, cause: { name: "AbortError", message: "aborted by user" } },
+        expectedKind: "cancelled",
+      },
+      {
+        label: "429 wrapper with abort cause",
+        failure: { code: "429", cause: { name: "AbortError", message: "rate-limit wrapper hid abort" } },
+        expectedKind: "cancelled",
+      },
+      {
+        label: "auth wrapper with diagnostic task failure",
+        failure: {
+          statusCode: 401,
+          diagnostics: [{ error: { message: "completion guard failed after provider wrapper" } }],
         },
-      ],
-    };
-    assert.equal(isRetryableModelFailure(retryableNested), true);
+        expectedKind: "task_failure",
+        expectedSource: "diagnostic",
+      },
+      {
+        label: "timeout wrapper with diagnostic task failure",
+        failure: {
+          status: 408,
+          diagnostics: [{ error: { message: "shell command failed after timeout wrapper" } }],
+        },
+        expectedKind: "task_failure",
+        expectedSource: "diagnostic",
+      },
+      {
+        label: "model unavailable wrapper with task failure cause",
+        failure: { status: 404, cause: { message: "command failed: bun test" } },
+        expectedKind: "task_failure",
+      },
+      {
+        label: "nested abort below diagnostic 5xx",
+        failure: {
+          code: 529,
+          diagnostics: [{ error: { status: 503, cause: { name: "AbortError", message: "nested abort" } } }],
+        },
+        expectedKind: "cancelled",
+      },
+    ];
 
-    const localFailure = {
-      message: "command failed after provider returned 503",
-      response: { status: 503 },
-    };
-    assert.equal(isRetryableModelFailure(localFailure), false);
+    for (const { label, failure, expectedKind, expectedSource } of refusalCases) {
+      const signal = normalizeModelFailureSignal(failure);
+      assert.equal(signal.kind, expectedKind, label);
+      if (expectedSource !== undefined) assert.equal(signal.source, expectedSource, label);
+      assert.equal(isRetryableModelFailure(failure), false, label);
+    }
+  });
 
-    const localFileFailure = {
-      message: "missing file after provider returned 599",
-      response: { status: 599 },
-    };
-    assert.equal(isRetryableModelFailure(localFileFailure), false);
+  test("retry classifier refuses provider content filters and refusal signals", () => {
+    const refusalCases: ReadonlyArray<{
+      label: string;
+      failure: unknown;
+      expectedSource?: "diagnostic";
+    }> = [
+      {
+        label: "assistant content_filter message",
+        failure: { role: "assistant", stopReason: "error", errorMessage: "content_filter" },
+      },
+      {
+        label: "assistant finish_reason content_filter field",
+        failure: { role: "assistant", stopReason: "error", finish_reason: "content_filter" },
+      },
+      {
+        label: "diagnostic content_filter code",
+        failure: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "localized provider error",
+          diagnostics: [{ error: { code: "content_filter", message: "blocked by provider" } }],
+        },
+        expectedSource: "diagnostic",
+      },
+      {
+        label: "safety policy refusal",
+        failure: { role: "assistant", stopReason: "error", errorMessage: "request blocked by safety policy" },
+      },
+      {
+        label: "tool refusal",
+        failure: { role: "assistant", stopReason: "error", errorMessage: "tool call refused by provider" },
+      },
+      {
+        label: "provider refusal",
+        failure: { role: "assistant", stopReason: "error", errorMessage: "provider refused this request" },
+      },
+    ];
+
+    for (const { label, failure, expectedSource } of refusalCases) {
+      const signal = normalizeModelFailureSignal(failure);
+      assert.equal(signal.kind, "task_failure", label);
+      if (expectedSource !== undefined) assert.equal(signal.source, expectedSource, label);
+      assert.equal(isRetryableModelFailure(failure), false, label);
+    }
+  });
+
+  test("retry classifier follows causes before regex fallback", () => {
+    const err = new Error("outer localized failure", {
+      cause: { diagnostics: [{ error: { code: "service_unavailable", message: "provider down" } }] },
+    });
+
+    assert.equal(isRetryableModelFailure(err), true);
+    assert.equal(normalizeModelFailureSignal(err).kind, "provider_unavailable");
+  });
+
+  test("retry classifier refuses cancellation and task failures despite structured-looking text", () => {
+    assert.equal(isRetryableModelFailure({ name: "AbortError", status: 503, message: "request aborted" }), false);
+    assert.equal(isRetryableModelFailure({ status: 503, message: "request cancelled" }), false);
+    assert.equal(isRetryableModelFailure({ stopReason: "aborted", status: 503, errorMessage: "aborted" }), false);
+    assert.equal(isRetryableModelFailure({ status: 503, message: "shell command failed" }), false);
+    assert.equal(isRetryableModelFailure("completion guard failed after 429"), false);
+    assert.equal(isRetryableModelFailure("shell command failed with 503"), false);
   });
 });

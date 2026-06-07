@@ -12,7 +12,7 @@ You are tasked with debugging and identifying errors, test failures, and unexpec
 ## Available helpers
 
 - `tdd` — load the TDD skill before creating or modifying any tests.
-- `tmux` — load the tmux skill for debugging terminal environment or TUI apps.
+- `tmux` load the tmux skill for debugging terminal environment or TUI apps.
 - `browser` — load the browser skill for debugging web apps. Assume the `browse` CLI is installed; if it fails, follow the skill setup (`which browse || npm install -g browse`) or use `npx browse`.
 - `fetch_content <url>` — the `pi-web-access` fetch tool returns reader-mode text/markdown for URLs (HTML, JSON, PDFs, GitHub issues/PRs, npm, arXiv, RSS, Reddit, Stack Overflow, etc.). Prefer it over a real browser when you only need page content.
 - `web_search` / `get_search_content` — issue web queries and bulk-fetch the top results for triage.

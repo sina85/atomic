@@ -53,12 +53,14 @@ import { captureSingleOutputSnapshot, formatSavedOutputReference, resolveSingleO
 import {
 	buildModelCandidates,
 	formatModelAttemptNote,
-	isRetryableAttemptFailure,
 	isRetryableModelFailure,
-	providerFailureSignalText,
-	structuredProviderFailureSignal,
-	type StructuredProviderFailureSignal,
+	modelFailureMessage,
 } from "../shared/model-fallback.ts";
+import {
+	assistantStopReason,
+	isAssistantFailureStopReason,
+	shouldStartSubagentFinalDrain,
+} from "../shared/final-drain.ts";
 import {
 	createMutatingFailureState,
 	didMutatingToolFail,
@@ -80,7 +82,7 @@ import { acceptanceFailureMessage, evaluateAcceptance, formatAcceptancePrompt, r
 
 const artifactOutputByResult = new WeakMap<SingleResult, string>();
 const acceptanceOutputByResult = new WeakMap<SingleResult, string>();
-const providerFailureSignalByResult = new WeakMap<SingleResult, StructuredProviderFailureSignal>();
+const modelFailureSignalByResult = new WeakMap<SingleResult, unknown>();
 
 function emptyUsage(): Usage {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
@@ -298,7 +300,7 @@ async function runSingleAttempt(
 		let detached = false;
 		let intercomStarted = false;
 		let assistantError: string | undefined;
-		let assistantFailureSignal: StructuredProviderFailureSignal | undefined;
+		let assistantFailureSignal: unknown;
 		let removeAbortListener: (() => void) | undefined;
 		let removeInterruptListener: (() => void) | undefined;
 		let activityTimer: NodeJS.Timeout | undefined;
@@ -551,24 +553,24 @@ async function runSingleAttempt(
 					}
 					if (!result.model && evt.message.model) result.model = evt.message.model;
 					const assistantText = extractTextFromContent(evt.message.content);
-					const failureSignal = structuredProviderFailureSignal(evt.message, assistantText);
-					if (failureSignal !== undefined) {
-						assistantFailureSignal = failureSignal;
-						providerFailureSignalByResult.set(result, failureSignal);
-						assistantError = providerFailureSignalText(failureSignal) ?? assistantError;
-					}
 					appendRecentOutput(progress, assistantText.split("\n").slice(-10));
-					// Final assistant message: start the exit drain window.
-					const stopReason = (evt.message as { stopReason?: string }).stopReason;
-					const hasToolCall = Array.isArray(evt.message.content)
-						&& evt.message.content.some((part) => (part as { type?: string }).type === "toolCall");
-					if (stopReason === "stop" && !hasToolCall) {
-						if (!evt.message.errorMessage && assistantText.trim()) {
+					// Clean final assistant stops start the exit drain window; provider error/aborted
+					// stop reasons remain failure evidence so pi-ai can auto-retry before exit.
+					const stopReason = assistantStopReason(evt.message);
+					if (evt.message.errorMessage) {
+						assistantError = evt.message.errorMessage;
+						assistantFailureSignal = evt.message;
+					}
+					if (isAssistantFailureStopReason(stopReason)) {
+						assistantError = modelFailureMessage(evt.message);
+						assistantFailureSignal = evt.message;
+					}
+					if (shouldStartSubagentFinalDrain(evt.message)) {
+						if (assistantText.trim()) {
 							assistantError = undefined;
 							assistantFailureSignal = undefined;
-							providerFailureSignalByResult.delete(result);
 						}
-						cleanTerminalAssistantStopReceived ||= !evt.message.errorMessage;
+						cleanTerminalAssistantStopReceived = true;
 						startFinalDrain();
 					}
 				}
@@ -647,7 +649,10 @@ async function runSingleAttempt(
 			}
 			processClosed = true;
 			if (buf.trim()) processLine(buf);
-			if (!result.error) result.error = providerFailureSignalText(assistantFailureSignal) ?? assistantError;
+			if (!result.error && assistantError) result.error = assistantError;
+			if (assistantFailureSignal !== undefined && result.error === assistantError) {
+				modelFailureSignalByResult.set(result, assistantFailureSignal);
+			}
 			const forcedDrainAfterFinalSuccess = forcedTerminationSignal && cleanTerminalAssistantStopReceived && !result.error;
 			if (code !== 0 && stderrBuf.trim() && !result.error && !forcedDrainAfterFinalSuccess) {
 				result.error = stderrBuf.trim();
@@ -979,8 +984,8 @@ export async function runSync(
 		if (attemptSucceeded) {
 			break;
 		}
-		const providerFailureSignal = providerFailureSignalByResult.get(result);
-		if (isRetryableAttemptFailure(result.error, providerFailureSignal) && i < modelsToTry.length - 1) {
+		const retrySignal = modelFailureSignalByResult.get(result) ?? result.error;
+		if (isRetryableModelFailure(retrySignal) && i < modelsToTry.length - 1) {
 			pendingAttemptNotes.push(formatModelAttemptNote(attempt, modelsToTry[i + 1]));
 			continue;
 		}

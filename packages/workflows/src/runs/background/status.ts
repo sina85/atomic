@@ -8,15 +8,8 @@
  * cross-ref: spec §5.5, §8.1 Phase D
  */
 
-import type { RunEndMetadata, Store } from "../../shared/store.js";
-import type {
-  RunSnapshot,
-  RunStatus,
-  StageSnapshot,
-  WorkflowFailureDisposition,
-  WorkflowFailureKind,
-  WorkflowFailureRecoverability,
-} from "../../shared/store-types.js";
+import type { Store } from "../../shared/store.js";
+import type { RunSnapshot, RunStatus, StageSnapshot } from "../../shared/store-types.js";
 import type { WorkflowInputValues, WorkflowOutputValues, WorkflowPersistencePort } from "../../shared/types.js";
 import type { CancellationRegistry } from "./cancellation-registry.js";
 import type { StageControlRegistry } from "../foreground/stage-control-registry.js";
@@ -89,15 +82,15 @@ export interface RunDetail {
   readonly stages: readonly RunSnapshot["stages"][number][];
   readonly result?: WorkflowOutputValues;
   readonly error?: string;
-  readonly failureKind?: WorkflowFailureKind;
-  readonly failureCode?: string;
-  readonly failureRecoverability?: WorkflowFailureRecoverability;
-  readonly failureDisposition?: WorkflowFailureDisposition;
-  readonly failureMessage?: string;
-  readonly retryAfterMs?: number;
-  readonly blockedAt?: number;
+  readonly failureKind?: RunSnapshot["failureKind"];
+  readonly failureCode?: RunSnapshot["failureCode"];
+  readonly failureRecoverability?: RunSnapshot["failureRecoverability"];
+  readonly failureDisposition?: RunSnapshot["failureDisposition"];
+  readonly failureMessage?: RunSnapshot["failureMessage"];
   readonly failedStageId?: string;
   readonly resumable?: boolean;
+  readonly retryAfterMs?: number;
+  readonly blockedAt?: number;
 }
 
 export type InspectRunResult =
@@ -163,23 +156,23 @@ export function killRun(
 
   // Abort active executor (no-op if not registered)
   const errorMessage = "workflow killed";
-  const killMetadata: RunEndMetadata = {
+  opts?.cancellation?.abort(runId, errorMessage);
+
+  const metadata = {
     failureKind: "cancelled",
     failureCode: "cancelled",
     failureRecoverability: "non_recoverable",
     failureDisposition: "terminal_killed",
     failureMessage: errorMessage,
     resumable: false,
-  };
-  opts?.cancellation?.abort(runId, errorMessage);
-
-  const recorded = activeStore.recordRunEnd(runId, "killed", undefined, errorMessage, killMetadata);
+  } as const;
+  const recorded = activeStore.recordRunEnd(runId, "killed", undefined, errorMessage, metadata);
   if (recorded && opts?.persistence) {
     appendRunEnd(opts.persistence, {
       runId,
       status: "killed",
       error: errorMessage,
-      ...killMetadata,
+      ...metadata,
       ts: Date.now(),
     });
   }
@@ -278,17 +271,29 @@ export function resumeRun(
   // Return a deep copy of the snapshot for safe consumption
   const snapshot = structuredClone(run);
   const resumedCopy = structuredClone(resumed);
-  const isTerminalNonResumable =
-    run.endedAt !== undefined && run.resumable === false && (run.status === "failed" || run.status === "killed");
-  if (isTerminalNonResumable) {
-    const terminalStatus = run.status === "killed" ? "killed" : "failed";
+  if (run.status === "killed" || run.resumable === false) {
     return {
       ok: true,
       runId,
       snapshot,
       resumed: resumedCopy,
       mode: "not_resumable",
-      message: `This ${terminalStatus} workflow is not resumable; inspect the snapshot and rerun the workflow when ready.`,
+      message: "This workflow is not resumable; inspect the snapshot and start a new workflow run when ready.",
+    };
+  }
+  if (
+    run.endedAt === undefined &&
+    run.resumable === true &&
+    run.failureRecoverability === "recoverable" &&
+    run.failedStageId !== undefined
+  ) {
+    return {
+      ok: true,
+      runId,
+      snapshot,
+      resumed: resumedCopy,
+      mode: resumedCopy.length > 0 ? "paused" : "snapshot",
+      message: `Workflow is blocked on a recoverable ${run.failureCode ?? run.failureKind ?? "workflow"} failure at stage ${run.failedStageId}; retry/resume after the issue clears.`,
     };
   }
   return {
@@ -480,10 +485,10 @@ export function inspectRun(
     failureRecoverability: copy.failureRecoverability,
     failureDisposition: copy.failureDisposition,
     failureMessage: copy.failureMessage,
-    retryAfterMs: copy.retryAfterMs,
-    blockedAt: copy.blockedAt,
     failedStageId: copy.failedStageId,
     resumable: copy.resumable,
+    retryAfterMs: copy.retryAfterMs,
+    blockedAt: copy.blockedAt,
   };
 
   return { ok: true, runId: copy.id, detail };

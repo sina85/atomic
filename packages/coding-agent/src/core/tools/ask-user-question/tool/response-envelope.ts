@@ -37,6 +37,10 @@ export function buildQuestionnaireResponse(result: QuestionnaireResult | null | 
 		const answerSegments = segments.length > 0 ? ` ${segments.join(" ")}` : "";
 		return buildToolResult(`${CHAT_TERMINATION_DIRECTIVE}${answerSegments}`, result, { terminate: true });
 	}
+	if (containsChatAnswer) {
+		const answerSegments = segments.length > 0 ? ` ${segments.join(" ")}` : "";
+		return buildToolResult(`${CHAT_TERMINATION_DIRECTIVE}${answerSegments}`, result, { terminate: true });
+	}
 	if (segments.length === 0) {
 		return buildToolResult(DECLINE_MESSAGE, { answers: result.answers, cancelled: true });
 	}

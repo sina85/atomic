@@ -250,14 +250,18 @@ export function parseAskUserQuestionArgs(
   return questions.length > 0 ? questions : undefined;
 }
 
+
 /**
  * Resolve a desired answer string against a single-select question's options.
- * Matches a case-insensitive option label, then a 1-based option index, then
- * falls back to a typed ("custom") answer.
+ * Checks the chat sentinel first (case/whitespace insensitive), then matches a
+ * case-insensitive option label, then a 1-based option index, then falls back to
+ * a typed ("custom") answer.
  */
 function answerSingle(question: StageInputQuestion, desired: string): BuiltAnswer {
   if (isChatSentinel(desired)) return chatAnswer(question);
   const normalized = normalizeLabel(desired);
+  // Chat sentinel takes priority over authored options — the label is reserved so
+  // no option can legitimately match it.
   const byLabel = question.options.find((option) => normalizeLabel(option.label) === normalized);
   if (byLabel) {
     return { questionIndex: 0, question: question.question, kind: "option", answer: byLabel.label };
@@ -308,6 +312,9 @@ function buildResult(
       answer.optionLabels !== undefined
         ? answer.optionLabels
         : (answer.text ?? "").split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+    if (candidates.some(isChatSentinel)) {
+      return { answers: [chatAnswer(question)], cancelled: false } satisfies BuiltResult;
+    }
     return { answers: [answerMulti(question, candidates)], cancelled: false } satisfies BuiltResult;
   }
 

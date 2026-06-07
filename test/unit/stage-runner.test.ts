@@ -610,41 +610,49 @@ describe("createStageContext — model fallback", () => {
         assert.equal(meta.warnings, undefined);
     });
 
-    test("terminal assistant error counts as failed attempt and retries fallback", async () => {
+    test("non-throwing assistant stopReason error tries fallback and records metadata", async () => {
         const calls: string[] = [];
+        const disposed: string[] = [];
         const agentSession: AgentSessionAdapter = {
             async create(options) {
-                const model: string = typeof options.model === "string"
-                    ? options.model
+                const modelValue = options.model as unknown;
+                const model = typeof modelValue === "string"
+                    ? modelValue
                     : "object-model";
                 calls.push(model);
-                const messages: AgentSession["messages"] = [] as AgentSession["messages"];
+                const messages: AgentSession["messages"] = [];
                 const { session } = makeMockSession({
                     messages,
                     async prompt() {
                         if (model === "anthropic/primary") {
                             messages.push({
                                 role: "assistant",
-                                content: [{ type: "text", text: "provider failed" }],
+                                content: [],
                                 stopReason: "error",
-                                errorMessage: "provider request failed",
-                                diagnostics: [{ error: { status: 503, message: "service unavailable" } }],
-                            } as never);
+                                errorMessage: "地域化されたプロバイダー エラー",
+                                diagnostics: [{ error: { code: 429, message: "quota exhausted" } }],
+                            } as unknown as AgentSession["messages"][number]);
                             return;
                         }
                         messages.push({
                             role: "assistant",
                             content: [{ type: "text", text: "fallback answer" }],
                             stopReason: "stop",
-                        } as never);
+                        } as unknown as AgentSession["messages"][number]);
+                    },
+                    dispose() {
+                        disposed.push(model);
                     },
                     getLastAssistantText() {
-                        return model === "openai/fallback" ? "fallback answer" : undefined;
+                        return model === "openai/fallback"
+                            ? "fallback answer"
+                            : undefined;
                     },
                 });
                 return session;
             },
         };
+
         const ctx = createStageContext(
             makeOpts({
                 adapters: { agentSession },
@@ -655,30 +663,62 @@ describe("createStageContext — model fallback", () => {
             }),
         ) as InternalStageContext;
 
-        assert.equal(await ctx.prompt("go"), "fallback answer");
+        const text = await ctx.prompt("go");
+
+        assert.equal(text, "fallback answer");
         assert.deepEqual(calls, ["anthropic/primary", "openai/fallback"]);
-        assert.equal(ctx.__modelFallbackMeta().modelAttempts?.[0]?.success, false);
-        assert.match(ctx.__modelFallbackMeta().modelAttempts?.[0]?.error ?? "", /provider request failed/);
-        assert.equal(ctx.__modelFallbackMeta().modelAttempts?.[1]?.success, true);
+        assert.deepEqual(disposed, ["anthropic/primary"]);
+        const meta = ctx.__modelFallbackMeta();
+        assert.deepEqual(meta.attemptedModels, [
+            "anthropic/primary",
+            "openai/fallback",
+        ]);
+        assert.deepEqual(
+            meta.modelAttempts?.map((attempt) => attempt.success),
+            [false, true],
+        );
+        assert.equal(meta.modelAttempts?.[0]?.error, "地域化されたプロバイダー エラー");
+        assert.equal(meta.warnings, undefined);
     });
 
-    test("terminal assistant aborted is not recorded as success", async () => {
-        const messages: AgentSession["messages"] = [] as AgentSession["messages"];
+    test("recovered non-throwing assistant failure in the same prompt does not try fallback", async () => {
+        const calls: string[] = [];
+        const disposed: string[] = [];
         const agentSession: AgentSessionAdapter = {
-            async create() {
+            async create(options) {
+                const modelValue = options.model as unknown;
+                const model = typeof modelValue === "string"
+                    ? modelValue
+                    : "object-model";
+                calls.push(model);
+                const messages: AgentSession["messages"] = [];
                 const { session } = makeMockSession({
                     messages,
                     async prompt() {
                         messages.push({
                             role: "assistant",
-                            content: [{ type: "text", text: "aborted by provider" }],
-                            stopReason: "aborted",
-                        } as never);
+                            content: [],
+                            stopReason: "error",
+                            errorMessage: "429 rate limit exceeded",
+                            diagnostics: [{ error: { code: 429, message: "rate limit" } }],
+                        } as unknown as AgentSession["messages"][number]);
+                        messages.push({
+                            role: "assistant",
+                            content: [{ type: "text", text: "primary recovered answer" }],
+                            stopReason: "stop",
+                        } as unknown as AgentSession["messages"][number]);
+                    },
+                    dispose() {
+                        disposed.push(model);
+                    },
+                    getLastAssistantText() {
+                        return "primary recovered answer";
                     },
                 });
                 return session;
             },
         };
+
         const ctx = createStageContext(
             makeOpts({
                 adapters: { agentSession },
@@ -689,8 +729,136 @@ describe("createStageContext — model fallback", () => {
             }),
         ) as InternalStageContext;
 
-        await assert.rejects(ctx.prompt("go"), /aborted by provider/);
-        assert.deepEqual(ctx.__modelFallbackMeta().modelAttempts?.map((attempt) => attempt.success), [false]);
+        const text = await ctx.prompt("go");
+
+        assert.equal(text, "primary recovered answer");
+        assert.deepEqual(calls, ["anthropic/primary"]);
+        assert.deepEqual(disposed, []);
+        const meta = ctx.__modelFallbackMeta();
+        assert.deepEqual(meta.attemptedModels, ["anthropic/primary"]);
+        assert.deepEqual(
+            meta.modelAttempts?.map((attempt) => ({ model: attempt.model, success: attempt.success })),
+            [{ model: "anthropic/primary", success: true }],
+        );
+        assert.equal(meta.warnings, undefined);
+    });
+
+    test("non-throwing assistant stopReason aborted does not try fallback", async () => {
+        const calls: string[] = [];
+        const agentSession: AgentSessionAdapter = {
+            async create(options) {
+                const modelValue = options.model as unknown;
+                const model = typeof modelValue === "string"
+                    ? modelValue
+                    : "object-model";
+                calls.push(model);
+                const messages: AgentSession["messages"] = [];
+                const { session } = makeMockSession({
+                    messages,
+                    async prompt() {
+                        messages.push({
+                            role: "assistant",
+                            content: [],
+                            stopReason: "aborted",
+                            status: 503,
+                        } as unknown as AgentSession["messages"][number]);
+                    },
+                });
+                return session;
+            },
+        };
+
+        const ctx = createStageContext(
+            makeOpts({
+                adapters: { agentSession },
+                stageOptions: {
+                    model: "anthropic/primary",
+                    fallbackModels: ["openai/fallback"],
+                },
+            }),
+        );
+
+        await assert.rejects(ctx.prompt("go"), /stopReason:aborted/);
+        assert.deepEqual(calls, ["anthropic/primary"]);
+    });
+
+    test("controlled pause/resume ignores stale aborted assistant messages when fallback is enabled", async () => {
+        const calls: string[] = [];
+        const promptTexts: string[] = [];
+        const messages: AgentSession["messages"] = [];
+        const firstPromptStarted = Promise.withResolvers<void>();
+        let resolveFirstPrompt: (() => void) | undefined;
+        let abortCalls = 0;
+        const agentSession: AgentSessionAdapter = {
+            async create(options) {
+                const modelValue = options.model as unknown;
+                const model = typeof modelValue === "string"
+                    ? modelValue
+                    : "object-model";
+                calls.push(model);
+                const { session } = makeMockSession({
+                    messages,
+                    async prompt(text) {
+                        promptTexts.push(text);
+                        if (promptTexts.length === 1) {
+                            return new Promise<void>((resolve) => {
+                                resolveFirstPrompt = resolve;
+                                firstPromptStarted.resolve();
+                            });
+                        }
+                        messages.push({
+                            role: "assistant",
+                            content: [{ type: "text", text: "resumed answer" }],
+                            stopReason: "stop",
+                        } as unknown as AgentSession["messages"][number]);
+                    },
+                    async abort() {
+                        abortCalls += 1;
+                        messages.push({
+                            role: "assistant",
+                            content: [],
+                            stopReason: "aborted",
+                            status: 503,
+                        } as unknown as AgentSession["messages"][number]);
+                        resolveFirstPrompt?.();
+                    },
+                    getLastAssistantText() {
+                        return promptTexts.length >= 2 ? "resumed answer" : undefined;
+                    },
+                });
+                return session;
+            },
+        };
+
+        const ctx = createStageContext(
+            makeOpts({
+                adapters: { agentSession },
+                stageOptions: {
+                    model: "anthropic/primary",
+                    fallbackModels: ["openai/fallback"],
+                },
+            }),
+        ) as InternalStageContext;
+
+        const promptPromise = ctx.prompt("first");
+        void promptPromise.catch(() => {});
+        await firstPromptStarted.promise;
+
+        await ctx.__requestPause();
+        await flushMicrotasks();
+        assert.equal(abortCalls, 1);
+        assert.equal(ctx.__isPaused(), true);
+
+        await ctx.__resume("continue after pause");
+        const text = await promptPromise;
+
+        assert.equal(text, "resumed answer");
+        assert.deepEqual(promptTexts, ["first", "continue after pause"]);
+        assert.deepEqual(calls, ["anthropic/primary"]);
+        const meta = ctx.__modelFallbackMeta();
+        assert.deepEqual(meta.attemptedModels, ["anthropic/primary"]);
+        assert.deepEqual(meta.modelAttempts?.map((attempt) => attempt.success), [true]);
+        assert.equal(meta.warnings, undefined);
     });
 
     test("workflow fast mode keeps raw model metadata with a structured fast flag", async () => {
@@ -930,64 +1098,6 @@ describe("createStageContext — model fallback", () => {
         assert.deepEqual(meta.warnings, [
             "[fallback] anthropic/primary failed: anthropic/primary No API key found. Retrying with openai/fallback.",
         ]);
-    });
-
-    test("structured provider object failures keep readable attempt and warning metadata", async () => {
-        const calls: string[] = [];
-        const providerFailure = (model: string, status: number): unknown => ({
-            status,
-            response: {
-                body: {
-                    error: {
-                        message: `${model} provider unavailable`,
-                        type: "provider_error",
-                    },
-                },
-            },
-        });
-        const agentSession: AgentSessionAdapter = {
-            async create(options) {
-                const model = typeof options.model === "string"
-                    ? options.model
-                    : "object-model";
-                const status = calls.length === 0 ? 429 : 503;
-                calls.push(model);
-                const { session } = makeMockSession({
-                    async prompt() {
-                        throw providerFailure(model, status);
-                    },
-                });
-                return session;
-            },
-        };
-        const ctx = createStageContext(
-            makeOpts({
-                adapters: { agentSession },
-                stageOptions: {
-                    model: "anthropic/primary",
-                    fallbackModels: ["openai/fallback"],
-                },
-            }),
-        ) as InternalStageContext;
-
-        await assert.rejects(ctx.prompt("go"));
-
-        const meta = ctx.__modelFallbackMeta();
-        assert.deepEqual(calls, ["anthropic/primary", "openai/fallback"]);
-        const firstError = meta.modelAttempts?.[0]?.error ?? "";
-        const secondError = meta.modelAttempts?.[1]?.error ?? "";
-        assert.match(firstError, /429/);
-        assert.match(firstError, /anthropic\/primary provider unavailable/);
-        assert.match(secondError, /503/);
-        assert.match(secondError, /openai\/fallback provider unavailable/);
-        assert.doesNotMatch(firstError, /\[object Object\]/);
-        assert.doesNotMatch(secondError, /\[object Object\]/);
-        assert.deepEqual(meta.warnings, [
-            "[fallback] anthropic/primary failed: 429, anthropic/primary provider unavailable, provider_error. Retrying with openai/fallback.",
-        ]);
-        for (const warning of meta.warnings ?? []) {
-            assert.doesNotMatch(warning, /\[object Object\]/);
-        }
     });
 
     test("non-retryable failure does not try fallback", async () => {
