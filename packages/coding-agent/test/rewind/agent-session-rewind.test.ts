@@ -1,6 +1,7 @@
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { describe, expect, it } from "vitest";
 import { createHarness } from "../suite/harness.ts";
+import { assistantMsg } from "../utilities.ts";
 
 
 describe("AgentSession rewind restore guard", () => {
@@ -61,6 +62,42 @@ describe("AgentSession rewind restore guard", () => {
 
 			await expect(session._agentEventQueue).resolves.toBeUndefined();
 			expect(harness.eventsOfType("turn_start")).toHaveLength(1);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("advances turn indexes when rewind turn finalization fails", async () => {
+		const turnEvents: string[] = [];
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("turn_start", (event) => {
+						turnEvents.push(`start:${event.turnIndex}`);
+					});
+					pi.on("turn_end", (event) => {
+						turnEvents.push(`end:${event.turnIndex}`);
+					});
+				},
+			],
+		});
+		try {
+			const session = harness.session as unknown as {
+				_handleAgentEvent: (event: AgentEvent) => void;
+				_agentEventQueue: Promise<void>;
+				_rewindCoordinator: { finalizeTurnCheckpoint: () => void };
+			};
+			session._rewindCoordinator.finalizeTurnCheckpoint = () => {
+				throw new Error("rewind finalize boom");
+			};
+
+			session._handleAgentEvent({ type: "agent_start" });
+			session._handleAgentEvent({ type: "turn_start" });
+			session._handleAgentEvent({ type: "turn_end", message: assistantMsg("done"), toolResults: [] } as AgentEvent);
+			session._handleAgentEvent({ type: "turn_start" });
+
+			await expect(session._agentEventQueue).resolves.toBeUndefined();
+			expect(turnEvents).toEqual(["start:0", "end:0", "start:1"]);
 		} finally {
 			harness.cleanup();
 		}

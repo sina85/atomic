@@ -18,14 +18,6 @@ describe("scanInFlightRuns", () => {
     assert.equal(scanInFlightRuns([]).length, 0);
   });
 
-  test("returns empty when run has a durable blocked entry", () => {
-    const entries: SessionEntry[] = [
-      { id: "e1", type: "workflow.run.start", payload: { runId: "r1", name: "wf", inputs: {}, ts: 1 } },
-      { id: "e2", type: "workflow.run.blocked", payload: { runId: "r1", error: "rate limit", failureKind: "rate_limit", resumable: true, ts: 2 } },
-    ];
-    assert.equal(scanInFlightRuns(entries).length, 0);
-  });
-
   test("returns empty when all runs have ended", () => {
     const entries: SessionEntry[] = [
       { id: "e1", type: "workflow.run.start", payload: { runId: "r1", name: "wf", inputs: {}, ts: 1 } },
@@ -143,67 +135,6 @@ describe("restoreOnSessionStart", () => {
     assert.equal(crashed.length, 0);
     assert.equal(st.runs().length, 1);
     assert.equal(st.runs()[0]?.status, "completed");
-  });
-
-  test("restores durable blocked run as running and resumable", () => {
-    const st = createStore();
-    const entries: SessionEntry[] = [
-      { id: "e1", type: "workflow.run.start", payload: { runId: "r1", name: "wf", inputs: { x: 1 }, ts: 1 } },
-      { id: "e2", type: "workflow.stage.start", payload: { runId: "r1", stageId: "s1", name: "fetch", parentIds: [], ts: 2 } },
-      { id: "e3", type: "workflow.stage.end", payload: { runId: "r1", stageId: "s1", status: "failed", error: "rate limit", failureKind: "rate_limit", failureCode: "rate_limited", failureRecoverability: "recoverable", failureDisposition: "terminal_failed", failureMessage: "429", retryAfterMs: 500, ts: 3 } },
-      { id: "e4", type: "workflow.stage.start", payload: { runId: "r1", stageId: "s2", name: "dependent", parentIds: ["s1"], ts: 4 } },
-      { id: "e5", type: "workflow.run.blocked", payload: { runId: "r1", error: "rate limit", failureKind: "rate_limit", failureCode: "rate_limited", failureRecoverability: "recoverable", failureDisposition: "active_blocked", failureMessage: "429", retryAfterMs: 500, blockedAt: 4, failedStageId: "s1", resumable: true, ts: 4 } },
-    ];
-
-    restoreOnSessionStart(makeSessionManager(entries), { resumeInFlight: "never", persistRuns: true }, st);
-
-    const run = st.runs()[0]!;
-    assert.equal(run.status, "running");
-    assert.equal(run.endedAt, undefined);
-    assert.equal(run.error, "rate limit");
-    assert.equal(run.failureKind, "rate_limit");
-    assert.equal(run.failureCode, "rate_limited");
-    assert.equal(run.failureRecoverability, "recoverable");
-    assert.equal(run.failureDisposition, "active_blocked");
-    assert.equal(run.failureMessage, "429");
-    assert.equal(run.retryAfterMs, 500);
-    assert.equal(run.blockedAt, 4);
-    assert.equal(run.failedStageId, "s1");
-    assert.equal(run.resumable, true);
-    const s1 = run.stages.find((stage) => stage.id === "s1");
-    const s2 = run.stages.find((stage) => stage.id === "s2");
-    assert.equal(s1!.status, "failed");
-    assert.equal(s2!.status, "blocked");
-    assert.equal(s2!.blockedByStageId, "s1");
-    assert.equal(s2!.error, undefined);
-  });
-
-  test("restores failed stage from blocked run metadata when stage.end is missing", () => {
-    const st = createStore();
-    const entries: SessionEntry[] = [
-      { id: "e1", type: "workflow.run.start", payload: { runId: "r1", name: "wf", inputs: { x: 1 }, ts: 1 } },
-      { id: "e2", type: "workflow.stage.start", payload: { runId: "r1", stageId: "s1", name: "fetch", parentIds: [], ts: 2 } },
-      { id: "e3", type: "workflow.stage.start", payload: { runId: "r1", stageId: "s2", name: "dependent", parentIds: ["s1"], ts: 3 } },
-      { id: "e4", type: "workflow.run.blocked", payload: { runId: "r1", error: "rate limit", failureKind: "rate_limit", failureCode: "rate_limited", failureRecoverability: "recoverable", failureDisposition: "active_blocked", failureMessage: "429", retryAfterMs: 500, blockedAt: 4, failedStageId: "s1", resumable: true, ts: 4 } },
-    ];
-
-    restoreOnSessionStart(makeSessionManager(entries), { resumeInFlight: "never", persistRuns: true }, st);
-
-    const run = st.runs()[0]!;
-    const s1 = run.stages.find((stage) => stage.id === "s1")!;
-    const s2 = run.stages.find((stage) => stage.id === "s2")!;
-    assert.equal(run.status, "running");
-    assert.equal(s1.status, "failed");
-    assert.equal(s1.error, "rate limit");
-    assert.equal(s1.failureKind, "rate_limit");
-    assert.equal(s1.failureCode, "rate_limited");
-    assert.equal(s1.failureRecoverability, "recoverable");
-    assert.equal(s1.failureDisposition, "active_blocked");
-    assert.equal(s1.failureMessage, "429");
-    assert.equal(s1.retryAfterMs, 500);
-    assert.equal(s2.status, "blocked");
-    assert.equal(s2.blockedByStageId, "s1");
-    assert.equal(s2.error, undefined);
   });
 
   test("resumeInFlight=never: marks run as failed and calls onCrashed", () => {

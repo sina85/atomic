@@ -88,7 +88,6 @@ interface RestoredRunBlockedMetadata {
 export function scanInFlightRuns(entries: readonly SessionEntry[]): InFlightRun[] {
   const started = new Map<string, { name: string; inputs: WorkflowInputValues; startTs: number; stageIds: string[] }>();
   const ended = new Set<string>();
-  const blocked = new Set<string>();
 
   for (const entry of entries) {
     if (entry.type === "workflow.run.start") {
@@ -127,18 +126,11 @@ export function scanInFlightRuns(entries: readonly SessionEntry[]): InFlightRun[
         ended.add(runId);
       }
     }
-
-    if (entry.type === "workflow.run.blocked") {
-      const runId = entry.payload["runId"];
-      if (typeof runId === "string") {
-        blocked.add(runId);
-      }
-    }
   }
 
   const result: InFlightRun[] = [];
   for (const [runId, info] of started) {
-    if (!ended.has(runId) && !blocked.has(runId)) {
+    if (!ended.has(runId)) {
       result.push({
         runId,
         name: info.name,
@@ -199,40 +191,6 @@ export function restoreOnSessionStart(
   const entries = getEntries.call(sessionManager);
   const sessionEntries = entries as readonly SessionEntry[];
   restoreTerminalRuns(sessionEntries, store);
-
-  const blockedRuns = scanRecoverableBlockedRuns(sessionEntries);
-  for (const run of blockedRuns) {
-    const runMeta = findRunStartMetadata(sessionEntries, run.runId);
-    const blockedMeta = findRunBlockedMetadata(sessionEntries, run.runId);
-    if (blockedMeta === undefined) continue;
-    const stages = _buildStageSnapshots(sessionEntries, run.runId, blockedMeta);
-    const runSnapshot: RunSnapshot = {
-      id: run.runId,
-      name: run.name,
-      inputs: run.inputs,
-      status: "running",
-      stages,
-      startedAt: run.startTs,
-      ...(runMeta.parentRunId !== undefined ? { parentRunId: runMeta.parentRunId } : {}),
-      ...(runMeta.parentStageId !== undefined ? { parentStageId: runMeta.parentStageId } : {}),
-      ...(runMeta.rootRunId !== undefined ? { rootRunId: runMeta.rootRunId } : {}),
-      ...(runMeta.resumedFromRunId !== undefined ? { resumedFromRunId: runMeta.resumedFromRunId } : {}),
-      ...(runMeta.resumeFromStageId !== undefined ? { resumeFromStageId: runMeta.resumeFromStageId } : {}),
-    };
-    store.recordRunStart(runSnapshot);
-    store.recordRunBlocked(run.runId, blockedMeta.error, {
-      failureKind: blockedMeta.failureKind,
-      ...(blockedMeta.failureCode !== undefined ? { failureCode: blockedMeta.failureCode } : {}),
-      failureRecoverability: "recoverable",
-      ...(blockedMeta.failureDisposition !== undefined ? { failureDisposition: blockedMeta.failureDisposition } : {}),
-      ...(blockedMeta.failureMessage !== undefined ? { failureMessage: blockedMeta.failureMessage } : {}),
-      failedStageId: blockedMeta.failedStageId,
-      resumable: true,
-      ...(blockedMeta.retryAfterMs !== undefined ? { retryAfterMs: blockedMeta.retryAfterMs } : {}),
-      blockedAt: blockedMeta.ts,
-    });
-  }
-
   const inFlight = scanInFlightRuns(sessionEntries);
   if (inFlight.length === 0) return;
 
@@ -536,63 +494,6 @@ function restoreStageStatus(status: unknown): StageStatus {
 
 function numericRetryAfterMs(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function scanRecoverableBlockedRuns(entries: readonly SessionEntry[]): InFlightRun[] {
-  const started = new Map<string, { name: string; inputs: WorkflowInputValues; startTs: number; stageIds: string[] }>();
-  const ended = new Set<string>();
-  const blocked = new Set<string>();
-
-  for (const entry of entries) {
-    if (entry.type === "workflow.run.start") {
-      const runId = entry.payload["runId"];
-      const name = entry.payload["name"];
-      const inputs = entry.payload["inputs"];
-      const ts = entry.payload["ts"];
-      if (typeof runId === "string" && typeof name === "string" && typeof ts === "number") {
-        started.set(runId, {
-          name,
-          inputs: serializableObjectOrEmpty(inputs),
-          startTs: ts,
-          stageIds: [],
-        });
-      }
-    }
-
-    if (entry.type === "workflow.stage.start") {
-      const runId = entry.payload["runId"];
-      const stageId = entry.payload["stageId"];
-      if (typeof runId === "string" && typeof stageId === "string") {
-        const run = started.get(runId);
-        if (run && !run.stageIds.includes(stageId)) {
-          run.stageIds.push(stageId);
-        }
-      }
-    }
-
-    if (entry.type === "workflow.run.end") {
-      const runId = entry.payload["runId"];
-      if (typeof runId === "string") ended.add(runId);
-    }
-
-    if (entry.type === "workflow.run.blocked") {
-      const runId = entry.payload["runId"];
-      if (typeof runId === "string") blocked.add(runId);
-    }
-  }
-
-  const result: InFlightRun[] = [];
-  for (const [runId, info] of started) {
-    if (ended.has(runId) || !blocked.has(runId) || findRunBlockedMetadata(entries, runId) === undefined) continue;
-    result.push({
-      runId,
-      name: info.name,
-      inputs: Object.freeze({ ...info.inputs }),
-      startTs: info.startTs,
-      stageIds: Object.freeze([...info.stageIds]),
-    });
-  }
-  return result;
 }
 
 function findRunBlockedMetadata(

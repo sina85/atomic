@@ -775,8 +775,15 @@ export class AgentSession {
 		// Notify all listeners
 		this._emit(event);
 
+		if (event.type === "agent_start") {
+			this._turnIndex = 0;
+		}
+		const rewindTurnIndex = this._turnIndex;
+		if (event.type === "turn_end") {
+			this._turnIndex++;
+		}
 		this._ignoreRewindErrors(() => {
-			this._recordRewindEvent(event);
+			this._recordRewindEvent(event, rewindTurnIndex);
 		});
 
 		// Handle session persistence
@@ -981,12 +988,11 @@ export class AgentSession {
 		}
 	}
 
-	private _recordRewindEvent(event: AgentEvent): void {
+	private _recordRewindEvent(event: AgentEvent, turnIndex: number): void {
 		switch (event.type) {
 			case "agent_start":
-				this._turnIndex = 0;
 				this._rewindCoordinator.updateSettings(this.settingsManager.getRewindSettings());
-				this._rewindCoordinator.initialize({ turnIndex: this._turnIndex, leafEntryId: this.sessionManager.getLeafId() });
+				this._rewindCoordinator.initialize({ turnIndex, leafEntryId: this.sessionManager.getLeafId() });
 				break;
 			case "turn_start":
 				this._rewindCoordinator.startTurn();
@@ -995,8 +1001,7 @@ export class AgentSession {
 				this._rewindCoordinator.observeToolExecutionEnd({ toolName: event.toolName });
 				break;
 			case "turn_end":
-				this._rewindCoordinator.finalizeTurnCheckpoint({ turnIndex: this._turnIndex, leafEntryId: this.sessionManager.getLeafId() });
-				this._turnIndex++;
+				this._rewindCoordinator.finalizeTurnCheckpoint({ turnIndex, leafEntryId: this.sessionManager.getLeafId() });
 				break;
 		}
 	}

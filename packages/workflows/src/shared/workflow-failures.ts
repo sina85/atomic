@@ -88,12 +88,11 @@ function makeWorkflowFailure(
     readonly userMessage?: string;
   },
 ): WorkflowFailure {
-  const redactedMessage = redactSensitiveText(message);
   return {
     kind,
     ...(opts.code !== undefined ? { code: opts.code } : {}),
-    message: redactedMessage,
-    userMessage: redactSensitiveText(opts.userMessage ?? redactedMessage),
+    message,
+    userMessage: opts.userMessage ?? redactSensitiveText(message),
     retryable: opts.retryable,
     resumable: opts.resumable,
     recoverability: opts.recoverability,
@@ -533,27 +532,16 @@ const PROVIDER_CONTEXT = new Set([
   "service",
 ]);
 
-const REDACTED_CREDENTIAL = "[redacted]";
-const SECRET_KEY_FRAGMENT = String.raw`(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|client[_-]?secret|secret|token|password|credential)`;
-const SECRET_ASSIGNMENT_PATTERN = new RegExp(
-  String.raw`(["']?)([A-Za-z0-9_.-]*${SECRET_KEY_FRAGMENT}[A-Za-z0-9_.-]*)(\1)(\s*[:=]\s*)(["']?)([^"'\s,;}\]]+)\5`,
-  "gi",
-);
-const AUTHORIZATION_HEADER_PATTERN = /\b(authorization\s*[:=]\s*)(?:bearer\s+)?([^\s,;]+)/gi;
-const BEARER_TOKEN_PATTERN = /\bbearer\s+([A-Za-z0-9._~+/=-]{8,})/gi;
-const SECRET_CONTEXT_VALUE_PATTERN = new RegExp(
-  String.raw`(\b(?:api\s*key|auth(?:orization)?\s*token|access\s*token|refresh\s*token|client\s*secret|secret|token)\b(?:\s+(?:provided|supplied|value|is|was))?\s*(?::|=)?\s*)(["']?)(?!(?:provided|supplied|expired|invalid|required|missing|not|found)\b)([A-Za-z0-9._~+/=-]{8,})\2`,
-  "gi",
-);
-const BARE_PROVIDER_KEY_PATTERN = /\b(?:sk|rk|pk)-[A-Za-z0-9][A-Za-z0-9_-]{5,}\b/g;
+function redactedSecretReplacement(prefix: string): string {
+  return `${prefix}[redacted]`;
+}
 
 function redactSensitiveText(value: string): string {
   return value
-    .replace(AUTHORIZATION_HEADER_PATTERN, `$1${REDACTED_CREDENTIAL}`)
-    .replace(BEARER_TOKEN_PATTERN, `Bearer ${REDACTED_CREDENTIAL}`)
-    .replace(SECRET_ASSIGNMENT_PATTERN, `$1$2$3$4$5${REDACTED_CREDENTIAL}$5`)
-    .replace(SECRET_CONTEXT_VALUE_PATTERN, `$1$2${REDACTED_CREDENTIAL}$2`)
-    .replace(BARE_PROVIDER_KEY_PATTERN, REDACTED_CREDENTIAL);
+    .replace(/(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+/g, redactedSecretReplacement("$1"))
+    .replace(/\b(authorization\s*:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/\b(bearer\s+)[A-Za-z0-9._~+/-]{8,}=*/gi, "$1[redacted]")
+    .replace(/((?:api[_-]?key|token|credential|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]");
 }
 
 function authDecision(code: WorkflowFailureCode): WorkflowFailureDecision {
