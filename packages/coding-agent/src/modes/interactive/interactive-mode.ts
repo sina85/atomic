@@ -284,17 +284,28 @@ function formatRewindRestoreFailure(result: RewindFailureSummary): string {
   return `Rewind restore refused (${result.error})${result.message ? `: ${result.message}` : ""}`;
 }
 
+function formatRewindCheckpointSummary(checkpoint: CheckpointMetadata): string {
+  const generatedTurnDescription = /^Turn \d+:\s*(.+)$/.exec(checkpoint.description);
+  if (generatedTurnDescription) {
+    const tools = checkpoint.toolNames.length > 0 ? checkpoint.toolNames.join(", ") : generatedTurnDescription[1];
+    return `File change (${tools})`;
+  }
+  if (checkpoint.trigger === "before-restore") return checkpoint.description || "Before-restore safety checkpoint";
+  if (checkpoint.trigger === "resume") return checkpoint.description || "Session resume";
+  return checkpoint.description || checkpoint.trigger;
+}
+
 function formatRewindCheckpointLabel(checkpoint: CheckpointMetadata, index?: number): string {
   const when = new Date(checkpoint.timestamp).toLocaleString();
-  const label = checkpoint.description || checkpoint.trigger;
-  const prefix = index === undefined ? "" : `${index + 1}. `;
+  const label = formatRewindCheckpointSummary(checkpoint);
+  const prefix = index === undefined ? "" : index === 0 ? "1. Latest: " : `${index + 1}. `;
   return `${prefix}${label} [${checkpoint.branch}] (${when}) ${checkpoint.id}`;
 }
 
 function formatRewindCheckpointList(checkpoints: CheckpointMetadata[]): string {
   const rows = checkpoints.slice(0, 10).map((checkpoint, index) => formatRewindCheckpointLabel(checkpoint, index));
   const more = checkpoints.length > rows.length ? `\n… ${checkpoints.length - rows.length} more` : "";
-  return `${theme.bold("Rewind checkpoints")}\n${rows.join("\n")}${more}\n\nRun ${theme.bold("/rewind <id>")} or select a checkpoint from ${theme.bold("/rewind")} to preview and restore files only.`;
+  return `${theme.bold("Rewind checkpoints")} ${theme.fg("dim", "(newest first)")}\n${rows.join("\n")}${more}\n\nRun ${theme.bold("/rewind <id>")} or select a checkpoint from ${theme.bold("/rewind")} to preview and restore files only.`;
 }
 
 function truncateRewindPreview(text: string, maxChars = 4000): string {
@@ -312,9 +323,28 @@ function formatRewindPathList(paths: readonly string[] | undefined, emptyText: s
 
 function formatRewindCleanupSummary(paths: readonly string[] | undefined, maxPaths = 20): string {
   const count = paths?.length ?? 0;
-  if (count === 0) return "Cleanup candidates: 0";
+  if (count === 0) return "Untracked cleanup candidates: 0";
   const hidden = count > maxPaths ? count - maxPaths : 0;
-  return `Cleanup candidates: ${count}${hidden > 0 ? ` (showing ${maxPaths}; ${hidden} more not shown)` : ""}`;
+  return `Untracked cleanup candidates: ${count}${hidden > 0 ? ` (showing ${maxPaths}; ${hidden} more not shown)` : ""}`;
+}
+
+function extractRewindDiffPaths(...diffTexts: readonly string[]): string[] {
+  const paths = new Set<string>();
+  for (const text of diffTexts) {
+    for (const line of text.split("\n")) {
+      const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+      if (match) paths.add(match[2]);
+    }
+  }
+  return [...paths].sort((left, right) => left.localeCompare(right));
+}
+
+function formatRewindTrackedChangeSummary(preview: DiffPreview, maxPaths = 20): string {
+  const paths = extractRewindDiffPaths(preview.worktreeText ?? preview.text, preview.indexText ?? "");
+  if (paths.length === 0) return "Tracked file changes: 0 (no file diff from current state)";
+  const hidden = paths.length > maxPaths ? paths.length - maxPaths : 0;
+  const truncatedNote = preview.truncated ? "\n(diff truncated; more files may be affected)" : "";
+  return `Tracked file changes: ${paths.length}${hidden > 0 ? ` (showing ${maxPaths}; ${hidden} more not shown)` : ""}\n${formatRewindPathList(paths, "(none)", maxPaths)}${truncatedNote}`;
 }
 
 function formatStructuredRewindPreview(preview: DiffPreview, maxDiffChars = 4000): string {
@@ -323,6 +353,8 @@ function formatStructuredRewindPreview(preview: DiffPreview, maxDiffChars = 4000
   const worktreeText = preview.worktreeText ?? preview.text;
   const indexText = preview.indexText ?? "";
   return [
+    formatRewindTrackedChangeSummary(preview),
+    "",
     `Unsafe restore blockers (${unsafePaths.length}):`,
     formatRewindPathList(unsafePaths, "(none)"),
     "",
@@ -338,7 +370,7 @@ function formatStructuredRewindPreview(preview: DiffPreview, maxDiffChars = 4000
 }
 
 function formatRewindConfirmBody(checkpoint: CheckpointMetadata, preview: DiffPreview, finalParagraph: string): string {
-  return `Restore files to ${checkpoint.id}?\n\n${checkpoint.description || checkpoint.trigger} [${checkpoint.branch}]\n${formatRewindCleanupSummary(preview.removedUntrackedFiles)}\nUnsafe restore blockers: ${(preview.unsafeRestorePaths ?? []).length}\n\n${finalParagraph}`;
+  return `Restore files to ${checkpoint.id}?\n\n${formatRewindCheckpointSummary(checkpoint)} [${checkpoint.branch}]\n${formatRewindTrackedChangeSummary(preview)}\n${formatRewindCleanupSummary(preview.removedUntrackedFiles)}\nUnsafe restore blockers: ${(preview.unsafeRestorePaths ?? []).length}\n\n${finalParagraph}`;
 }
 
 function isDeadTerminalError(error: unknown): boolean {
@@ -6399,7 +6431,7 @@ export class InteractiveMode {
       return { cancelled: false, conversation: true };
     }
 
-    const selection = await this.selectRewindCheckpoint(listed.value, `Select rewind checkpoint (${kind} navigation)`);
+    const selection = await this.selectRewindCheckpoint(listed.value, `Select rewind checkpoint (newest first; ${kind} navigation)`);
     const checkpoint = selection.selected ? selection.checkpoint : undefined;
     if (!checkpoint) {
       this.showStatus("Navigation rewind cancelled.");
@@ -6569,7 +6601,7 @@ export class InteractiveMode {
       }
       checkpoint = resolved.checkpoint;
     } else {
-      const selection = await this.selectRewindCheckpoint(checkpoints, "Select rewind checkpoint (files-only restore)");
+      const selection = await this.selectRewindCheckpoint(checkpoints, "Select rewind checkpoint (newest first; files-only restore)");
       if (!selection.selected) {
         this.showStatus("Rewind cancelled.");
         return;

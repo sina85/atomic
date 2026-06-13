@@ -120,8 +120,8 @@ describe("InteractiveMode.handleRewindCommand preview", () => {
 					ok: true,
 					value: {
 						text: `${"diff line\n".repeat(500)}\nUntracked files that would be removed:\n${cleanup.join("\n")}`,
-						worktreeText: "worktree diff line\n".repeat(500),
-						indexText: "index diff line\n".repeat(500),
+						worktreeText: `diff --git a/src/game.rs b/src/game.rs\n${"worktree diff line\n".repeat(500)}`,
+						indexText: `diff --git a/src/snake.rs b/src/snake.rs\n${"index diff line\n".repeat(500)}`,
 						removedUntrackedFiles: cleanup,
 						unsafeRestorePaths: [],
 					},
@@ -141,14 +141,90 @@ describe("InteractiveMode.handleRewindCommand preview", () => {
 		await (InteractiveMode as any).prototype.handleRewindCommand.call(fakeThis, "/rewind checkpoint-1");
 
 		const rendered = normalizeRenderedOutput(fakeThis.chatContainer, 10_000);
+		expect(rendered).toContain("Tracked file changes: 2");
+		expect(rendered).toContain("src/game.rs");
+		expect(rendered).toContain("src/snake.rs");
 		expect(rendered).toContain("Untracked cleanup candidates (25):");
 		expect(rendered).toContain("cleanup-00.txt");
 		expect(rendered).toContain("… 5 more path(s) not shown …");
 		expect(rendered).toContain("Worktree changes that would be restored:");
 		expect(rendered).toContain("Staged/index changes that would be reset:");
 		expect(rendered).toContain("… diff truncated for confirmation …");
-		expect(confirmMessage).toContain("Cleanup candidates: 25 (showing 20; 5 more not shown)");
+		expect(confirmMessage).toContain("Tracked file changes: 2");
+		expect(confirmMessage).toContain("src/game.rs");
+		expect(confirmMessage).toContain("src/snake.rs");
+		expect(confirmMessage).toContain("Untracked cleanup candidates: 25 (showing 20; 5 more not shown)");
 		expect(fakeThis.showExtensionConfirm).toHaveBeenCalledTimes(1);
+	});
+
+	test("labels generated turn checkpoints as file changes in newest-first rewind picker", async () => {
+		initTheme("dark");
+		const newerCheckpoint = {
+			version: 1,
+			id: "checkpoint-newer",
+			sessionId: "session-1",
+			leafEntryId: null,
+			trigger: "turn",
+			turnIndex: 3,
+			description: "Turn 3: edit",
+			toolNames: ["edit"],
+			branch: "main",
+			headSha: "0".repeat(40),
+			indexTreeSha: "1".repeat(40),
+			worktreeTreeSha: "2".repeat(40),
+			timestamp: 2,
+			preexistingUntrackedFiles: [],
+			skippedLargeFiles: [],
+			skippedLargeDirs: [],
+			skippedIgnoredDirs: [],
+		};
+		const olderCheckpoint = {
+			...newerCheckpoint,
+			id: "checkpoint-older",
+			turnIndex: 1,
+			description: "Turn 1: bash",
+			toolNames: ["bash"],
+			timestamp: 1,
+		};
+		let selectorTitle = "";
+		let selectorOptions: string[] = [];
+		const fakeThis: any = {
+			session: {
+				isStreaming: false,
+				getRewindStatus: () => ({ state: "ready" }),
+				listRewindCheckpoints: () => ({ ok: true, value: [newerCheckpoint, olderCheckpoint] }),
+				previewRewindCheckpoint: () => ({
+					ok: true,
+					value: {
+						text: "",
+						worktreeText: "",
+						indexText: "",
+						removedUntrackedFiles: [],
+						unsafeRestorePaths: [],
+					},
+				}),
+				checkRewindRestoreEligibility: vi.fn(() => ({ ok: true, value: olderCheckpoint })),
+				restoreRewindFiles: vi.fn(),
+			},
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+			showExtensionSelector: vi.fn(async (title: string, options: string[]) => {
+				selectorTitle = title;
+				selectorOptions = options;
+				return options[1];
+			}),
+			showExtensionConfirm: vi.fn(async () => false),
+			showStatus: vi.fn(),
+		};
+
+		Object.setPrototypeOf(fakeThis, (InteractiveMode as any).prototype);
+		await (InteractiveMode as any).prototype.handleRewindCommand.call(fakeThis, "/rewind");
+
+		expect(selectorTitle).toContain("newest first");
+		expect(selectorOptions[0]).toContain("1. Latest: File change (edit)");
+		expect(selectorOptions[1]).toContain("2. File change (bash)");
+		expect(selectorOptions.join("\n")).not.toContain("Turn 3");
+		expect(selectorOptions.join("\n")).not.toContain("Turn 1");
 	});
 
 	test("does not ask confirmation when restore eligibility fails after rewind preview", async () => {
