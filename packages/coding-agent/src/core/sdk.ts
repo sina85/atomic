@@ -48,6 +48,10 @@ import {
   createLsTool,
   createReadOnlyTools,
   createReadTool,
+  STRUCTURED_OUTPUT_TOOL_NAME,
+  createStructuredOutputCapture,
+  createStructuredOutputTool,
+  getStructuredOutputMetadataPath,
   createWriteTool,
   defaultToolNames,
   withFileMutationQueue,
@@ -150,11 +154,19 @@ export type {
   BashCommandRule,
   BashCommandSegment,
   BashCommandSegmentSource,
+  JsonObject,
+  JsonPrimitive,
+  JsonValue,
+  StructuredOutputCapture,
+  StructuredOutputCaptureMetadata,
+  StructuredOutputFileCapture,
+  StructuredOutputToolOptions,
   Tool,
 } from "./tools/index.ts";
 
 export {
   withFileMutationQueue,
+  STRUCTURED_OUTPUT_TOOL_NAME,
   // Tool factories (for custom cwd)
   createCodingTools,
   createReadOnlyTools,
@@ -165,6 +177,9 @@ export {
   createGrepTool,
   createFindTool,
   createLsTool,
+  createStructuredOutputCapture,
+  createStructuredOutputTool,
+  getStructuredOutputMetadataPath,
 };
 
 // Helper Functions

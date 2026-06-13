@@ -37,6 +37,39 @@ const McpOptionsSchema = Type.Object({
   deny: Type.Optional(Type.Array(Type.String())),
 });
 
+const JsonSchemaObjectTypeValue = {
+  anyOf: [
+    { const: "object" },
+    { type: "array", minItems: 1, maxItems: 1, items: { const: "object" } },
+  ],
+};
+
+const JsonSchemaExplicitObjectDescriptor = {
+  type: "object",
+  required: ["type"],
+  properties: { type: JsonSchemaObjectTypeValue },
+  additionalProperties: true,
+};
+
+const JsonSchemaObject = Type.Unsafe<Record<string, unknown>>({
+  description: "Top-level object JSON Schema used as structured_output tool arguments for this workflow item.",
+  anyOf: [
+    JsonSchemaExplicitObjectDescriptor,
+    {
+      type: "object",
+      required: ["allOf"],
+      properties: {
+        allOf: {
+          type: "array",
+          minItems: 1,
+          items: JsonSchemaExplicitObjectDescriptor,
+        },
+      },
+      additionalProperties: true,
+    },
+  ],
+});
+
 const BashCommandRuleSchema = Type.Union([
   Type.String(),
   Type.Object({ prefix: Type.String() }, { additionalProperties: false }),
@@ -55,6 +88,7 @@ const BashCommandPolicySchema = Type.Object({
 }, { additionalProperties: false });
 
 const StageSessionOptionProperties = {
+  schema: Type.Optional(JsonSchemaObject),
   cwd: Type.Optional(Type.String()),
   agentDir: Type.Optional(Type.String()),
   authStorage: Type.Optional(SdkSessionOptionSchema("authStorage")),

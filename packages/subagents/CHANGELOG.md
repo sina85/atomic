@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `outputSchema` child runs to use Atomic's shared `structured_output` factory with flat schema parameters, preserving parent-side `structuredOutput` capture while removing the old child-facing `{ value: ... }` envelope, auto-allowing the required tool for explicit child tool allowlists, and documenting that the prompt-runtime extension is loaded before user/tool extensions so the allowlist sees the runtime-registered tool ([#1350](https://github.com/bastani-inc/atomic/issues/1350)).
+- Enforced parent-side fail-fast validation that subagent child `outputSchema` roots are top-level object tool-argument schemas; array or primitive handoff values must now be wrapped in object fields such as `{ items: [...] }` or `{ value: ... }` ([#1350](https://github.com/bastani-inc/atomic/issues/1350)).
+- Kept dynamic fanout `collect.outputSchema` as a general JSON Schema validator so saved chains and direct runs can validate aggregate arrays with array-root schemas while child `outputSchema` tool contracts remain object-rooted ([#1350](https://github.com/bastani-inc/atomic/issues/1350)).
+
+### Fixed
+
+- Fixed subagent `outputSchema` readback to accept cross-process captures only when flat `output.json` params validate against the schema and `output.meta.json` sidecar metadata matches the final successful terminating `structured_output` transcript action, rejecting missing metadata, stale captures with later assistant/tool-result messages, sibling tool calls, duplicate structured-output calls, mismatched call IDs/names, and error tool results while ignoring benign `custom` host annotations around the final tool result ([#1350](https://github.com/bastani-inc/atomic/issues/1350)).
+- Fixed explicit empty child `tools: []` allowlists with `outputSchema` to pass only `--tools structured_output`, keeping the restricted child from regaining default tools while still enabling the required final-answer channel ([#1350](https://github.com/bastani-inc/atomic/issues/1350)).
+
 ## [0.8.28] - 2026-06-11
 
 ### Changed
