@@ -120,6 +120,8 @@ import {
 import { createAllToolDefinitions, defaultToolNames } from "./tools/index.ts";
 import { redirectOversizedToolResult } from "./tools/oversized-tool-result.js";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
+import { isCopilotGeminiModel } from "./copilot-gemini-payload-sanitizer.ts";
+import { normalizeToolArgumentsForModel } from "./copilot-gemini-tool-arguments.ts";
 
 function deepFreeze<T>(value: T): T {
 	if (value && typeof value === "object") {
@@ -740,6 +742,9 @@ export class AgentSession {
 				event.message.role === "assistant" ||
 				event.message.role === "toolResult"
 			) {
+				if (event.message.role === "assistant") {
+					this._normalizePersistedGeminiToolArgs(event.message);
+				}
 				// Regular LLM message - persist as SessionMessageEntry
 				this.sessionManager.appendMessage(event.message);
 			}
@@ -750,13 +755,18 @@ export class AgentSession {
 				this._lastAssistantMessage = event.message;
 
 				const assistantMsg = event.message as AssistantMessage;
-				if (assistantMsg.stopReason !== "error") {
+				// Treat degenerate empty completions (no content, zero output tokens) as
+				// failures alongside stopReason === "error". Otherwise an empty turn that
+				// stops with reason "stop" would reset the retry counter on every attempt,
+				// causing unbounded retries instead of honoring maxRetries.
+				const assistantFailed = assistantMsg.stopReason === "error" || this._isEmptyCompletion(assistantMsg);
+				if (!assistantFailed) {
 					this._overflowRecoveryAttempted = false;
 				}
 
 				// Reset retry counter immediately on successful assistant response
 				// This prevents accumulation across multiple LLM calls within a turn
-				if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
+				if (!assistantFailed && this._retryAttempt > 0) {
 					this._emit({
 						type: "auto_retry_end",
 						success: true,
@@ -772,8 +782,16 @@ export class AgentSession {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
 
-			// Check for retryable errors first (overloaded, rate limit, server errors)
-			if (this._isRetryableError(msg)) {
+			// Check for retryable errors first (overloaded, rate limit, server errors,
+			// transient provider finish_reason errors, or degenerate empty completions)
+			const retryableError = this._isRetryableError(msg);
+			const emptyCompletion = !retryableError && this._isEmptyCompletion(msg);
+			if (retryableError || emptyCompletion) {
+				if (emptyCompletion && !msg.errorMessage) {
+					// Surface a clear reason in the retry banner; empty completions carry no
+					// provider error message of their own.
+					msg.errorMessage = "Provider returned an empty completion";
+				}
 				const didRetry = await this._handleRetryableError(msg);
 				if (didRetry) return; // Retry was initiated, don't proceed to compaction
 			}
@@ -3045,7 +3063,25 @@ export class AgentSession {
 		for (const tool of wrappedExtensionTools as AgentTool[]) {
 			toolRegistry.set(tool.name, tool);
 		}
-		this._toolRegistry = toolRegistry;
+		// GitHub Copilot Gemini serializes array/object tool-call arguments as
+		// flattened `name[index]` keys (confirmed on the raw CAPI wire). Reconstruct
+		// them into proper arrays/objects before per-tool preparation and schema
+		// validation, so tool calls (notably structured_output) don't fail and loop.
+		// Gated to Copilot Gemini at call time via this.model; a no-op otherwise.
+		// `prepareArguments` is a plain function field (no `this` binding), and the
+		// `{ ...tool }` spread assumes AgentTools are plain objects — matching the
+		// existing tool-definition-wrapper pattern; a class-instance tool would lose
+		// prototype members here.
+		this._toolRegistry = new Map(
+			Array.from(toolRegistry, ([name, tool]) => {
+				const basePrepareArguments = tool.prepareArguments;
+				const prepareArguments = (args: unknown): unknown => {
+					const normalized = normalizeToolArgumentsForModel(args, this.model, tool.parameters);
+					return basePrepareArguments ? basePrepareArguments(normalized) : normalized;
+				};
+				return [name, { ...tool, prepareArguments } as AgentTool] as const;
+			}),
+		);
 
 		const nextActiveToolNames = (
 			options?.activeToolNames ? [...options.activeToolNames] : [...previousActiveToolNames]
@@ -3171,10 +3207,83 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors (including connection lost), WebSocket transport closes/errors, fetch failed, premature stream endings, HTTP/2 closed before response, terminated, retry delay exceeded
-		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i.test(
+
+		// A genuine `content_filter` stop is a deliberate safety block: retrying it
+		// re-issues the same blocked request up to maxRetries times for no benefit.
+		// GitHub Copilot Gemini is the exception — CAPI maps spurious Gemini blocks
+		// (RECITATION/safety on MALFORMED_FUNCTION_CALL etc.) to `content_filter`, so
+		// only treat `content_filter` as retryable for those models.
+		if (
+			isCopilotGeminiModel({ provider: message.provider, api: message.api, id: message.model }) &&
+			/finish.?reason:?\s*content.?filter/i.test(err)
+		) {
+			return true;
+		}
+
+		// Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors (including connection lost), WebSocket transport closes/errors, fetch failed, premature stream endings, HTTP/2 closed before response, terminated, retry delay exceeded, and a bare/transient provider finish_reason "error" (e.g. github-copilot Gemini's CAPI mapping of MALFORMED_FUNCTION_CALL/OTHER/UNEXPECTED_TOOL_CALL). These are provider-agnostic transient failures.
+		return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|finish.?reason:?\s*error/i.test(
 			err,
 		);
+	}
+
+	/**
+	 * For GitHub Copilot Gemini, reconstruct flattened tool-call arguments
+	 * (for example `edits[0].newText`) into the nested arrays/objects Gemini
+	 * produced before the assistant message is persisted, so saved transcripts
+	 * never carry the flattened CAPI wire shape and replays loaded from disk match
+	 * the structure Gemini signed. In-place, gated to Copilot Gemini, and a no-op
+	 * for well-formed arguments or any other provider/model. The outbound replay
+	 * normalizer still heals already-persisted (legacy) sessions on the wire.
+	 */
+	private _normalizePersistedGeminiToolArgs(message: AssistantMessage): void {
+		const model = this.model;
+		if (!model || !isCopilotGeminiModel(model)) return;
+		for (const block of message.content) {
+			if (block.type !== "toolCall") continue;
+			const tool = this._toolRegistry.get(block.name);
+			const normalized = normalizeToolArgumentsForModel(block.arguments, model, tool?.parameters);
+			if (normalized !== block.arguments && normalized !== null && typeof normalized === "object") {
+				block.arguments = normalized as Record<string, unknown>;
+			}
+		}
+	}
+
+	/**
+	 * Detect a degenerate empty completion: the provider ended the stream with no
+	 * usable content and zero output tokens. Seen with github-copilot Gemini models
+	 * that emit finish_reason "stop" (or a tool-use stop) with an empty content array
+	 * and 0 output tokens, leaving the turn dead instead of producing the next step.
+	 *
+	 * These are treated as retryable so the harness re-issues the request rather than
+	 * silently stopping mid-task. Guarded tightly (no text, no tool call, no thinking,
+	 * and output === 0) so legitimate non-empty turns are never matched.
+	 *
+	 * Intentionally provider-agnostic (not gated to Copilot Gemini): a degenerate
+	 * empty turn is a transient failure for any provider. It is bounded by
+	 * `maxRetries` and falls through to normal handling on exhaustion.
+	 */
+	private _isEmptyCompletion(message: AssistantMessage): boolean {
+		// Only "completed" stop reasons can be deceptively empty. Real errors are handled
+		// by _isRetryableError; aborted/length turns are intentional outcomes.
+		if (message.stopReason !== "stop" && message.stopReason !== "toolUse") return false;
+
+		const content = message.content;
+		if (Array.isArray(content)) {
+			const hasContent = content.some((part) => {
+				if (part.type === "text") return part.text.trim().length > 0;
+				if (part.type === "toolCall") return true;
+				if (part.type === "thinking") return part.redacted === true || part.thinking.trim().length > 0;
+				return true; // unknown part types count as content
+			});
+			if (hasContent) return false;
+		}
+
+		// A turn that produced output tokens but no surfaced content is not "empty"
+		// (e.g. reasoning-only responses); leave those alone. Note: a provider that
+		// fails to report `usage` (output defaults to 0) would make every
+		// content-less turn match here; the dual requirement (empty content AND zero
+		// output) keeps that false-positive risk low in practice.
+		return (message.usage?.output ?? 0) === 0;
 	}
 
 	/**

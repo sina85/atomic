@@ -23,6 +23,9 @@ import {
   withCodexFastModeStreamOptions,
 } from "./codex-fast-mode.ts";
 import { restoreAnthropicReplayThinkingBlocks } from "./anthropic-thinking-guard.ts";
+import { sanitizeCopilotGeminiPayload } from "./copilot-gemini-payload-sanitizer.ts";
+import { restoreCopilotGeminiReasoningOpaque } from "./copilot-gemini-reasoning.ts";
+import { normalizeCopilotGeminiReplayToolArguments } from "./copilot-gemini-tool-arguments.ts";
 import { getModelDefaultContextWindow, getSupportedContextWindows, selectContextWindow } from "./context-window.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type {
@@ -504,15 +507,36 @@ export async function createAgentSession(
         ? restoreAnthropicReplayThinkingBlocks(guardedPayload, sourceMessages, model)
         : guardedPayload;
       const runner = extensionRunnerRef.current;
+      let finalPayload: unknown;
       if (!runner?.hasHandlers("before_provider_request")) {
-        return replayGuardedPayload;
+        finalPayload = replayGuardedPayload;
+      } else {
+        const extensionPayload = await runner.emitBeforeProviderRequest(
+          replayGuardedPayload,
+        );
+        finalPayload = sourceMessages
+          ? restoreAnthropicReplayThinkingBlocks(extensionPayload, sourceMessages, model)
+          : extensionPayload;
       }
-      const extensionPayload = await runner.emitBeforeProviderRequest(
-        replayGuardedPayload,
-      );
-      return sourceMessages
-        ? restoreAnthropicReplayThinkingBlocks(extensionPayload, sourceMessages, model)
-        : extensionPayload;
+      // GitHub Copilot Gemini models are served through CAPI, which translates
+      // the OpenAI request into Google GenAI and rejects tool schemas whose
+      // `anyOf`/`oneOf` wraps a complex object (HTTP 400 invalid request body).
+      // Sanitize tool JSON Schemas into Gemini's supported subset. No-op for
+      // every other provider/model, and runs last so it also covers tools
+      // injected by `before_provider_request` extensions.
+      const schemaSanitized = sanitizeCopilotGeminiPayload(finalPayload, model);
+      // Reconstruct flattened tool-call arguments on replayed assistant
+      // messages (for example `edits[0].newText` -> `edits: [{ newText }]`).
+      // CAPI parses replayed arguments straight into Gemini's FunctionCall,
+      // and a flattened/malformed prior call ends the next turn with
+      // `finish_reason: "error"`. No-op for well-formed args / other models.
+      const replayArgsNormalized = normalizeCopilotGeminiReplayToolArguments(schemaSanitized, model);
+      // CAPI carries Gemini thought signatures in a `reasoning_opaque` field it
+      // reads back off the assistant message on replay. Convert the
+      // `reasoning_details` the client re-emits (captured inbound by the SSE
+      // interceptor) into that field so multi-turn tool use keeps its thought
+      // signature instead of dying on an empty completion. No-op otherwise.
+      return restoreCopilotGeminiReasoningOpaque(replayArgsNormalized, model);
     },
     onResponse: async (response, _model) => {
       const runner = extensionRunnerRef.current;
