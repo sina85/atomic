@@ -196,7 +196,7 @@ Atomic makes the loop deterministic and inspectable: step order, inputs, handoff
 
 ## Connect your engineering stack
 
-Atomic works with the tools already available in your development environment. If a workflow needs context or evidence, it can use shell commands, MCP servers, web access, custom tools, or packaged extensions.
+Atomic works with the tools already available in your development environment. These are examples, not a fixed integration list: Atomic workflows can use any tool your development environment exposes through CLIs, MCP, APIs, scripts, or custom extensions.
 
 | Need | Tools | How Atomic connects |
 | ---- | ----- | ------------------- |
