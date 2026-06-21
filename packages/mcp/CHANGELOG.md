@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0-alpha.1] - 2026-06-20
+
 ### Fixed
 
 - Hardened `unflattenToolArguments` against prototype pollution: a flattened key whose path walks through `__proto__`, `constructor`, or `prototype` (at any position, including the final segment and a literal plain key) is now dropped instead of being written, so a model-emitted key such as `__proto__.polluted` can no longer reach and mutate `Object.prototype`. The reconstruction logic (parse/assign/compact plus this guard) is now imported from a single canonical implementation in `@bastani/atomic` (`reconstructFlattenedKeys`) instead of being duplicated in `packages/mcp/utils.ts`, so the host-runtime and MCP `callTool` paths can no longer drift (the previous near-duplicate copies had already diverged on the security guard). Behavior for well-formed and ordinary flattened arguments is unchanged.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0-alpha.1] - 2026-06-20
+
 ### Added
 
 - Added the `playwright-cli` builtin skill (browser automation, end-to-end UI checks, screenshots, reviewable video recording, and Playwright test workflows) and the `effective-liteparse` builtin skill (fast, local, model-free text/table/value extraction from PDF, DOCX, PPTX, XLSX, and image files via the `lit` CLI).

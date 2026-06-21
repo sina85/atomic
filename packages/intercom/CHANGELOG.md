@@ -4,6 +4,8 @@ All notable changes to the `pi-intercom` extension will be documented in this fi
 
 ## [Unreleased]
 
+## [0.9.0-alpha.1] - 2026-06-20
+
 ### Changed
 
 - Aligned the intercom extension peer dependency with upstream pi TUI `^0.79.7` so coordination UI surfaces consume the latest shared TUI color-scheme, Warp image capability, and compatibility fixes; no intercom extension code changes were made for this metadata sync ([#1413](https://github.com/bastani-inc/atomic/issues/1413)).
