@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+## [0.9.0-alpha.1] - 2026-06-20
+
 ### Changed
 
-- Published a synchronized Atomic 0.8.31-alpha.5 prerelease; no functional Cursor provider changes were made after 0.8.30.
+- Published a synchronized Atomic 0.9.0-alpha.1 prerelease; no functional Cursor provider changes were made after 0.8.30.
 - Changed contributor validation to include the monorepo-wide file-length gate for tracked TS/JS/Rust files in local `prek` hooks and PR CI, with only documented generated/vendored exclusions and no grandfathered baseline allowlist ([#1445](https://github.com/bastani-inc/atomic/issues/1445)).
 
 ## [0.8.30] - 2026-06-17

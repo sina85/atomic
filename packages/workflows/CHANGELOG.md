@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-alpha.1] - 2026-06-20
+
 ### Breaking Changes
 
 - Renamed the builtin `open-claude-design` workflow output `browse_cli_status` to `playwright_cli_status` as part of migrating the workflow's preview/review tooling from the removed `browse` CLI to the `playwright-cli` command. Update any workflow-composition consumers that read `browse_cli_status`.
