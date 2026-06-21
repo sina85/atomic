@@ -126,18 +126,21 @@ function packageManifestPaths(): readonly string[] {
   return paths;
 }
 
+// main is versionless: it carries this placeholder and the real version is
+// stamped only onto an off-main tag by scripts/cut-release.ts. The release-notes
+// PR this workflow opens against main must therefore touch CHANGELOGs only —
+// never package manifests, lockfiles, or generated version files.
+const PLACEHOLDER_VERSION = "0.0.0";
+
 function releaseChangedFileAllowed(path: string): boolean {
-  return path === "package.json"
-    || path === "bun.lock"
-    || path === "Cargo.toml"
-    || path === "Cargo.lock"
-    || path === "packages/natives/native/index.js"
-    || /^packages\/[^/]+\/(?:package\.json|README\.md|CHANGELOG\.md)$/u.test(path);
+  return path === "CHANGELOG.md"
+    || /^packages\/[^/]+\/CHANGELOG\.md$/u.test(path);
 }
 
 async function verifyReleasePreparation(
   release: ValidatedRelease,
   sourceHeadOid: string,
+  checkManifestVersions = true,
 ): Promise<PreparationVerification> {
   const branch = runCommand(["git", "branch", "--show-current"]);
   const head = runCommand(["git", "rev-parse", "HEAD"]);
@@ -172,8 +175,10 @@ async function verifyReleasePreparation(
       continue;
     }
 
-    if (typeof manifest.version === "string" && manifest.version !== release.version) {
-      failures.push(`${manifestPath} version was ${manifest.version}, expected ${release.version}`);
+    if (checkManifestVersions && typeof manifest.version === "string" && manifest.version !== PLACEHOLDER_VERSION) {
+      failures.push(
+        `${manifestPath} version was ${manifest.version}, expected the ${PLACEHOLDER_VERSION} placeholder. main is versionless; do not run bump-version in this flow (the release version is stamped onto the tag by scripts/cut-release.ts).`,
+      );
     }
 
     if (manifestPath === "packages/coding-agent/package.json" && manifest.name !== "@bastani/atomic") {
@@ -247,6 +252,7 @@ function runLocalReleaseChecks(release: ValidatedRelease): GateVerification {
 function captureReleasePrReference(
   release: ValidatedRelease,
   expectedHeadRefOid: string,
+  baseRef: string,
 ): PullRequestReferenceVerification {
   const prView = runCommand([
     "gh",
@@ -270,7 +276,7 @@ function captureReleasePrReference(
   const referenceVerification = verifyReleasePullRequestReferenceJson(
     parsed.value,
     release.branch,
-    "main",
+    baseRef,
     expectedHeadRefOid,
     "OPEN",
   );
@@ -318,6 +324,7 @@ function captureReleasePrReference(
 function verifyReleasePrChecksPassed(
   release: ValidatedRelease,
   prReference: Extract<PullRequestReferenceVerification, { readonly ok: true }>,
+  baseRef: string,
 ): GateVerification {
   const prView = runCommand([
     "gh",
@@ -338,7 +345,7 @@ function verifyReleasePrChecksPassed(
   const refreshedReference = verifyReleasePullRequestReferenceJson(
     parsedPr.value,
     release.branch,
-    "main",
+    baseRef,
     prReference.headRefOid,
     "OPEN",
   );
@@ -378,6 +385,7 @@ function verifyReleasePrMerged(
   release: ValidatedRelease,
   prSelector: string,
   expectedHeadRefOid: string | undefined,
+  baseRef: string,
 ): PullRequestMergeVerification {
   const prView = runCommand([
     "gh",
@@ -398,7 +406,7 @@ function verifyReleasePrMerged(
   const parsed = parseJsonCommand(prView, "GitHub PR merge verification returned invalid JSON.");
   if (!parsed.ok) return { ok: false, summary: parsed.summary };
 
-  const mergeVerification = verifyPullRequestMergedJson(parsed.value, release.branch, "main", expectedHeadRefOid);
+  const mergeVerification = verifyPullRequestMergedJson(parsed.value, release.branch, baseRef, expectedHeadRefOid);
   if (!mergeVerification.ok) {
     return {
       ok: false,
@@ -434,30 +442,30 @@ function verifyReleasePrMerged(
   };
 }
 
-function verifyMainReadyForTag(release: ValidatedRelease, mergeCommitOid: string): MainReadyVerification {
+function verifyMainReadyForTag(release: ValidatedRelease, mergeCommitOid: string, baseRef: string): MainReadyVerification {
   const branch = runCommand(["git", "branch", "--show-current"]);
   const head = runCommand(["git", "rev-parse", "HEAD"]);
-  const originMain = runCommand(["git", "rev-parse", "origin/main"]);
+  const originMain = runCommand(["git", "rev-parse", `origin/${baseRef}`]);
   const status = runCommand(["git", "status", "--short"]);
   const mergeBase = runCommand(["git", "merge-base", "--is-ancestor", mergeCommitOid, "HEAD"]);
   const localTag = runCommand(["git", "rev-parse", "--verify", `refs/tags/${release.version}`]);
   const remoteTag = runCommand(["git", "ls-remote", "--tags", "origin", `refs/tags/${release.version}`]);
   const failures: string[] = [];
 
-  if (branch.exitCode !== 0 || branch.stdout !== "main") failures.push(`current branch was ${branch.stdout || "missing"}, expected main`);
-  if (head.exitCode !== 0 || head.stdout.length === 0) failures.push("local main HEAD could not be resolved");
-  if (originMain.exitCode !== 0 || originMain.stdout.length === 0) failures.push("origin/main could not be resolved");
+  if (branch.exitCode !== 0 || branch.stdout !== baseRef) failures.push(`current branch was ${branch.stdout || "missing"}, expected ${baseRef}`);
+  if (head.exitCode !== 0 || head.stdout.length === 0) failures.push(`local ${baseRef} HEAD could not be resolved`);
+  if (originMain.exitCode !== 0 || originMain.stdout.length === 0) failures.push(`origin/${baseRef} could not be resolved`);
   if (head.stdout.length > 0 && originMain.stdout.length > 0 && head.stdout !== originMain.stdout) {
-    failures.push(`local main HEAD ${head.stdout} did not match origin/main ${originMain.stdout}`);
+    failures.push(`local ${baseRef} HEAD ${head.stdout} did not match origin/${baseRef} ${originMain.stdout}`);
   }
   if (status.exitCode !== 0 || status.stdout.length > 0) failures.push("worktree is not clean before tagging");
-  if (mergeBase.exitCode !== 0) failures.push(`merge commit ${mergeCommitOid} is not an ancestor of local main HEAD`);
+  if (mergeBase.exitCode !== 0) failures.push(`merge commit ${mergeCommitOid} is not an ancestor of local ${baseRef} HEAD`);
   if (localTag.exitCode === 0) failures.push(`local tag ${release.version} already exists`);
   if (remoteTag.exitCode !== 0) failures.push(`remote tag lookup for ${release.version} failed`);
   if (remoteTag.stdout.length > 0) failures.push(`remote tag ${release.version} already exists`);
 
   const summary = [
-    failures.length === 0 ? "Main is ready for release tagging." : "Main is not ready for release tagging.",
+    failures.length === 0 ? `${baseRef} is ready for release tagging.` : `${baseRef} is not ready for release tagging.`,
     failures.length === 0 ? undefined : failures.map((failure) => `- ${failure}`).join("\n"),
     commandSummary(branch),
     commandSummary(head),
@@ -472,34 +480,64 @@ function verifyMainReadyForTag(release: ValidatedRelease, mergeCommitOid: string
   return { ok: true, summary, mainOid: head.stdout };
 }
 
-function verifyReleaseTagPublished(release: ValidatedRelease, expectedTagTargetOid: string): TagPublicationVerification {
-  const localTag = runCommand(["git", "rev-parse", `${release.version}^{}`]);
+function verifyReleaseTagPublished(release: ValidatedRelease, expectedParentOid: string): TagPublicationVerification {
+  // The tag does not point at a commit on main. cut-release.ts stamps the real
+  // version onto a throwaway "Release" commit whose parent is the merged main
+  // HEAD, then tags that commit. Verify: (1) local + remote tag resolve to the
+  // same release commit, (2) its parent is the verified main commit, and (3) the
+  // tagged @bastani/atomic manifest carries the target version (proving the stamp).
+  const localTag = runCommand(["git", "rev-parse", `${release.version}^{commit}`]);
+  const releaseCommitOid = localTag.stdout;
+  const tagParent = runCommand(["git", "rev-parse", `${release.version}^{commit}^`]);
+  const taggedManifest = runCommand(["git", "show", `${release.version}:packages/coding-agent/package.json`]);
   const remoteTag = runCommand(["git", "ls-remote", "--tags", "origin", `refs/tags/${release.version}`]);
   const remoteTagTargetOid = remoteTag.stdout.split(/\s+/u)[0] ?? "";
   const failures: string[] = [];
 
-  if (localTag.exitCode !== 0 || localTag.stdout !== expectedTagTargetOid) {
-    failures.push(`local tag target was ${localTag.stdout || "missing"}, expected ${expectedTagTargetOid}`);
+  if (localTag.exitCode !== 0 || releaseCommitOid.length === 0) {
+    failures.push("local release tag commit could not be resolved");
   }
-  if (remoteTag.exitCode !== 0 || remoteTagTargetOid !== expectedTagTargetOid) {
-    failures.push(`remote tag target was ${remoteTagTargetOid || "missing"}, expected ${expectedTagTargetOid}`);
+  if (tagParent.exitCode !== 0 || tagParent.stdout !== expectedParentOid) {
+    failures.push(`release commit parent was ${tagParent.stdout || "missing"}, expected the verified main commit ${expectedParentOid}`);
+  }
+
+  let stampedVersion: string | undefined;
+  if (taggedManifest.exitCode === 0) {
+    try {
+      stampedVersion = (JSON.parse(taggedManifest.stdout) as { version?: string }).version;
+    } catch {
+      stampedVersion = undefined;
+    }
+  }
+  if (stampedVersion !== release.version) {
+    failures.push(`tagged @bastani/atomic version was ${stampedVersion ?? "unparseable"}, expected ${release.version}`);
+  }
+
+  if (remoteTag.exitCode !== 0 || remoteTagTargetOid.length === 0) {
+    failures.push(`remote tag ${release.version} was missing on origin`);
+  } else if (releaseCommitOid.length > 0 && remoteTagTargetOid !== releaseCommitOid) {
+    failures.push(`remote tag target was ${remoteTagTargetOid}, expected the release commit ${releaseCommitOid}`);
   }
 
   const summary = [
     failures.length === 0 ? "Release tag publication is deterministically verified." : "Release tag publication is not verified.",
+    releaseCommitOid.length === 0 ? undefined : `releaseCommitOid: ${releaseCommitOid}`,
+    `expectedParentOid: ${expectedParentOid}`,
     failures.length === 0 ? undefined : failures.map((failure) => `- ${failure}`).join("\n"),
     commandSummary(localTag),
+    commandSummary(tagParent),
     commandSummary(remoteTag),
   ].filter((line): line is string => line !== undefined).join("\n\n");
 
-  if (failures.length > 0) return { ok: false, summary };
-  return { ok: true, summary, tagTargetOid: expectedTagTargetOid };
+  if (failures.length > 0 || releaseCommitOid.length === 0) return { ok: false, summary };
+  return { ok: true, summary, tagTargetOid: releaseCommitOid };
 }
 
-async function verifyPublishWorkflowSucceeded(
-  release: ValidatedRelease,
+async function verifyWorkflowRunSucceeded(
   expectedHeadSha: string,
+  options: { readonly workflowFile: string; readonly expectedHeadBranch: string },
 ): Promise<PublishWorkflowRunVerification> {
+  const { workflowFile, expectedHeadBranch } = options;
   let runList: CommandResult | undefined;
   let selectedRun: ReturnType<typeof selectPublishWorkflowRunJson> | undefined;
 
@@ -509,7 +547,7 @@ async function verifyPublishWorkflowSucceeded(
       "run",
       "list",
       "--workflow",
-      "publish.yml",
+      workflowFile,
       "--event",
       "push",
       "--json",
@@ -528,7 +566,7 @@ async function verifyPublishWorkflowSucceeded(
     const parsedList = parseJsonCommand(runList, "GitHub Actions publish run lookup returned invalid JSON.");
     if (!parsedList.ok) return { ok: false, summary: parsedList.summary };
 
-    selectedRun = selectPublishWorkflowRunJson(parsedList.value, release.version);
+    selectedRun = selectPublishWorkflowRunJson(parsedList.value, expectedHeadBranch);
     if (selectedRun.ok) break;
     if (attempt < 6) await Bun.sleep(10_000);
   }
@@ -589,7 +627,7 @@ async function verifyPublishWorkflowSucceeded(
     };
   }
 
-  const publishVerification = verifyPublishWorkflowRunJson(parsedView.value, release.version, expectedHeadSha);
+  const publishVerification = verifyPublishWorkflowRunJson(parsedView.value, expectedHeadBranch, expectedHeadSha);
   if (!publishVerification.ok) {
     return {
       ok: false,
@@ -615,26 +653,73 @@ async function verifyPublishWorkflowSucceeded(
   };
 }
 
-function releaseInstructions(release: ValidatedRelease): string {
+function verifyPublishWorkflowSucceeded(
+  release: ValidatedRelease,
+  expectedHeadSha: string,
+): Promise<PublishWorkflowRunVerification> {
+  return verifyWorkflowRunSucceeded(expectedHeadSha, {
+    workflowFile: "publish.yml",
+    expectedHeadBranch: release.version,
+  });
+}
+
+function verifyReleaseBranchCiSucceeded(
+  release: ValidatedRelease,
+  branchHeadSha: string,
+): Promise<PublishWorkflowRunVerification> {
+  return verifyWorkflowRunSucceeded(branchHeadSha, {
+    workflowFile: "test.yml",
+    expectedHeadBranch: release.branch,
+  });
+}
+
+function releaseInstructions(release: ValidatedRelease, baseRef: string): string {
   return [
     `Release kind: ${release.kind}`,
     `Target version: ${release.version}`,
-    `Release branch to create from current HEAD: ${release.branch}`,
+    `Base branch (release-notes PR target and tag base): ${baseRef}`,
+    `Release-notes branch to create from current HEAD: ${release.branch}`,
     "Repository rules:",
     "- Use Bun commands, not npm/yarn/pnpm/npx, for local development steps.",
     "- Never include a leading v in the version or tag.",
+    `- ${baseRef} is versionless: every packages/*/package.json stays at the 0.0.0 placeholder. Do NOT run scripts/bump-version.ts and do NOT change any package version in this flow.`,
+    `- The real version is materialized only on a throwaway off-${baseRef} tag commit produced by \`scripts/cut-release.ts\`; it is never merged into ${baseRef}.`,
     "- Do not modify already released changelog sections; add entries only under each package CHANGELOG.md `## [Unreleased]` section.",
-    `- Use \`bun run scripts/bump-version.ts ${release.version}\` and then \`bun install\` for version bumps.`,
     "- If credentials, git state, CI, or publish checks block safe progress, report the blocker clearly and stop rather than fabricating success.",
   ].join("\n");
 }
 
 export default defineWorkflow("publish-release")
-  .description("Automate Atomic release/prerelease branch, PR, merge, tag, and publish monitoring.")
+  .description("Automate Atomic versionless-main release: open a release-notes PR to main, then stamp and tag the release off-main with cut-release.ts, and monitor publishing.")
   .input("target_version", Type.String({ description: "Version to publish, without a leading v." }))
   .input("release_kind", Type.Union([Type.Literal("release"), Type.Literal("prerelease")], {
     description: "Release type; release requires MAJOR.MINOR.PATCH and prerelease requires MAJOR.MINOR.PATCH-alpha.REVISION.",
   }))
+  .input(
+    "base_ref",
+    Type.String({
+      default: "main",
+      description:
+        "Branch to release from: the release-notes PR merges into it and the tag is cut from it. Defaults to main. Set this to release from a maintenance/integration branch instead of main.",
+    }),
+  )
+  .input(
+    "base_ref",
+    Type.String({
+      default: "main",
+      description:
+        "Branch to release from: the release-notes PR merges into it and the tag is cut from it. Defaults to main. Set this to release from a maintenance/integration branch instead of main.",
+    }),
+  )
+  .input(
+    "from_ref",
+    Type.Optional(
+      Type.String({
+        description:
+          "Optional: cut an ephemeral release from any commit/tag/branch. The workflow auto-creates release/<version> (or prerelease/<version>) from this ref, commits the CHANGELOG entry on it, gates on that branch's CI, cuts and publishes the tag, then deletes the branch. The changelog lives on the tag only and main is untouched. When set, base_ref is ignored.",
+      }),
+    ),
+  )
   .output("status", statusSchema)
   .output("target_version", Type.String({ description: "Validated version supplied to the release workflow." }))
   .output("release_kind", releaseKindSchema)
@@ -644,7 +729,8 @@ export default defineWorkflow("publish-release")
   .output("summary", Type.String({ description: "Compact release execution summary." }))
   .run(async (ctx) => {
     const release = validateReleaseRequest(ctx.inputs.release_kind, ctx.inputs.target_version);
-    const baseInstructions = releaseInstructions(release);
+    const baseRef = ctx.inputs.base_ref.trim() || "main";
+    const baseInstructions = releaseInstructions(release, baseRef);
     const sourceHead = runCommand(["git", "rev-parse", "HEAD"]);
 
     if (sourceHead.exitCode !== 0 || sourceHead.stdout.length === 0) {
@@ -656,6 +742,199 @@ export default defineWorkflow("publish-release")
       );
     }
 
+    const fromRef = ctx.inputs.from_ref?.trim();
+    if (fromRef) {
+      // Ephemeral release from an arbitrary ref: auto-create release/<version> from
+      // from_ref, put the changelog on it, gate on that branch's CI, cut+publish the
+      // tag off it, then delete the branch. The changelog lives only on the tag and
+      // base_ref/main is never touched.
+      runCommand(["git", "fetch", "--quiet", "--tags", "origin"]);
+      const fromRefCommit = runCommand(["git", "rev-parse", "--verify", `${fromRef}^{commit}`]);
+      if (fromRefCommit.exitCode !== 0 || fromRefCommit.stdout.length === 0) {
+        return blockedOutput(
+          release,
+          "resolve-from-ref",
+          `git rev-parse resolves from_ref ${fromRef} to a commit before creating the ephemeral release branch`,
+          commandSummary(fromRefCommit),
+        );
+      }
+      const fromRefOid = fromRefCommit.stdout;
+      const ephemeralInstructions = [
+        `Release kind: ${release.kind}`,
+        `Target version: ${release.version}`,
+        `Ephemeral release branch (auto-created from from_ref, deleted after publish): ${release.branch}`,
+        `Source ref: ${fromRef} (${fromRefOid})`,
+        "Repository rules:",
+        "- Use Bun commands, not npm/yarn/pnpm/npx, for local steps.",
+        "- Never include a leading v in the version or tag.",
+        "- Do NOT run scripts/bump-version.ts and do NOT change any package version; cut-release.ts stamps the version onto the tag commit.",
+        "- The changelog lives only on the release tag; main/base_ref is never touched.",
+        "- If credentials, git state, or CI block safe progress, report the blocker and stop rather than fabricating success.",
+      ].join("\n");
+
+      const prepare = await ctx.task("create-ephemeral-release-branch", {
+        prompt: [
+          "Create the ephemeral release branch from the source ref and put the changelog on it.",
+          "",
+          ephemeralInstructions,
+          "",
+          "Required actions:",
+          `1. Ensure ${fromRef} is available locally (\`git fetch origin\` as needed), then create and switch to branch \`${release.branch}\` at commit \`${fromRefOid}\` (e.g. \`git switch -c ${release.branch} ${fromRefOid}\`). If the branch already exists, stop and report BLOCKED.`,
+          `2. Read package changelogs, especially \`packages/*/CHANGELOG.md\`, and move the \`## [Unreleased]\` entries into a new \`## [${release.version}]\` section dated today, per AGENTS.md Changelog guidance. Do NOT change any package version.`,
+          "3. Inspect the diff and ensure it contains only CHANGELOG.md changes.",
+          `4. Commit on \`${release.branch}\` with a message such as \`docs: release notes for ${release.version}\`, then push with \`git push -u origin ${release.branch}\`.`,
+          "",
+          "Final response format:",
+          "- Include the created branch, its HEAD commit, `git status --short`, changed files, the push result, and any blockers.",
+          "- The workflow body verifies the branch, its CI, the tag, and cleanup deterministically after each stage.",
+        ].join("\n"),
+      });
+
+      const preparationVerification = await verifyReleasePreparation(release, fromRefOid, false);
+      if (!preparationVerification.ok) {
+        return blockedOutput(
+          release,
+          "verify-ephemeral-release-branch",
+          `current branch is ${release.branch}, the worktree is clean, and only CHANGELOG files changed vs ${fromRef}`,
+          [preparationVerification.summary, "", "Create-branch stage output:", excerpt(prepare.text, 2_000)].join("\n"),
+        );
+      }
+
+      const remoteBranch = runCommand(["git", "ls-remote", "--heads", "origin", release.branch]);
+      const remoteHeadOid = remoteBranch.stdout.split(/\s+/u)[0] ?? "";
+      if (remoteBranch.exitCode !== 0 || remoteHeadOid !== preparationVerification.releaseCommitOid) {
+        return blockedOutput(
+          release,
+          "verify-ephemeral-branch-pushed",
+          `origin/${release.branch} exists and points at the release-notes commit ${preparationVerification.releaseCommitOid}`,
+          [
+            `remote ${release.branch} head: ${remoteHeadOid || "missing"}`,
+            `expected: ${preparationVerification.releaseCommitOid}`,
+            commandSummary(remoteBranch),
+            "",
+            "Create-branch stage output:",
+            excerpt(prepare.text, 2_000),
+          ].join("\n"),
+        );
+      }
+
+      const ciWait = await ctx.task("wait-for-release-branch-ci", {
+        prompt: [
+          `Wait for required CI checks on branch \`${release.branch}\` (commit \`${preparationVerification.releaseCommitOid}\`). Do not cut a tag yet.`,
+          "",
+          ephemeralInstructions,
+          "",
+          "Required actions:",
+          `1. Wait for the Tests workflow on \`${release.branch}\` to finish, e.g. \`gh run list --branch ${release.branch} --workflow test.yml\` then \`gh run watch <run-id> --exit-status\` for the run whose headSha is \`${preparationVerification.releaseCommitOid}\`.`,
+          "2. If required checks fail, report the failing check names and URLs. Do not cut a tag.",
+          "3. If checks pass, summarize the evidence and stop.",
+          "",
+          "Final response format:",
+          "- Include the run id/URL, status, conclusion, headSha, commands run, and any blockers.",
+          "- The workflow body performs the deterministic branch-CI gate after this stage.",
+        ].join("\n"),
+      });
+
+      const branchCi = await verifyReleaseBranchCiSucceeded(release, preparationVerification.releaseCommitOid);
+      if (!branchCi.ok) {
+        return blockedOutput(
+          release,
+          "verify-release-branch-ci",
+          `the Tests workflow run for ${release.branch} has headSha ${preparationVerification.releaseCommitOid}, status completed, and conclusion success`,
+          [branchCi.summary, "", "CI wait stage output:", excerpt(ciWait.text, 2_000)].join("\n"),
+          "failed",
+        );
+      }
+
+      const pushTag = await ctx.task("cut-release-tag", {
+        prompt: [
+          `Cut the release tag off \`${release.branch}\`. This is the sole publish trigger stage.`,
+          "",
+          ephemeralInstructions,
+          "",
+          "Deterministic branch-CI gate:",
+          excerpt(branchCi.summary),
+          "",
+          "Required actions:",
+          `1. Verify you are on clean local \`${release.branch}\` at commit \`${preparationVerification.releaseCommitOid}\`.`,
+          `2. Run \`bun run scripts/cut-release.ts ${release.version} --base ${release.branch} --push --yes\`. This stamps the real version onto a throwaway off-branch "Release ${release.version}" commit (parent = ${release.branch} HEAD), tags it, and pushes ONLY the tag.`,
+          `3. Do not push ${release.branch}. Do not force-push or overwrite an existing tag. Do not run scripts/bump-version.ts.`,
+          "",
+          "Final response format:",
+          `- Include the pushed tag, the release commit SHA and its parent (must equal ${release.branch} HEAD), local/remote tag evidence, the publish run URL if available, and any blockers.`,
+        ].join("\n"),
+      });
+
+      const tagVerification = verifyReleaseTagPublished(release, preparationVerification.releaseCommitOid);
+      if (!tagVerification.ok) {
+        return blockedOutput(
+          release,
+          "verify-release-tag-published",
+          `local and remote release tag exist, the release commit parent is the ${release.branch} commit, and the tagged @bastani/atomic manifest carries the target version`,
+          [tagVerification.summary, "", "Cut-release stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
+          "failed",
+        );
+      }
+
+      const publishVerification = await verifyPublishWorkflowSucceeded(release, tagVerification.tagTargetOid);
+      if (!publishVerification.ok) {
+        return blockedOutput(
+          release,
+          "verify-publish-workflow-succeeded",
+          "GitHub Actions Publish run for the release tag has matching headSha, status completed, and conclusion success",
+          [publishVerification.summary, "", "Cut-release stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
+          "failed",
+        );
+      }
+
+      const cleanup = await ctx.task("delete-ephemeral-release-branch", {
+        prompt: [
+          `The release is published. Delete the now-unneeded branch \`${release.branch}\`; the tag \`${release.version}\` keeps its commits alive.`,
+          "",
+          "Required actions:",
+          `1. Run \`git push origin --delete ${release.branch}\` to delete the remote branch.`,
+          `2. Optionally delete the local branch (\`git branch -D ${release.branch}\` after switching away). Do NOT delete the tag.`,
+          "",
+          "Final response format:",
+          "- Include the delete command result and confirmation that the tag still exists.",
+        ].join("\n"),
+      });
+
+      const remoteBranchAfter = runCommand(["git", "ls-remote", "--heads", "origin", release.branch]);
+      const branchDeleted = remoteBranchAfter.exitCode === 0 && remoteBranchAfter.stdout.trim().length === 0;
+      const cleanupNote = branchDeleted
+        ? `Ephemeral branch ${release.branch} deleted from origin.`
+        : `WARNING: ephemeral branch ${release.branch} may still exist on origin; delete it manually with \`git push origin --delete ${release.branch}\` (the release itself is already published).`;
+
+      const ephemeralSummary = [
+        `publish-release (ephemeral) completed for ${release.kind} ${release.version}.`,
+        `Source ref: ${fromRef} (${fromRefOid})`,
+        `Release branch: ${release.branch} (auto-created, ${branchDeleted ? "deleted" : "NOT deleted"})`,
+        `Tag: ${release.version} -> release commit ${tagVerification.tagTargetOid}`,
+        publishVerification.runUrl === undefined ? "Publish run: see cut-release stage output" : `Publish run: ${publishVerification.runUrl}`,
+        cleanupNote,
+        "",
+        "Stage summaries:",
+        "## deterministic-branch-ci",
+        excerpt(branchCi.summary, 800),
+        "## deterministic-release-tag",
+        excerpt(tagVerification.summary, 800),
+        "## deterministic-publish-run",
+        excerpt(publishVerification.summary, 800),
+        "## delete-ephemeral-release-branch",
+        excerpt(cleanup.text, 800),
+      ].join("\n");
+
+      return {
+        status: "completed",
+        target_version: release.version,
+        release_kind: release.kind,
+        branch: release.branch,
+        tag: release.version,
+        summary: ephemeralSummary,
+      };
+    }
+
     const prepare = await ctx.task("prepare-release-branch-and-metadata", {
       prompt: [
         "Prepare the release branch and metadata changes for this Atomic repository.",
@@ -665,11 +944,11 @@ export default defineWorkflow("publish-release")
         "Required actions:",
         "1. Inspect `git status --short`, `git branch --show-current`, `git rev-parse HEAD`, `git log -1 --oneline`, and `git remote -v` to record the source branch and exact source commit.",
         "2. Ensure you are starting from a safe state for a release. If unrelated uncommitted changes already exist before your release edits, stop and report BLOCKED with the exact files.",
-        `3. Create and switch to branch \`${release.branch}\` from the recorded source commit \`${sourceHead.stdout}\` if it does not already exist; if it exists, verify it is the intended same-version release branch before continuing.`,
-        "4. Read package changelogs, especially `packages/*/CHANGELOG.md`, and update only `## [Unreleased]` sections according to AGENTS.md Changelog guidance.",
-        `5. Run \`bun run scripts/bump-version.ts ${release.version}\` and then \`bun install\`.`,
-        "6. Inspect the resulting diff and ensure it contains only release metadata/changelog/version/lockfile changes.",
-        `7. Commit all release changes on \`${release.branch}\` with a concise conventional message such as \`chore: release ${release.version}\`.`,
+        `3. Create and switch to branch \`${release.branch}\` from the recorded source commit \`${sourceHead.stdout}\` if it does not already exist; if it exists, verify it is the intended same-version release-notes branch before continuing.`,
+        `4. Read package changelogs, especially \`packages/*/CHANGELOG.md\`, and move the \`## [Unreleased]\` entries into a new \`## [${release.version}]\` section dated today, per AGENTS.md Changelog guidance.`,
+        "5. Do NOT bump versions: main is versionless and every package manifest must stay at the 0.0.0 placeholder. Do not run scripts/bump-version.ts and do not touch package.json, bun.lock, Cargo.*, or generated version files.",
+        "6. Inspect the resulting diff and ensure it contains only CHANGELOG.md changes.",
+        `7. Commit the changelog changes on \`${release.branch}\` with a concise conventional message such as \`docs: release notes for ${release.version}\`.`,
         "",
         "Final response format:",
         "- Summarize source branch, source HEAD, created/current release branch, release commit hash, `git status --short`, changed files, commands run, and any blockers.",
@@ -711,7 +990,7 @@ export default defineWorkflow("publish-release")
         `1. Use \`git branch --show-current\` plus \`git rev-parse HEAD\` to verify the current branch is \`${release.branch}\` at commit \`${preparationVerification.releaseCommitOid}\`.`,
         `2. Push branch with \`git push -u origin ${release.branch}\`.`,
         "3. Use `gh auth status` and `gh repo view` or equivalent non-destructive checks to confirm GitHub access.",
-        `4. Create a PR from \`${release.branch}\` to \`main\` with title \`Release ${release.version}\` if one does not already exist. If a PR already exists for the branch, reuse it.`,
+        `4. Create a PR from \`${release.branch}\` to \`${baseRef}\` with title \`Release ${release.version}\` if one does not already exist. If a PR already exists for the branch, reuse it.`,
         "5. Include release kind, version, changelog/version bump summary, and validation commands in the PR body.",
         "",
         "Final response format:",
@@ -721,7 +1000,7 @@ export default defineWorkflow("publish-release")
       ].join("\n"),
     });
 
-    const prReference = captureReleasePrReference(release, preparationVerification.releaseCommitOid);
+    const prReference = captureReleasePrReference(release, preparationVerification.releaseCommitOid, baseRef);
     if (!prReference.ok) {
       return blockedOutput(
         release,
@@ -752,7 +1031,7 @@ export default defineWorkflow("publish-release")
       ].join("\n"),
     });
 
-    const ciVerification = verifyReleasePrChecksPassed(release, prReference);
+    const ciVerification = verifyReleasePrChecksPassed(release, prReference, baseRef);
     if (!ciVerification.ok) {
       return blockedOutput(
         release,
@@ -783,7 +1062,7 @@ export default defineWorkflow("publish-release")
       ].join("\n"),
     });
 
-    const mergeVerification = verifyReleasePrMerged(release, prReference.prUrl, prReference.headRefOid);
+    const mergeVerification = verifyReleasePrMerged(release, prReference.prUrl, prReference.headRefOid, baseRef);
     if (!mergeVerification.ok) {
       return blockedOutput(
         release,
@@ -795,7 +1074,7 @@ export default defineWorkflow("publish-release")
 
     const syncMain = await ctx.task("sync-main-after-merge", {
       prompt: [
-        "Sync local main after the release PR merge. Do not create or push a tag.",
+        `Sync local ${baseRef} after the release PR merge. Do not create or push a tag.`,
         "",
         baseInstructions,
         "",
@@ -803,29 +1082,29 @@ export default defineWorkflow("publish-release")
         excerpt(mergeVerification.summary),
         "",
         "Required actions:",
-        "1. Switch to `main` and run `git pull origin main`.",
-        `2. Confirm the merged release commit for ${release.version} is present on local main with command-backed evidence such as \`git rev-parse HEAD\` and \`git merge-base --is-ancestor ${mergeVerification.mergeCommitOid} HEAD\`.`,
+        `1. Switch to \`${baseRef}\` and run \`git pull origin ${baseRef}\`.`,
+        `2. Confirm the merged release commit for ${release.version} is present on local ${baseRef} with command-backed evidence such as \`git rev-parse HEAD\` and \`git merge-base --is-ancestor ${mergeVerification.mergeCommitOid} HEAD\`.`,
         `3. Confirm tag \`${release.version}\` does not already exist locally or on origin. Do not create the tag in this stage.`,
         "",
         "Final response format:",
-        "- Include local main HEAD, origin/main evidence, worktree status, tag existence checks, commands run, and any blockers.",
-        "- The workflow body performs a deterministic main/tag-readiness gate after this stage.",
+        `- Include local ${baseRef} HEAD, origin/${baseRef} evidence, worktree status, tag existence checks, commands run, and any blockers.`,
+        "- The workflow body performs a deterministic base-branch/tag-readiness gate after this stage.",
       ].join("\n"),
     });
 
-    const mainReady = verifyMainReadyForTag(release, mergeVerification.mergeCommitOid);
+    const mainReady = verifyMainReadyForTag(release, mergeVerification.mergeCommitOid, baseRef);
     if (!mainReady.ok) {
       return blockedOutput(
         release,
         "verify-main-ready-for-tag",
-        "local main is clean, matches origin/main, contains the merge commit, and the release tag does not already exist",
+        `local ${baseRef} is clean, matches origin/${baseRef}, contains the merge commit, and the release tag does not already exist`,
         [mainReady.summary, "", "Sync-main stage output:", excerpt(syncMain.text, 2_000)].join("\n"),
       );
     }
 
-    const pushTag = await ctx.task("push-release-tag", {
+    const pushTag = await ctx.task("cut-release-tag", {
       prompt: [
-        "Create and push the release tag. This is the sole publish trigger stage.",
+        `Cut the release tag off ${baseRef}. This is the sole publish trigger stage. ${baseRef} is never bumped.`,
         "",
         baseInstructions,
         "",
@@ -833,13 +1112,13 @@ export default defineWorkflow("publish-release")
         excerpt(mainReady.summary),
         "",
         "Required actions:",
-        `1. Verify you are still on clean local \`main\` at commit \`${mainReady.mainOid}\`.`,
-        `2. Run \`git tag ${release.version}\` and \`git push origin ${release.version}\`.`,
-        "3. Do not force-push or overwrite an existing tag.",
+        `1. Verify you are on clean local \`${baseRef}\` at commit \`${mainReady.mainOid}\`.`,
+        `2. Run \`bun run scripts/cut-release.ts ${release.version} --base ${baseRef} --push --yes\`. This stamps the real version onto a throwaway off-${baseRef} "Release ${release.version}" commit (parent = the current ${baseRef} commit), tags it, and pushes ONLY the tag.`,
+        `3. Do not push ${baseRef}. Do not force-push or overwrite an existing tag. Do not run scripts/bump-version.ts.`,
         "4. You may start monitoring the publish workflow, but the workflow body will verify the tag and publish run deterministically after this stage.",
         "",
         "Final response format:",
-        "- Include pushed tag, local/remote tag SHA evidence, GitHub Actions run URL/status if available, commands run, and any observed blockers.",
+        `- Include the pushed tag, the off-${baseRef} release commit SHA and its parent (which must equal the ${baseRef} commit above), local/remote tag SHA evidence, GitHub Actions run URL/status if available, commands run, and any observed blockers.`,
       ].join("\n"),
     });
 
@@ -848,8 +1127,8 @@ export default defineWorkflow("publish-release")
       return blockedOutput(
         release,
         "verify-release-tag-published",
-        "local and remote release tag exist and point to the verified main commit",
-        [tagVerification.summary, "", "Push-tag stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
+        "local and remote release tag exist, the release commit parent is the verified main commit, and the tagged @bastani/atomic manifest carries the target version",
+        [tagVerification.summary, "", "Cut-release stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
         "failed",
       );
     }
@@ -860,7 +1139,7 @@ export default defineWorkflow("publish-release")
         release,
         "verify-publish-workflow-succeeded",
         "GitHub Actions Publish run for the release tag has matching headSha, status completed, and conclusion success",
-        [publishVerification.summary, "", "Push-tag stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
+        [publishVerification.summary, "", "Cut-release stage output:", excerpt(pushTag.text, 2_000)].join("\n"),
         "failed",
       );
     }
