@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  Prompt libraries tell an agent what loop to follow. Atomic runs the loop.
+  Prompt libraries tell an agent what loop to follow. Atomic runs the loop.<br>
+  Real engineering matters: agents should not just sound confident, they should leave proof. Atomic fights demo hype with explicit stages, artifacts, verification, review, and approval gates.
 </p>
 
 <p align="center">
