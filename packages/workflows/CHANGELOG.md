@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-alpha.4] - 2026-06-22
+
 ### Breaking Changes
 
 - Restructured the builtin `open-claude-design` workflow's input contract. Removed the `reference`, `output_type`, and `design_system` inputs; the workflow now gathers those through a new `discovery` interview stage instead. The remaining inputs are `prompt`, `discover_references`, and `max_refinements`. Existing invocations that passed `reference=…`, `output_type=…`, or `design_system=…` should drop those arguments and let the discovery stage ask for the output type and references (or describe them in `prompt`).
@@ -13,17 +15,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Restructured the builtin `open-claude-design` workflow around the accessible `impeccable` skill (`/skill:impeccable …`). The current phase order is: (1) **combined discovery/init** — one `discovery` stage runs `/skill:impeccable shape` to confirm the brief, output type, and references, then runs `/skill:impeccable init` so impeccable detects/creates/reconciles `PRODUCT.md` / `DESIGN.md` without a separate init stage; (2) **context/reference phase** — `ds-locator` / `ds-analyzer` / `ds-patterns` first gather project design-system evidence and handle user-provided URL/file reference capture/parsing, then optional `reference-discovery` browses curated galleries using the ds-* evidence and asks the user which curated direction they prefer (or asks for a reference image/screenshot/URL/path if none fit); (3) **forked generate/user-feedback loop** — `generate-1` produces the first `preview.html`, each `user-feedback-*` stage drives `/skill:impeccable live`, and meaningful feedback threads into the next forked `generate-*` stage; (4) **export** — export is now deliberately only `exporter` followed by `final-display`, with no `pre-export-scan`, `forced-fix`, `web-capture-*`, `file-parser-*`, or `design-system-builder` stages. User-provided references take **precedence over `DESIGN.md`/`PRODUCT.md`** through the `REFERENCE_PRECEDENCE` prompt block. Added unit coverage for the trimmed input contract, combined discovery/init stage, direct `ds-*` reference handling, forked generate/user-feedback continuity, removed export/parse/builder/init stages, and feedback persistence/threading.
-
-
 - Added a safe-by-default `create_pr` toggle to the builtin `goal` workflow, matching Ralph's final-stage PR handoff behavior. Goal now skips PR/MR/review creation unless `create_pr=true` **and** reviewer quorum plus the reducer mark the run `complete` within the turn budget, omits `pr_report` when disabled or not approved, and runs a provider-aware `pull-request` stage only at the end when explicitly authorized. The final stage reads the goal ledger, worker receipts, latest review artifact, final report, and sanitized `base_branch` before attempting GitHub, Azure Repos, GitLab, Bitbucket, Sapling, or Phabricator handoff tooling. Goal worker/reviewer prompts now include an intermediate-stage guardrail telling them to ignore PR-creation requests because only the final `pull-request` stage may attempt that handoff.
 
 ### Fixed
 
 - Fixed the builtin `open-claude-design` workflow feedback threading so `user-feedback-*` live annotations (`user_notes`, `live_changes`, and `annotated_snapshot`) are parsed, persisted under `<artifact_dir>/feedback/iteration-<n>.*`, and required to appear in the next `generate-*` prompt before a revision runs. The old internal critique/screenshot/apply stages were removed, so user feedback is now the sole refinement signal.
-
 - Fixed the builtin `open-claude-design` workflow polluting the project's `specs/design/` tree with per-run artifact folders during automated test runs; `prepareArtifactDir` now writes to the OS tmpdir when `NODE_ENV=test`.
 - Hardened the builtin `open-claude-design` browser and artifact safety paths: when the `playwright-cli` browser is unavailable the run exits cleanly up front (skipped under the test harness), annotation snapshot copies are constrained to the project/artifact dir, one-character real notes survive placeholder filtering, and the final `final-display` stage is read-only so it only surfaces the exported spec and re-run instructions.
-
 
 ## [0.9.0-alpha.3] - 2026-06-21
 

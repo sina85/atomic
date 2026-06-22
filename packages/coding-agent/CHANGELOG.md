@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.0-alpha.4] - 2026-06-22
+
 ### Breaking Changes
 
 - Changed the bundled builtin `open-claude-design` workflow's inputs: removed `reference`, `output_type`, and `design_system` in favor of a new `discovery` interview stage that asks for the output type and references. Inputs are now `prompt`, `discover_references`, and `max_refinements`. Drop those removed arguments from existing invocations and let discovery ask (or describe them in `prompt`).
@@ -9,14 +11,11 @@
 ### Added
 
 - Restructured the bundled builtin `open-claude-design` workflow around the accessible `impeccable` skill. It now opens with one combined `discovery` stage that runs `/skill:impeccable shape` and `/skill:impeccable init` so PRODUCT.md/DESIGN.md are detected, created, or reconciled without a separate init stage, gathers context with `ds-locator` / `ds-analyzer` / `ds-patterns` (which directly capture/parse user-provided URL/file references), then runs optional gallery `reference-discovery` using that ds-* context and asks which curated direction the user prefers (or asks for a reference image/screenshot/URL/path if none fit), then runs a forked `generate-*` / `user-feedback-*` loop. `generate-1` is the first loop iteration, later generate stages fork from the previous generate session, and user-feedback stages fork from the previous feedback session while driving `/skill:impeccable live`. Export is now deliberately only `exporter` plus `final-display`; the separate `web-capture-*`, `file-parser-*`, `design-system-builder`, `pre-export-scan`, and `forced-fix` stages were removed. Updated the bundled workflow docs to describe the trimmed input set, combined discovery/init stage, context/reference phase, reference precedence, forked generate/user-feedback loop, and minimal export phase.
-
+- Added the bundled builtin `goal` workflow's safe-by-default `create_pr` toggle and final `pull-request` stage. Goal now mirrors Ralph's PR handoff behavior: omitted or `false` skips PR/MR/review creation and omits `pr_report`, while strict `create_pr=true` authorizes only the final stage after reviewer quorum plus reducer approval to inspect the goal ledger, worker receipts, reviewer artifacts, final report, repository state, and provider credentials before attempting a provider-appropriate PR/MR/review request. Intermediate Goal worker/reviewer prompts now tell stages to ignore PR-creation requests so PR handoff stays confined to the final stage. Updated the bundled workflow docs, quickstart, README, and `/atomic` guide copy to describe the opt-in behavior.
 
 ### Fixed
 
 - Fixed the bundled builtin `open-claude-design` feedback path so live annotations from `user-feedback-*` are parsed, persisted, and required to thread into the next `generate-*` prompt before another revision runs. Also kept final display read-only, constrained annotation snapshot artifact copies to the project/artifact dir, and preserved the browser-centric clean early exit when `playwright-cli` is unavailable (skipped under the test harness).
-
-
-- Added the bundled builtin `goal` workflow's safe-by-default `create_pr` toggle and final `pull-request` stage. Goal now mirrors Ralph's PR handoff behavior: omitted or `false` skips PR/MR/review creation and omits `pr_report`, while strict `create_pr=true` authorizes only the final stage after reviewer quorum plus reducer approval to inspect the goal ledger, worker receipts, reviewer artifacts, final report, repository state, and provider credentials before attempting a provider-appropriate PR/MR/review request. Intermediate Goal worker/reviewer prompts now tell stages to ignore PR-creation requests so PR handoff stays confined to the final stage. Updated the bundled workflow docs, quickstart, README, and `/atomic` guide copy to describe the opt-in behavior.
 
 ## [0.9.0-alpha.3] - 2026-06-21
 
