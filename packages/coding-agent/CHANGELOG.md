@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.2-alpha.1] - 2026-06-23
+
 ### Changed
 
 - Removed the initial `prompt-refinement` stage and shared prompt-refinement helper from the bundled `goal` and `ralph` workflows so both now use the raw objective/prompt as the operative task text for their first downstream stages; the now-obsolete refined/original trace outputs were also removed.
