@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed workflow config loading and user-global discovery to honor `ATOMIC_CODING_AGENT_DIR` isolation instead of reading `~/.atomic/agent` when an isolated agent dir is configured.
+
 ## [0.9.0] - 2026-06-22
 
 ### Breaking Changes

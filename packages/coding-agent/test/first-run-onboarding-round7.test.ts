@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import {
+  ONBOARDING_PLACEHOLDER,
   isExistingAbsolutePathSeed,
   type OnboardingRoutingAssessment,
 } from "../src/modes/interactive/interactive-onboarding.ts";
@@ -15,9 +16,13 @@ function installSubmitHandler(host: Record<string, unknown>): (text: string) => 
   return (host.defaultEditor as { onSubmit: (text: string) => Promise<void> }).onSubmit;
 }
 
-async function initHostWithOptions(options: { initialMessage?: string; initialMessages?: string[] }) {
+async function initHostWithOptions(
+  options: { initialMessage?: string; initialMessages?: string[] },
+  configureSettings?: (settingsManager: SettingsManager) => void,
+) {
   const settingsManager = SettingsManager.inMemory();
   settingsManager.setQuietStartup(true);
+  configureSettings?.(settingsManager);
   const host = {
     isInitialized: false,
     options,
@@ -61,6 +66,27 @@ async function initHostWithOptions(options: { initialMessage?: string; initialMe
 }
 
 describe("first-run onboarding round 7 regressions", () => {
+  it("re-arms onboarding for copied settings with only lastChangelogVersion", async () => {
+    const host = await initHostWithOptions({}, (settingsManager) => {
+      settingsManager.setLastChangelogVersion("0.9.1");
+    });
+
+    expect(host.settingsManager.getFirstRunOnboardingStartedVersion()).toBe("9.9.9-test");
+    expect(host.firstRunOnboardingActive).toBe(true);
+    expect(host.defaultEditor.setPlaceholder).toHaveBeenCalledWith(ONBOARDING_PLACEHOLDER);
+  });
+
+  it("keeps completed onboarding skipped even when copied settings have lastChangelogVersion", async () => {
+    const host = await initHostWithOptions({}, (settingsManager) => {
+      settingsManager.setLastChangelogVersion("0.9.1");
+      settingsManager.setOnboardedVersion("0.9.1");
+    });
+
+    expect(host.settingsManager.getFirstRunOnboardingStartedVersion()).toBeUndefined();
+    expect(host.firstRunOnboardingActive).toBe(false);
+    expect(host.defaultEditor.setPlaceholder).not.toHaveBeenCalled();
+  });
+
   it("persists the start marker during initial-message runs without activating onboarding", async () => {
     for (const options of [{ initialMessage: "run this once" }, { initialMessages: ["run this once"] }]) {
       const host = await initHostWithOptions(options);

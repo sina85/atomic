@@ -53,7 +53,6 @@ InteractiveModeBase.prototype.init = async function(this: InteractiveModeBase): 
     this.changelogMarkdown = this.getChangelogForDisplay();
     if (
       this.session.state.messages.length === 0
-      && !this.hadLastChangelogVersionAtStartup
       && !hadFirstRunOnboardingStarted
       && !this.settingsManager.getOnboardedVersion()
     ) {
