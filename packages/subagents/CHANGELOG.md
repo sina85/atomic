@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Aligned the subagents extension peer dependencies with upstream pi `^0.79.10` runtime packages (`@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, and `@earendil-works/pi-tui`); no subagents extension source changes were needed for this metadata sync.
+
+## [0.9.1] - 2026-06-23
+
+### Changed
+
+- Published the stable Atomic 0.9.1 release for the subagents extension; no functional subagents changes were made after 0.9.0.
+
+## [0.9.1-alpha.1] - 2026-06-22
+
+### Changed
+
+- Published a synchronized Atomic 0.9.1-alpha.1 prerelease for the subagents extension; no functional subagents changes were made after 0.9.0.
+
 ## [0.9.0] - 2026-06-22
 
 ### Added

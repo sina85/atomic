@@ -6,10 +6,35 @@
 
 - Added one-time first-run onboarding that explains Atomic workflows, uses an onboarding editor placeholder, lets users opt into normal chat with `/chat`, preserves other slash commands, and routes the first pasted ticket/spec/task through a lightweight scope check into `goal` or `ralph` using the standard workflow launch/status/connect experience.
 
+### Changed
+
+- Synced bundled upstream Pi package dependencies to `^0.79.10` across Atomic's CLI and extension peer manifests, and aligned shared coding-agent direct runtime/dev dependency pins with upstream Pi v0.79.10.
+- Raised the published Node.js engine floor to `>=22.19.0` to match direct runtime dependency requirements, including `undici@8.5.0`.
+
 ### Fixed
 
 - Fixed workflow config/discovery isolation so `ATOMIC_CODING_AGENT_DIR` prevents home-global workflows from shadowing the bundled first-run onboarding `goal` and `ralph` targets.
 - Fixed first-run onboarding reset for copied settings that already have `lastChangelogVersion`, so deleting the onboarding markers reliably re-arms the CTA and placeholder without changing changelog behavior.
+
+## [0.9.1] - 2026-06-23
+
+### Changed
+
+- Changed the bundled `goal`/`ralph` workflow prompt-refinement stage to use a workflow-neutral, model-only rubric prompt that returns only the refined objective instead of invoking the `prompt-engineer` skill directly.
+
+### Fixed
+
+- Fixed the bundled `ralph` workflow reviewer-c model configuration to use Gemini 3.1 Pro as the third reviewer with Gemini 3.1 provider fallbacks, removing Gemini 3.5 Flash from that slot's fallback chain ([#1484](https://github.com/bastani-inc/atomic/issues/1484)).
+
+## [0.9.1-alpha.1] - 2026-06-22
+
+### Changed
+
+- Changed the bundled `goal`/`ralph` workflow prompt-refinement stage to use a workflow-neutral, model-only rubric prompt that returns only the refined objective instead of invoking the `prompt-engineer` skill directly.
+
+### Fixed
+
+- Fixed the bundled `ralph` workflow reviewer-c model configuration to use Gemini 3.1 Pro as the third reviewer with Gemini 3.1 provider fallbacks, removing Gemini 3.5 Flash from that slot's fallback chain ([#1484](https://github.com/bastani-inc/atomic/issues/1484)).
 
 ## [0.9.0] - 2026-06-22
 
