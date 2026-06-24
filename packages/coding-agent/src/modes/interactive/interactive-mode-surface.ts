@@ -15,7 +15,11 @@ declare module "./interactive-mode-base.ts" {
   hadLastChangelogVersionAtStartup: boolean;
   firstRunOnboardingHeaderComponents: Component[];
   firstRunOnboardingSeedInFlight: boolean;
+  pendingFirstRunOnboardingSeed: string | undefined;
   isFirstRunOnboardingEligible(): boolean;
+  isFirstRunOnboardingReadyForHandoff(): boolean;
+  stashFirstRunOnboardingSeed(seed: string): void;
+  resumePendingFirstRunOnboardingSeed(): Promise<void>;
   clearFirstRunOnboardingUi(): void;
   completeFirstRunOnboarding(): void;
   runOnboardingRoutingAssessment(seed: string): Promise<OnboardingRoutingAssessment>;

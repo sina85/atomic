@@ -120,6 +120,9 @@ export class InteractiveModeBase {
   firstRunOnboardingSeedInFlight = false;
 
 
+  pendingFirstRunOnboardingSeed: string | undefined = undefined;
+
+
   hadLastChangelogVersionAtStartup = false;
 
 

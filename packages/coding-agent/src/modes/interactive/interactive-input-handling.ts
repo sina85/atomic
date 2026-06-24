@@ -101,6 +101,29 @@ InteractiveModeBase.prototype.handleClipboardImagePaste = async function(this: I
   };
 
 InteractiveModeBase.prototype.setupEditorSubmitHandler = function(this: InteractiveModeBase): void {
+    const submitFirstRunOnboardingSeed = async (text: string): Promise<void> => {
+      if (this.firstRunOnboardingSeedInFlight) return;
+      this.editor.addToHistory?.(text);
+      this.editor.setText("");
+      const readyForHandoff = typeof this.isFirstRunOnboardingReadyForHandoff === "function"
+        ? this.isFirstRunOnboardingReadyForHandoff()
+        : true;
+      if (!readyForHandoff) {
+        this.stashFirstRunOnboardingSeed(text);
+        return;
+      }
+      this.firstRunOnboardingSeedInFlight = true;
+      try {
+        await this.handleOnboardingWorkflowSeed(text);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.showError(errorMessage);
+        this.editor.setText(text);
+      } finally {
+        this.firstRunOnboardingSeedInFlight = false;
+      }
+    };
+
     this.defaultEditor.onSubmit = async (text: string) => {
       text = text.trim();
       if (!text) return;
@@ -122,19 +145,7 @@ InteractiveModeBase.prototype.setupEditorSubmitHandler = function(this: Interact
       }
 
       if (this.firstRunOnboardingActive && text.startsWith("/") && (isCwdLocalExistingPathSeed(text, this.sessionManager.getCwd()) || isExistingAbsolutePathSeed(text))) {
-        if (this.firstRunOnboardingSeedInFlight) return;
-        this.firstRunOnboardingSeedInFlight = true;
-        this.editor.addToHistory?.(text);
-        this.editor.setText("");
-        try {
-          await this.handleOnboardingWorkflowSeed(text);
-        } catch (error: unknown) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          this.showError(errorMessage);
-          this.editor.setText(text);
-        } finally {
-          this.firstRunOnboardingSeedInFlight = false;
-        }
+        await submitFirstRunOnboardingSeed(text);
         return;
       }
 
@@ -305,19 +316,7 @@ InteractiveModeBase.prototype.setupEditorSubmitHandler = function(this: Interact
       }
 
       if (this.firstRunOnboardingActive && !text.startsWith("/")) {
-        if (this.firstRunOnboardingSeedInFlight) return;
-        this.firstRunOnboardingSeedInFlight = true;
-        this.editor.addToHistory?.(text);
-        this.editor.setText("");
-        try {
-          await this.handleOnboardingWorkflowSeed(text);
-        } catch (error: unknown) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          this.showError(errorMessage);
-          this.editor.setText(text);
-        } finally {
-          this.firstRunOnboardingSeedInFlight = false;
-        }
+        await submitFirstRunOnboardingSeed(text);
         return;
       }
 

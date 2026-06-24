@@ -55,7 +55,7 @@ Use a workflow when a task should be repeatable, inspectable, resumable, or spli
 
 ## Quick Start
 
-On first run, Atomic can route your first pasted ticket, issue, spec path, or task prompt directly into a built-in workflow. The onboarding scope check is deliberately lightweight and read-only: it uses the same durable guidance as the workflow system prompt — `goal` for small fixes/quick fixes, `ralph` for non-trivial work around 2k+ changed lines or many files/areas — then hands off to the normal workflow launch/status/connect experience. Type `/chat` to skip this one-time routing and use Atomic as a normal coding-agent chat.
+On first run, Atomic can route your first pasted ticket, issue, spec path, or task prompt into normal workflow-driven agent work. If you are not logged in or configured yet, Atomic keeps the latest seed in memory only, asks you to run `/login`, and resumes after login succeeds. Once ready, onboarding hands the seed to the normal coding-agent session with instructions to make a quick scope decision using the same durable guidance as the workflow system prompt — `goal` for small fixes/quick fixes, `ralph` for non-trivial work around 2k+ changed lines or many files/areas — start the selected workflow, and continue normally. Type `/chat` before handoff to skip this one-time routing and use Atomic as a normal coding-agent chat.
 
 The fastest way to get a workflow running is to **describe it in natural language** and let Atomic write it for you. If you'd rather write the TypeScript yourself, jump to [Or hand-write the TypeScript](#or-hand-write-the-typescript) below.
 

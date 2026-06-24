@@ -141,26 +141,14 @@ describe("first-run onboarding round 7 regressions", () => {
     expect(host.settingsManager.setOnboardedVersion).not.toHaveBeenCalled();
   });
 
-  it("completes onboarding when workflow dispatch succeeds but the chat status card fails", async () => {
-    const execute = vi.fn().mockResolvedValue({ details: { action: "run", runId: "run-1", status: "running" } });
-    const assessment: OnboardingRoutingAssessment = {
-      workflow: "goal",
-      estimatedChangedLines: 50,
-      estimatedUniqueFiles: 1,
-      touchedAreas: [],
-      reason: "small",
-    };
+  it("completes onboarding when the seed is handed to the normal agent session", async () => {
+    const onInputCallback = vi.fn();
     const host = {
+      pendingUserInputs: [],
+      onInputCallback,
+      flushPendingBashComponents: vi.fn(),
       showStatus: vi.fn(),
-      showWarning: vi.fn(),
-      runOnboardingRoutingAssessment: vi.fn().mockResolvedValue(assessment),
-      launchOnboardingWorkflow: Reflect.get(InteractiveMode.prototype, "launchOnboardingWorkflow"),
       completeFirstRunOnboarding: vi.fn(),
-      session: {
-        getToolDefinition: (name: string) => name === "workflow" ? { execute } : undefined,
-        extensionRunner: { createContext: () => ({}) },
-        sendCustomMessage: vi.fn().mockRejectedValue(new Error("surface unavailable")),
-      },
     };
     const handleSeed = Reflect.get(InteractiveMode.prototype, "handleOnboardingWorkflowSeed") as (
       this: typeof host,
@@ -169,9 +157,9 @@ describe("first-run onboarding round 7 regressions", () => {
 
     await expect(handleSeed.call(host, "Fix a small bug")).resolves.toBeUndefined();
 
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(host.session.sendCustomMessage).toHaveBeenCalledTimes(1);
-    expect(host.showWarning).toHaveBeenCalledWith(expect.stringContaining("status card could not be displayed"));
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("Original task seed");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("Fix a small bug");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("Start the selected workflow");
     expect(host.completeFirstRunOnboarding).toHaveBeenCalledTimes(1);
   });
 

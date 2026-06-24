@@ -1,15 +1,20 @@
 import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, resolve, relative } from "node:path";
 import { InteractiveModeBase } from "./interactive-mode-base.ts";
-import type { ExtensionContext } from "./interactive-mode-deps.ts";
+import type { Api, ExtensionContext, Model } from "./interactive-mode-deps.ts";
+import { isUnknownModel } from "./interactive-mode-helpers.ts";
 import {
+  PATH_LIKE_TOKEN_PATTERN,
   enforceSeedConservatism,
   getToolErrorMessage,
+  hasUrlOnlyWithoutLocalizingEvidence,
   isProbeTimeoutOrAbortError,
   isProbeTimeoutOrCancellationMessage,
   parseProbeAssessment,
   reconcileProbeAssessments,
+  removeUrlTokens,
   timeoutFallbackCause,
+  unique,
   withLowConfidenceFallbackReason,
   type OnboardingRoutingAssessment,
 } from "./interactive-onboarding-probe.ts";
@@ -36,12 +41,17 @@ export const NORMAL_CHAT_TRANSITION_COPY = [
   "for help running or building your own loops and workflows.",
 ].join("\n");
 
-export const SCOPE_CHECK_NOTICE = [
-  "Doing a quick read-only scope check so I can choose the right workflow.",
-  "I'll read the ticket/spec and look up the likely code areas, but I won't do the full",
-  "implementation research here. The selected workflow will handle deeper research after",
-  "it starts.",
+export const ONBOARDING_SEED_STASHED_COPY = [
+  "Task saved for after login. Run /login to connect a provider; once login finishes,",
+  "Atomic will continue with your saved task.",
 ].join("\n");
+
+export const ONBOARDING_SEED_REPLACED_COPY = [
+  "Latest task saved for after login, replacing the previous saved task. Run /login to",
+  "connect a provider; once login finishes, Atomic will continue with the latest task.",
+].join("\n");
+
+export const ONBOARDING_HANDOFF_NOTICE = "Handing your task to the normal coding-agent session.";
 
 interface WorkflowRunDetails {
   action: string;
@@ -55,23 +65,32 @@ function isInside(baseDir: string, candidate: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function pathCandidatesWithOptionalLocationSuffix(pathText: string): string[] {
+  const candidates = [pathText, pathText.replace(/:\d+:\d+$/, ""), pathText.replace(/:\d+$/, "")];
+  return candidates.filter((candidate, index) => candidate && candidates.indexOf(candidate) === index);
+}
+
+function firstSeedLine(seed: string): string { return seed.trim().split(/\r?\n/, 1)[0]?.trim() ?? ""; }
+
 function getContainedExistingPath(pathText: string, cwd: string): string | undefined {
   if (!pathText || /\r|\n/.test(pathText) || /^[a-z]+:\/\//i.test(pathText)) return undefined;
   const root = resolve(cwd);
-  const absolute = isAbsolute(pathText) ? resolve(pathText) : resolve(cwd, pathText);
-  if (!isInside(root, absolute)) return undefined;
-  try {
-    lstatSync(absolute);
-    const rootReal = realpathSync(root);
-    const real = realpathSync(absolute);
-    return isInside(rootReal, real) ? real : undefined;
-  } catch {
-    return undefined;
+  let rootReal: string;
+  try { rootReal = realpathSync(root); } catch { return undefined; }
+  for (const candidate of pathCandidatesWithOptionalLocationSuffix(pathText)) {
+    const absolute = isAbsolute(candidate) ? resolve(candidate) : resolve(cwd, candidate);
+    if (!isInside(root, absolute)) continue;
+    try {
+      lstatSync(absolute);
+      const real = realpathSync(absolute);
+      if (isInside(rootReal, real)) return real;
+    } catch {}
   }
+  return undefined;
 }
 
 export function isCwdLocalExistingPathSeed(seed: string, cwd: string): boolean {
-  const trimmed = seed.trim();
+  const trimmed = firstSeedLine(seed);
   if (!trimmed || !isAbsolute(trimmed)) return false;
   const real = getContainedExistingPath(trimmed, cwd);
   if (!real) return false;
@@ -84,14 +103,16 @@ export function isCwdLocalExistingPathSeed(seed: string, cwd: string): boolean {
 }
 
 export function isExistingAbsolutePathSeed(seed: string): boolean {
-  const trimmed = seed.trim();
+  const trimmed = firstSeedLine(seed);
   if (!trimmed || /\r|\n/.test(trimmed) || /^[a-z]+:\/\//i.test(trimmed) || !isAbsolute(trimmed)) return false;
-  try {
-    const stat = statSync(trimmed);
-    return stat.isFile() || stat.isDirectory();
-  } catch {
-    return false;
+  for (const candidate of pathCandidatesWithOptionalLocationSuffix(trimmed)) {
+    if (!isAbsolute(candidate)) continue;
+    try {
+      const stat = statSync(candidate);
+      if (stat.isFile() || stat.isDirectory()) return true;
+    } catch {}
   }
+  return false;
 }
 
 function readMentionedSpec(seed: string, cwd: string): string | undefined {
@@ -108,22 +129,10 @@ function readMentionedSpec(seed: string, cwd: string): string | undefined {
   }
 }
 
-function unique(values: string[]): string[] {
-  return [...new Set(values.filter((value) => value.length > 0))];
-}
-
 const WORKFLOW_SCOPE_GUIDANCE = "Source-of-truth workflow guidance says to prefer goal for small fixes/quick fixes, prefer ralph for non-trivial work over about 2K LoC estimated diff, and use estimated changed LoC plus unique files/touched areas as scoping signals.";
-const PATH_LIKE_TOKEN_PATTERN = /[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+/g;
-const URL_TOKEN_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi;
-const URL_TOKEN_TEST_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/i;
-
-function removeUrlTokens(text: string): string {
-  return text.replace(URL_TOKEN_PATTERN, " ");
-}
-
-function hasUrlToken(text: string): boolean {
-  return URL_TOKEN_TEST_PATTERN.test(text);
-}
+const ONBOARDING_SCOPE_PROBE_TOTAL_TIMEOUT_MS = 300_000;
+const ONBOARDING_LOCATOR_PROBE_TIMEOUT_MS = Math.floor(ONBOARDING_SCOPE_PROBE_TOTAL_TIMEOUT_MS * 0.7);
+const ONBOARDING_FOLLOWUP_PROBE_TIMEOUT_MS = ONBOARDING_SCOPE_PROBE_TOTAL_TIMEOUT_MS - ONBOARDING_LOCATOR_PROBE_TIMEOUT_MS;
 
 function extractTouchedAreas(text: string): string[] {
   const pathMatches = removeUrlTokens(text).match(PATH_LIKE_TOKEN_PATTERN) ?? [];
@@ -138,15 +147,6 @@ function extractTouchedAreas(text: string): string[] {
     lower.includes("auth") || lower.includes("login") ? "auth" : "",
   ];
   return unique([...pathAreas, ...keywordAreas]).slice(0, 8);
-}
-
-function hasUrlOnlyWithoutLocalizingEvidence(text: string): boolean {
-  const textWithoutUrls = removeUrlTokens(text);
-  const lowerWithoutUrls = textWithoutUrls.toLowerCase();
-  const pathCount = unique(textWithoutUrls.match(PATH_LIKE_TOKEN_PATTERN) ?? []).length;
-  const hasSpecificPath = pathCount > 0;
-  const hasLocalizingEvidence = hasSpecificPath || /\b(readme|changelog|docs?|tests?|src|package|component|function|class|module|one file|single file|specific file|this file|auth|login|workflow|setting|config)\b/.test(lowerWithoutUrls);
-  return hasUrlToken(text) && !hasLocalizingEvidence;
 }
 
 export function assessOnboardingRoute(seed: string, cwd: string): OnboardingRoutingAssessment {
@@ -228,45 +228,38 @@ function getFollowupProbeTasks(seed: string, assessment: OnboardingRoutingAssess
   return tasks.slice(0, 3);
 }
 
-
 function getWorkflowRunDetails(details: unknown): WorkflowRunDetails | undefined {
   if (typeof details !== "object" || details === null) return undefined;
   const record = details as Partial<WorkflowRunDetails>;
   return typeof record.action === "string" ? { action: record.action, runId: record.runId, status: record.status, error: record.error } : undefined;
 }
 
-function formatDecision(assessment: OnboardingRoutingAssessment): string {
-  const areas = assessment.touchedAreas.length > 0
-    ? ` Likely touched areas: ${assessment.touchedAreas.join(", ")}.`
-    : "";
-  if (assessment.workflow === "goal") {
-    return [
-      "✓ Decision: run goal",
-      "",
-      "This looks like a smaller, focused change: it appears localized and",
-      "likely under about 2k lines. goal is built for bounded work like this.",
-      areas.trim(),
-      "",
-      "For larger changes — broad refactors, migrations, or work that spans",
-      "many files/packages — use ralph. Ralph does deeper research, delegates",
-      "through sub-agents, reviews, and iterates.",
-      "",
-      "Starting goal now.",
-    ].filter(Boolean).join("\n");
-  }
+function sameModel(a: Model<Api>, b: Model<Api>): boolean {
+  return a.provider === b.provider && a.id === b.id;
+}
+
+function backtickFenceFor(seed: string): string {
+  let longest = 0;
+  for (const match of seed.matchAll(/`+/g)) longest = Math.max(longest, match[0].length);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+export function buildOnboardingHandoffPrompt(seed: string): string {
+  const fence = backtickFenceFor(seed);
   return [
-    "✓ Decision: run ralph",
+    "First-run onboarding handoff: continue as a normal Atomic coding-agent session.",
     "",
-    "This looks like a larger or cross-cutting change: it may touch many",
-    "areas or require around 2k+ lines of implementation, tests, or docs.",
-    "Ralph is built for bigger work that needs research, delegation, review, and iteration.",
-    areas.trim(),
+    "Original task seed:",
+    `${fence}text`,
+    seed,
+    fence,
     "",
-    "For smaller, focused fixes or features, use goal. goal is faster and",
-    "optimized for bounded work.",
-    "",
-    "Starting ralph now.",
-  ].filter(Boolean).join("\n");
+    "Perform a quick scope-routing pass before acting. Use the existing Atomic workflow guidance:",
+    "choose `goal` for small focused fixes or quick fixes; choose `ralph` for non-trivial,",
+    "broad, cross-cutting, or around-2K+-changed-line work. Start the selected workflow with",
+    "the original seed, then continue normally in this session. Slash commands should behave",
+    "like normal coding-agent slash commands from here on.",
+  ].join("\n");
 }
 
 InteractiveModeBase.prototype.isFirstRunOnboardingEligible = function(this: InteractiveModeBase): boolean {
@@ -277,9 +270,44 @@ InteractiveModeBase.prototype.isFirstRunOnboardingEligible = function(this: Inte
     && Boolean(this.settingsManager.getFirstRunOnboardingStartedVersion());
 };
 
+InteractiveModeBase.prototype.isFirstRunOnboardingReadyForHandoff = function(this: InteractiveModeBase): boolean {
+  const registry = this.session.modelRegistry;
+  if (!registry) return true;
+  const model = this.session.model;
+  if (!model || isUnknownModel(model)) return false;
+  if (typeof registry.hasConfiguredAuth === "function") {
+    return registry.hasConfiguredAuth(model);
+  }
+  if (typeof registry.getAvailable === "function") {
+    return registry.getAvailable().some((availableModel) => sameModel(availableModel, model));
+  }
+  return true;
+};
+
+InteractiveModeBase.prototype.stashFirstRunOnboardingSeed = function(this: InteractiveModeBase, seed: string): void {
+  const replaced = Boolean(this.pendingFirstRunOnboardingSeed);
+  this.pendingFirstRunOnboardingSeed = seed;
+  this.showStatus(replaced ? ONBOARDING_SEED_REPLACED_COPY : ONBOARDING_SEED_STASHED_COPY);
+};
+
+InteractiveModeBase.prototype.resumePendingFirstRunOnboardingSeed = async function(this: InteractiveModeBase): Promise<void> {
+  if (!this.firstRunOnboardingActive || !this.pendingFirstRunOnboardingSeed) return;
+  if (!this.isFirstRunOnboardingReadyForHandoff()) return;
+  const seed = this.pendingFirstRunOnboardingSeed;
+  this.pendingFirstRunOnboardingSeed = undefined;
+  try {
+    await this.handleOnboardingWorkflowSeed(seed);
+  } catch (error: unknown) {
+    this.pendingFirstRunOnboardingSeed = seed;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.showError(errorMessage);
+  }
+};
+
 InteractiveModeBase.prototype.clearFirstRunOnboardingUi = function(this: InteractiveModeBase): void {
   this.firstRunOnboardingActive = false;
   this.firstRunOnboardingSeedInFlight = false;
+  this.pendingFirstRunOnboardingSeed = undefined;
   this.defaultEditor.setPlaceholder(undefined);
   if (this.firstRunOnboardingHeaderComponents.length > 0) {
     this.headerContainer.children = this.headerContainer.children.filter(
@@ -304,7 +332,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
   const tool = this.session.getToolDefinition("subagent");
   if (!tool) return fallback;
   let result: unknown;
-  const timeoutSignal = AbortSignal.timeout(600_000);
+  const locatorTimeoutSignal = AbortSignal.timeout(ONBOARDING_LOCATOR_PROBE_TIMEOUT_MS);
   try {
     result = await tool.execute(
       "onboarding-scope-probe",
@@ -320,7 +348,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
         artifacts: false,
         agentScope: "both",
       } as Parameters<typeof tool.execute>[1],
-      timeoutSignal,
+      locatorTimeoutSignal,
       undefined,
       this.session.extensionRunner.createContext() as ExtensionContext,
     );
@@ -330,7 +358,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
   }
   const errorMessage = getToolErrorMessage(result);
   if (errorMessage) {
-    if (timeoutSignal.aborted || isProbeTimeoutOrCancellationMessage(errorMessage)) {
+    if (locatorTimeoutSignal.aborted || isProbeTimeoutOrCancellationMessage(errorMessage)) {
       return withLowConfidenceFallbackReason(fallback, "timed out or was cancelled before it could finish");
     }
     throw new Error(errorMessage);
@@ -338,6 +366,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
   const locatorAssessment = parseProbeAssessment(result);
   const followupTasks = getFollowupProbeTasks(seed, locatorAssessment);
   if (followupTasks.length === 0) return enforceSeedConservatism(seed, locatorAssessment ?? fallback);
+  const followupTimeoutSignal = AbortSignal.timeout(ONBOARDING_FOLLOWUP_PROBE_TIMEOUT_MS);
   try {
     result = await tool.execute(
       "onboarding-scope-followup-probe",
@@ -353,7 +382,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
         artifacts: false,
         agentScope: "both",
       } as Parameters<typeof tool.execute>[1],
-      timeoutSignal,
+      followupTimeoutSignal,
       undefined,
       this.session.extensionRunner.createContext() as ExtensionContext,
     );
@@ -365,7 +394,7 @@ InteractiveModeBase.prototype.runOnboardingRoutingAssessment = async function(
   }
   const followupErrorMessage = getToolErrorMessage(result);
   if (followupErrorMessage) {
-    if (timeoutSignal.aborted || isProbeTimeoutOrCancellationMessage(followupErrorMessage)) {
+    if (followupTimeoutSignal.aborted || isProbeTimeoutOrCancellationMessage(followupErrorMessage)) {
       return enforceSeedConservatism(seed, withLowConfidenceFallbackReason(locatorAssessment ?? fallback, "timed out or was cancelled before it could finish"));
     }
     throw new Error(followupErrorMessage);
@@ -416,9 +445,13 @@ InteractiveModeBase.prototype.handleOnboardingWorkflowSeed = async function(
   this: InteractiveModeBase,
   seed: string,
 ): Promise<void> {
-  this.showStatus(SCOPE_CHECK_NOTICE);
-  const assessment = await this.runOnboardingRoutingAssessment(seed);
-  this.showStatus(formatDecision(assessment));
-  await this.launchOnboardingWorkflow(seed, assessment);
+  const handoffPrompt = buildOnboardingHandoffPrompt(seed);
+  this.flushPendingBashComponents();
+  if (this.onInputCallback) {
+    this.onInputCallback(handoffPrompt);
+  } else {
+    this.pendingUserInputs.push(handoffPrompt);
+  }
+  this.showStatus(ONBOARDING_HANDOFF_NOTICE);
   this.completeFirstRunOnboarding();
 };

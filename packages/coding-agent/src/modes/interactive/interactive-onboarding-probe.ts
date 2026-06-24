@@ -6,23 +6,23 @@ export interface OnboardingRoutingAssessment {
   reason: string;
 }
 
-const URL_TOKEN_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi;
+export const URL_TOKEN_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi;
 const URL_TOKEN_TEST_PATTERN = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/i;
-const PATH_LIKE_TOKEN_PATTERN = /[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+/g;
+export const PATH_LIKE_TOKEN_PATTERN = /[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+/g;
 
-function unique(values: string[]): string[] {
+export function unique(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
 }
 
-function removeUrlTokens(text: string): string {
+export function removeUrlTokens(text: string): string {
   return text.replace(URL_TOKEN_PATTERN, " ");
 }
 
-function hasUrlToken(text: string): boolean {
+export function hasUrlToken(text: string): boolean {
   return URL_TOKEN_TEST_PATTERN.test(text);
 }
 
-function hasUrlOnlyWithoutLocalizingEvidence(text: string): boolean {
+export function hasUrlOnlyWithoutLocalizingEvidence(text: string): boolean {
   const textWithoutUrls = removeUrlTokens(text);
   const lowerWithoutUrls = textWithoutUrls.toLowerCase();
   const pathCount = unique(textWithoutUrls.match(PATH_LIKE_TOKEN_PATTERN) ?? []).length;

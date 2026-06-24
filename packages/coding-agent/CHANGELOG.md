@@ -4,10 +4,11 @@
 
 ### Added
 
-- Added one-time first-run onboarding that explains Atomic workflows, uses an onboarding editor placeholder, lets users opt into normal chat with `/chat`, preserves other slash commands, and routes the first pasted ticket/spec/task through a lightweight scope check into `goal` or `ralph` using the standard workflow launch/status/connect experience.
+- Added one-time first-run onboarding that explains Atomic workflows, uses an onboarding editor placeholder, lets users opt into normal chat with `/chat`, preserves other slash commands, saves a pre-login pasted task in memory only, and hands the first ready ticket/spec/task to the normal coding-agent session with `goal`/`ralph` workflow-routing guidance.
 
 ### Changed
 
+- Removed unused first-run onboarding scope-decision helpers after normal-session handoff became the active path.
 - Synced bundled upstream Pi package dependencies to `^0.79.10` across Atomic's CLI and extension peer manifests, and aligned shared coding-agent direct runtime/dev dependency pins with upstream Pi v0.79.10.
 - Raised the published Node.js engine floor to `>=22.19.0` to match direct runtime dependency requirements, including `undici@8.5.0`.
 
@@ -15,6 +16,33 @@
 
 - Fixed workflow config/discovery isolation so `ATOMIC_CODING_AGENT_DIR` prevents home-global workflows from shadowing the bundled first-run onboarding `goal` and `ralph` targets.
 - Fixed first-run onboarding reset for copied settings that already have `lastChangelogVersion`, so deleting the onboarding markers reliably re-arms the CTA and placeholder without changing changelog behavior.
+- Fixed first-run onboarding so multiline absolute path seeds with `:line[:column]` plus notes are saved or handed off with the full original text instead of being mistaken for slash commands.
+
+## [0.9.2] - 2026-06-23
+
+### Changed
+
+- Removed the initial `prompt-refinement` stage and shared prompt-refinement helper from the bundled `goal` and `ralph` workflows so both now use the raw objective/prompt as the operative task text for their first downstream stages; the now-obsolete refined/original trace outputs were also removed.
+- Updated bundled `goal` and `ralph` reviewer prompts to inspect referenced QA end-to-end video evidence before treating it as proof of user-visible behavior.
+- Synced bundled upstream Pi package dependencies to `^0.79.10` across Atomic's CLI and extension peer manifests, and aligned shared coding-agent direct runtime/dev dependency pins with upstream Pi v0.79.10.
+- Raised the published Node.js engine floor to `>=22.19.0` to match direct runtime dependency requirements, including `undici@8.5.0`.
+
+### Fixed
+
+- Fixed GitHub Copilot Gemini tool-call normalization to synthesize omitted required empty array properties before validation, preventing Ralph reviewer structured output such as `findings: []` from failing when CAPI drops the empty array from the tool call.
+
+## [0.9.2-alpha.1] - 2026-06-23
+
+### Changed
+
+- Removed the initial `prompt-refinement` stage and shared prompt-refinement helper from the bundled `goal` and `ralph` workflows so both now use the raw objective/prompt as the operative task text for their first downstream stages; the now-obsolete refined/original trace outputs were also removed.
+- Updated bundled `goal` and `ralph` reviewer prompts to inspect referenced QA end-to-end video evidence before treating it as proof of user-visible behavior.
+- Synced bundled upstream Pi package dependencies to `^0.79.10` across Atomic's CLI and extension peer manifests, and aligned shared coding-agent direct runtime/dev dependency pins with upstream Pi v0.79.10.
+- Raised the published Node.js engine floor to `>=22.19.0` to match direct runtime dependency requirements, including `undici@8.5.0`.
+
+### Fixed
+
+- Fixed GitHub Copilot Gemini tool-call normalization to synthesize omitted required empty array properties before validation, preventing Ralph reviewer structured output such as `findings: []` from failing when CAPI drops the empty array from the tool call.
 
 ## [0.9.1] - 2026-06-23
 

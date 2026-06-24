@@ -63,6 +63,35 @@ describe("first-run onboarding round 5 regressions", () => {
     }
   });
 
+  it("splits the 5-minute scope probe timeout 70/30 across locator and follow-up", async () => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({
+        workflow: "goal",
+        estimatedChangedLines: 400,
+        estimatedUniqueFiles: 3,
+        touchedAreas: ["packages/coding-agent"],
+        reason: "Locator estimates a bounded goal-sized change.",
+      }) }] })
+      .mockResolvedValueOnce({ details: { results: [{ finalOutput: JSON.stringify({
+        workflow: "goal",
+        estimatedChangedLines: 600,
+        estimatedUniqueFiles: 4,
+        touchedAreas: ["packages/coding-agent"],
+        reason: "Targeted probes still estimate goal scope.",
+      }) }] } });
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await getAssess().call(
+        hostWithSubagent(execute),
+        "Migrate existing request patterns to React 19 external API behavior",
+      );
+      expect(timeoutSpy).toHaveBeenNthCalledWith(1, 210_000);
+      expect(timeoutSpy).toHaveBeenNthCalledWith(2, 90_000);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
   it("still runs pattern and online follow-ups when locator provides numeric estimates", async () => {
     const execute = vi.fn()
       .mockResolvedValueOnce({ content: [{ type: "text", text: JSON.stringify({
