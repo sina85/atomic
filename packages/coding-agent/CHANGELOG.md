@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Updated first-run `goal`/`ralph` workflow handoff guidance so new users see `/workflow status <id>` and `/workflow connect <id>` next steps with the run id, understand connect is where they can watch, attach, and steer, and know they can ask the current chat for status or steering at any point.
 - Removed the unused first-run onboarding scope-probe/routing-assessment subsystem and dead probe-only tests after normal-session prompt handoff became the active onboarding path.
 
 ### Fixed

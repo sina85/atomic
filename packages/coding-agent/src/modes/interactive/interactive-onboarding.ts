@@ -131,8 +131,13 @@ export function buildOnboardingHandoffPrompt(seed: string): string {
     "Then make the final choice in this high-reasoning parent session using the existing Atomic",
     "workflow guidance: choose `goal` for clearly small, focused fixes or quick fixes; choose `ralph`",
     "for non-trivial, broad, cross-cutting, risky, unclear, or around-2K+-changed-line work.",
-    "Start the selected workflow with the original seed, then continue normally in this session.",
-    "Slash commands should behave like normal coding-agent slash commands from here on.",
+    "Start the selected workflow with the original seed. After the `goal` or `ralph` run is",
+    "dispatched, show the new developer the workflow id and succinct next steps:",
+    "- `/workflow status <workflow-id>` checks progress.",
+    "- `/workflow connect <workflow-id>` opens the graph viewer to watch, attach, and steer.",
+    "- They can ask in this chat for status or to steer the run at any point.",
+    "Then continue normally in this session. Slash commands should behave like normal",
+    "coding-agent slash commands from here on.",
   ].join("\n");
 }
 

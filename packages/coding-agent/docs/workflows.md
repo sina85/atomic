@@ -107,7 +107,7 @@ Then list and run it like any other workflow:
 /workflow <name> key=value ...
 ```
 
-Named workflow runs are background-oriented. After launch, expect a run id and monitor it with `/workflow status`, F2, or `/workflow connect <run-id>`.
+Named workflow runs are background-oriented. After launch, expect a run id and monitor it with `/workflow status <run-id>`, F2, or `/workflow connect <run-id>`. First-run `goal`/`ralph` handoffs print those exact commands in the dispatched card; use connect to watch, attach, and steer, or ask in the current chat for status or steering at any point.
 
 ### Or hand-write the TypeScript
 

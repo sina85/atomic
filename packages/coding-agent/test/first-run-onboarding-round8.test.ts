@@ -254,6 +254,14 @@ describe("first-run onboarding pending seed handoff", () => {
     expect(prompt.split("\n")).not.toContain("```text");
   });
 
+  it("asks the parent to show first-run workflow control commands after dispatch", () => {
+    const prompt = buildOnboardingHandoffPrompt("Implement the ticket");
+
+    expect(prompt).toContain("`/workflow status <workflow-id>` checks progress.");
+    expect(prompt).toContain("`/workflow connect <workflow-id>` opens the graph viewer to watch, attach, and steer");
+    expect(prompt).toContain("ask in this chat for status or to steer the run at any point");
+  });
+
   it("replaces a pending seed before login with the latest seed", async () => {
     const host = {
       firstRunOnboardingActive: true,

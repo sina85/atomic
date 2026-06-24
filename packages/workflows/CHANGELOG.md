@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the dispatch confirmation for builtin `goal` and `ralph` runs to show first-time-friendly `/workflow status <id>` and `/workflow connect <id>` next steps, describe connect as the place to watch, attach, and steer, and remind users they can ask the current chat for status or steering.
+
 ## [0.9.2] - 2026-06-23
 
 ### Changed

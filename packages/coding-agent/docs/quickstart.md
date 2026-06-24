@@ -119,11 +119,12 @@ For smaller one-off tasks, use `goal` with a concrete task description that name
 
 ### Monitor and steer a run
 
-Named workflow runs execute in the background. After launch you get a run id; use it to inspect, attach, pause, or resume:
+Named workflow runs execute in the background. After launch you get a run id; use it to inspect, attach, pause, or resume. First-run `goal`/`ralph` handoffs show the exact `/workflow status <run-id>` and `/workflow connect <run-id>` commands in the dispatched card, and you can also ask in the current chat for status or to steer the run at any point.
 
 ```text
+/workflow status <run-id>         # inspect one run's progress
 /workflow status                  # list this session's active and terminal runs
-/workflow connect <run-id>        # open the graph viewer (F2 also opens the latest)
+/workflow connect <run-id>        # watch, attach to stages, or steer (F2 also opens latest)
 /workflow attach <run-id> <stage> # chat with one stage
 /workflow interrupt <run-id>      # pause resumably
 /workflow resume <run-id> "go"    # send a steer message and resume
