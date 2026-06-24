@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-23
+
+### Changed
+
+- Published the stable Atomic 0.9.2 release for the Cursor provider package; no functional Cursor provider changes were made after 0.9.1.
+
+## [0.9.2-alpha.1] - 2026-06-23
+
+### Changed
+
+- Published a synchronized Atomic 0.9.2-alpha.1 prerelease for the Cursor provider package; no functional Cursor provider changes were made after 0.9.1.
+
 ## [0.9.1] - 2026-06-23
 
 ### Changed
