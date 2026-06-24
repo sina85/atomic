@@ -7,7 +7,6 @@ import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import {
   ONBOARDING_PLACEHOLDER,
   isExistingAbsolutePathSeed,
-  type OnboardingRoutingAssessment,
 } from "../src/modes/interactive/interactive-onboarding.ts";
 
 function installSubmitHandler(host: Record<string, unknown>): (text: string) => Promise<void> {
@@ -185,23 +184,5 @@ describe("first-run onboarding round 7 regressions", () => {
     expect(isExistingAbsolutePathSeed(outsideSpec)).toBe(true);
     expect(submitHost.handleOnboardingWorkflowSeed).toHaveBeenCalledWith(outsideSpec);
     expect(submitHost.session.prompt).not.toHaveBeenCalled();
-
-    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "not json" }], details: { results: [] } });
-    const assess = Reflect.get(InteractiveMode.prototype, "runOnboardingRoutingAssessment") as (
-      this: Record<string, unknown>,
-      seed: string,
-    ) => Promise<OnboardingRoutingAssessment>;
-    const assessHost = {
-      sessionManager: { getCwd: () => cwd },
-      session: {
-        getToolDefinition: (name: string) => name === "subagent" ? { execute } : undefined,
-        extensionRunner: { createContext: () => ({}) },
-      },
-    };
-
-    await assess.call(assessHost, outsideSpec);
-
-    expect(execute.mock.calls[0]?.[1].task).not.toContain("Referenced cwd-local spec excerpt");
-    expect(execute.mock.calls[0]?.[1].task).not.toContain("OUTSIDE SECRET SPEC BODY");
   });
 });

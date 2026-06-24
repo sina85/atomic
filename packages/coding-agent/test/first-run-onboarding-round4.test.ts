@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
-import { assessOnboardingRoute } from "../src/modes/interactive/interactive-onboarding.ts";
 
 function installSubmitHandler(host: Record<string, unknown>): (text: string) => Promise<void> {
   const setup = Reflect.get(InteractiveMode.prototype, "setupEditorSubmitHandler") as (this: Record<string, unknown>) => void;
@@ -9,17 +8,6 @@ function installSubmitHandler(host: Record<string, unknown>): (text: string) => 
 }
 
 describe("first-run onboarding round 4 regressions", () => {
-  it("does not count URL path segments as localized fallback path evidence", () => {
-    const bareIssue = assessOnboardingRoute("https://github.com/acme/widget/issues/123", process.cwd());
-    const bareDocsUrl = assessOnboardingRoute("https://example.com/docs/setup/install", process.cwd());
-    const localPath = assessOnboardingRoute("Fix typo in packages/coding-agent/docs/quickstart.md", process.cwd());
-
-    expect(bareIssue.workflow).toBe("ralph");
-    expect(bareDocsUrl.workflow).toBe("ralph");
-    expect(bareIssue.touchedAreas).not.toContain("github.com/acme");
-    expect(localPath.workflow).toBe("goal");
-  });
-
   it("clears active onboarding UI after resuming a non-fresh session without marking onboarded", async () => {
     const cta = [{ name: "border" }, { name: "copy" }];
     const host = {

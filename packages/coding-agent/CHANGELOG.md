@@ -8,7 +8,7 @@
 
 ### Changed
 
-- Removed unused first-run onboarding scope-decision helpers after normal-session handoff became the active path.
+- Removed the unused first-run onboarding scope-probe/routing-assessment subsystem and dead probe-only tests after normal-session prompt handoff became the active onboarding path.
 
 ### Fixed
 
