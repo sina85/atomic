@@ -35,6 +35,7 @@ export const ONBOARDING_SEED_REPLACED_COPY = [
 ].join("\n");
 
 export const ONBOARDING_HANDOFF_NOTICE = "Handing your task to the normal coding-agent session.";
+export const ONBOARDING_ROUTING_THINKING_LEVEL = "high";
 
 function isInside(baseDir: string, candidate: string): boolean {
   const rel = relative(baseDir, candidate);
@@ -111,11 +112,27 @@ export function buildOnboardingHandoffPrompt(seed: string): string {
     seed,
     fence,
     "",
-    "Perform a quick scope-routing pass before acting. Use the existing Atomic workflow guidance:",
-    "choose `goal` for small focused fixes or quick fixes; choose `ralph` for non-trivial,",
-    "broad, cross-cutting, or around-2K+-changed-line work. Start the selected workflow with",
-    "the original seed, then continue normally in this session. Slash commands should behave",
-    "like normal coding-agent slash commands from here on.",
+    "Perform a quick scope-routing pass before acting. Atomic has switched the selected model",
+    "to high reasoning for this routing decision when the model supports it. First estimate the",
+    "likely scope from the seed text alone: tickets, GitHub issues, and especially specs often",
+    "name enough work items, files, systems, tests, docs, migrations, or acceptance criteria to",
+    "classify the task without immediately inspecting the repo. Treat that text-only estimate as",
+    "an initial confidence signal for routing, not as final implementation planning.",
+    "",
+    "If the seed makes the task clearly tiny or small and the routing choice is high-confidence,",
+    "you may route directly without codebase probing. If the seed references a local path, issue,",
+    "spec, or repo area that must be read to understand the task, inspect only that targeted",
+    "context. When the scope is medium, large, unclear, risky, or otherwise not obviously tiny,",
+    "gather quick read-only codebase context with targeted subagents such as `codebase-locator`,",
+    "`codebase-analyzer`, and `codebase-pattern-finder`. Use those subagents with their normal",
+    "default model/thinking settings; do not override their models just for routing. Do only the",
+    "probing needed to route scope; do not turn this into an open-ended research project.",
+    "",
+    "Then make the final choice in this high-reasoning parent session using the existing Atomic",
+    "workflow guidance: choose `goal` for clearly small, focused fixes or quick fixes; choose `ralph`",
+    "for non-trivial, broad, cross-cutting, risky, unclear, or around-2K+-changed-line work.",
+    "Start the selected workflow with the original seed, then continue normally in this session.",
+    "Slash commands should behave like normal coding-agent slash commands from here on.",
   ].join("\n");
 }
 
@@ -185,6 +202,9 @@ InteractiveModeBase.prototype.handleOnboardingWorkflowSeed = async function(
   seed: string,
 ): Promise<void> {
   const handoffPrompt = buildOnboardingHandoffPrompt(seed);
+  this.session.setThinkingLevel(ONBOARDING_ROUTING_THINKING_LEVEL);
+  this.footer.invalidate();
+  this.updateEditorBorderColor();
   this.flushPendingBashComponents();
   if (this.onInputCallback) {
     this.onInputCallback(handoffPrompt);

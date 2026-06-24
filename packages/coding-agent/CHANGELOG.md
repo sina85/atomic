@@ -5,6 +5,7 @@
 ### Added
 
 - Added one-time first-run onboarding that explains Atomic workflows, uses an onboarding editor placeholder, lets users opt into normal chat with `/chat`, preserves other slash commands, saves a pre-login pasted task in memory only, and hands the first ready ticket/spec/task to the normal coding-agent session with `goal`/`ralph` workflow-routing guidance.
+- Added first-run onboarding routing guidance that raises the parent session to high reasoning when supported, asks the coding agent to first make a text-only scope estimate from tickets/GitHub issues/specs, routes directly when the task is clearly tiny or small with high confidence, and only uses targeted read-only `codebase-locator`/`codebase-analyzer`/`codebase-pattern-finder` probing when referenced context must be read or scope is medium, large, unclear, risky, or not obviously tiny before choosing `goal` or `ralph`.
 
 ### Changed
 
@@ -12,6 +13,7 @@
 
 ### Fixed
 
+- Fixed `@` file-reference autocomplete in the first-run onboarding editor before the asynchronous `fd` readiness check completes by falling back to the built-in synchronous path completer while preserving `@` prefixes and quoted paths.
 - Fixed workflow config/discovery isolation so `ATOMIC_CODING_AGENT_DIR` prevents home-global workflows from shadowing the bundled first-run onboarding `goal` and `ralph` targets.
 - Fixed first-run onboarding reset for copied settings that already have `lastChangelogVersion`, so deleting the onboarding markers reliably re-arms the CTA and placeholder without changing changelog behavior.
 - Fixed first-run onboarding so multiline absolute path seeds with `:line[:column]` plus notes are saved or handed off with the full original text instead of being mistaken for slash commands.

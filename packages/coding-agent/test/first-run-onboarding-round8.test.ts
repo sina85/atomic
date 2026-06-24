@@ -6,6 +6,7 @@ import { SettingsManager } from "../src/core/settings-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import {
   ONBOARDING_HANDOFF_NOTICE,
+  ONBOARDING_ROUTING_THINKING_LEVEL,
   ONBOARDING_SEED_REPLACED_COPY,
   ONBOARDING_SEED_STASHED_COPY,
   buildOnboardingHandoffPrompt,
@@ -161,8 +162,10 @@ describe("first-run onboarding pending seed handoff", () => {
           this.firstRunOnboardingActive = false;
         }),
         onInputCallback,
+        footer: { invalidate: vi.fn() },
+        updateEditorBorderColor: vi.fn(),
         sessionManager: { getCwd: vi.fn(() => dir) },
-        session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn() },
+        session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn(), setThinkingLevel: vi.fn() },
       };
       const submit = installSubmitHandler(host);
 
@@ -200,8 +203,10 @@ describe("first-run onboarding pending seed handoff", () => {
           this.firstRunOnboardingActive = false;
         }),
         onInputCallback,
+        footer: { invalidate: vi.fn() },
+        updateEditorBorderColor: vi.fn(),
         sessionManager: { getCwd: vi.fn(() => dir) },
-        session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn() },
+        session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn(), setThinkingLevel: vi.fn() },
       };
       const submit = installSubmitHandler(host);
 
@@ -320,6 +325,9 @@ describe("first-run onboarding pending seed handoff", () => {
       onInputCallback,
       flushPendingBashComponents: vi.fn(),
       showStatus: vi.fn(),
+      footer: { invalidate: vi.fn() },
+      updateEditorBorderColor: vi.fn(),
+      session: { setThinkingLevel: vi.fn() },
       completeFirstRunOnboarding: vi.fn(function(this: { firstRunOnboardingActive: boolean }) {
         this.firstRunOnboardingActive = false;
       }),
@@ -329,6 +337,17 @@ describe("first-run onboarding pending seed handoff", () => {
     await handleSeed.call(host, "Original ticket text");
 
     expect(onInputCallback).toHaveBeenCalledWith(buildOnboardingHandoffPrompt("Original ticket text"));
+    expect(host.session.setThinkingLevel).toHaveBeenCalledWith(ONBOARDING_ROUTING_THINKING_LEVEL);
+    expect(host.footer.invalidate).toHaveBeenCalledTimes(1);
+    expect(host.updateEditorBorderColor).toHaveBeenCalledTimes(1);
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("high reasoning");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("seed text alone");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("initial confidence signal");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("route directly without codebase probing");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("do not turn this into an open-ended research project");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("codebase-locator");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("codebase-analyzer");
+    expect(onInputCallback.mock.calls[0]?.[0]).toContain("codebase-pattern-finder");
     expect(onInputCallback.mock.calls[0]?.[0]).toContain("choose `goal`");
     expect(onInputCallback.mock.calls[0]?.[0]).toContain("choose `ralph`");
     expect(host.showStatus).toHaveBeenCalledWith(ONBOARDING_HANDOFF_NOTICE);
@@ -353,7 +372,9 @@ describe("first-run onboarding pending seed handoff", () => {
         this.firstRunOnboardingActive = false;
       }),
       onInputCallback,
-      session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn() },
+      footer: { invalidate: vi.fn() },
+      updateEditorBorderColor: vi.fn(),
+      session: { isBashRunning: false, isCompacting: false, isStreaming: false, prompt: vi.fn(), setThinkingLevel: vi.fn() },
     };
     const submit = installSubmitHandler(host);
 

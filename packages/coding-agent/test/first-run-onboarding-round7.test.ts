@@ -147,6 +147,9 @@ describe("first-run onboarding round 7 regressions", () => {
       onInputCallback,
       flushPendingBashComponents: vi.fn(),
       showStatus: vi.fn(),
+      footer: { invalidate: vi.fn() },
+      updateEditorBorderColor: vi.fn(),
+      session: { setThinkingLevel: vi.fn() },
       completeFirstRunOnboarding: vi.fn(),
     };
     const handleSeed = Reflect.get(InteractiveMode.prototype, "handleOnboardingWorkflowSeed") as (
@@ -159,6 +162,7 @@ describe("first-run onboarding round 7 regressions", () => {
     expect(onInputCallback.mock.calls[0]?.[0]).toContain("Original task seed");
     expect(onInputCallback.mock.calls[0]?.[0]).toContain("Fix a small bug");
     expect(onInputCallback.mock.calls[0]?.[0]).toContain("Start the selected workflow");
+    expect(host.session.setThinkingLevel).toHaveBeenCalledWith("high");
     expect(host.completeFirstRunOnboarding).toHaveBeenCalledTimes(1);
   });
 
