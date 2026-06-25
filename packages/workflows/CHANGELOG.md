@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.3-alpha.1] - 2026-06-25
+
 ### Changed
 
 - Revised the builtin `goal` worker/continuation prompts and the builtin `ralph` orchestrator prompts to emphasize implementing the requested task through full completion ("do not stop until the objective is complete") instead of preparing a partial implementation for incremental review.
