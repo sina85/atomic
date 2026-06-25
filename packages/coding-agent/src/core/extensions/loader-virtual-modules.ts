@@ -9,11 +9,9 @@ import type { ExtensionFactory } from "./types.ts";
 
 const require = createRequire(import.meta.url);
 let _virtualModules: Record<string, object> | null = null;
+let _virtualModulesPromise: Promise<Record<string, object>> | null = null;
 
-/** Modules available to extensions via virtualModules (for compiled Bun binary). */
-async function getVirtualModules(): Promise<Record<string, object>> {
-  if (_virtualModules) return _virtualModules;
-
+async function loadVirtualModules(): Promise<Record<string, object>> {
   const [typebox, typeboxCompile, typeboxValue, piAgentCore, piTui, piAi, piAiOauth, piCodingAgent] = await Promise.all([
     import("typebox"),
     import("typebox/compile"),
@@ -22,10 +20,12 @@ async function getVirtualModules(): Promise<Record<string, object>> {
     import("@earendil-works/pi-tui"),
     import("@earendil-works/pi-ai"),
     import("@earendil-works/pi-ai/oauth"),
+    // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
+    // avoiding a circular dependency while preserving the package-name extension import path.
     import("../../index.ts"),
   ]);
 
-  _virtualModules = {
+  return {
     typebox,
     "typebox/compile": typeboxCompile,
     "typebox/value": typeboxValue,
@@ -42,7 +42,22 @@ async function getVirtualModules(): Promise<Record<string, object>> {
     "@mariozechner/pi-ai": piAi,
     "@mariozechner/pi-ai/oauth": piAiOauth,
   };
-  return _virtualModules;
+}
+
+/** Modules available to extensions via virtualModules (for compiled Bun binary). */
+async function getVirtualModules(): Promise<Record<string, object>> {
+  if (_virtualModules) return _virtualModules;
+  _virtualModulesPromise ??= loadVirtualModules().then(
+    (virtualModules) => {
+      _virtualModules = virtualModules;
+      return virtualModules;
+    },
+    (error: Error) => {
+      _virtualModulesPromise = null;
+      throw error;
+    },
+  );
+  return _virtualModulesPromise;
 }
 let _aliases: Record<string, string> | null = null;
 
