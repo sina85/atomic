@@ -19,6 +19,7 @@ declare module "./interactive-mode-base.ts" {
   isFirstRunOnboardingReadyForHandoff(): boolean;
   stashFirstRunOnboardingSeed(seed: string): void;
   resumePendingFirstRunOnboardingSeed(): Promise<void>;
+  clearPendingFirstRunOnboardingSeed(): void;
   clearFirstRunOnboardingUi(): void;
   completeFirstRunOnboarding(): void;
   handleOnboardingWorkflowSeed(seed: string): Promise<void>;

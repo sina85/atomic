@@ -18,6 +18,7 @@
 - Fixed workflow config/discovery isolation so `ATOMIC_CODING_AGENT_DIR` prevents home-global workflows from shadowing the bundled first-run onboarding `goal` and `ralph` targets.
 - Fixed first-run onboarding returning-user detection so existing Atomic users with prior changelog state are marked onboarded and do not see the first-run CTA/placeholder when upgrading to a build that includes onboarding, while auth-only fresh installs and unfinished onboarding sessions still see the first-run flow.
 - Fixed first-run onboarding so multiline absolute path seeds with `:line[:column]` plus notes are saved or handed off with the full original text instead of being mistaken for slash commands.
+- Fixed `/new` during first-run onboarding so the replacement session remains in onboarding but drops any previously saved in-memory task seed instead of resuming stale work later.
 
 ## [0.9.2] - 2026-06-23
 

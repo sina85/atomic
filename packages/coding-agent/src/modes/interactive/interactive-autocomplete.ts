@@ -51,10 +51,13 @@ function toAtMentionCompletion(item: AutocompleteItem): AutocompleteItem {
 }
 
 class AtMentionFallbackAutocompleteProvider implements AutocompleteProvider {
-  constructor(
-    private readonly primary: AutocompleteProvider,
-    private readonly pathFallback: AutocompleteProvider,
-  ) {}
+  private readonly primary: AutocompleteProvider;
+  private readonly pathFallback: AutocompleteProvider;
+
+  constructor(primary: AutocompleteProvider, pathFallback: AutocompleteProvider) {
+    this.primary = primary;
+    this.pathFallback = pathFallback;
+  }
 
   async getSuggestions(
     lines: string[],

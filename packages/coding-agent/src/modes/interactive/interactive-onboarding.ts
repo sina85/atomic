@@ -183,10 +183,14 @@ InteractiveModeBase.prototype.resumePendingFirstRunOnboardingSeed = async functi
   }
 };
 
-InteractiveModeBase.prototype.clearFirstRunOnboardingUi = function(this: InteractiveModeBase): void {
-  this.firstRunOnboardingActive = false;
+InteractiveModeBase.prototype.clearPendingFirstRunOnboardingSeed = function(this: InteractiveModeBase): void {
   this.firstRunOnboardingSeedInFlight = false;
   this.pendingFirstRunOnboardingSeed = undefined;
+};
+
+InteractiveModeBase.prototype.clearFirstRunOnboardingUi = function(this: InteractiveModeBase): void {
+  this.firstRunOnboardingActive = false;
+  InteractiveModeBase.prototype.clearPendingFirstRunOnboardingSeed.call(this);
   this.defaultEditor.setPlaceholder(undefined);
   if (this.firstRunOnboardingHeaderComponents.length > 0) {
     this.headerContainer.children = this.headerContainer.children.filter(
