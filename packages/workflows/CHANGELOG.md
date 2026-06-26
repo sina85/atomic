@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added compact workflow `Loop:` summaries to `/workflow status`, `/workflow status <runId>`, and the graph overlay statusline, derived from existing run stages and bounded-loop inputs without adding new run metadata.
+
 ## [0.9.3-alpha.1] - 2026-06-25
 
 ### Changed

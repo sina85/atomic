@@ -1,0 +1,402 @@
+import type { RunStatus, StageSnapshot } from "../shared/store-types.js";
+import type { WorkflowInputValues, WorkflowOutputValues, WorkflowSerializableValue } from "../shared/types.js";
+import { ELLIPSIS } from "./chat-surface.js";
+import { truncateToWidth, visibleWidth } from "./text-helpers.js";
+
+const DEFAULT_WIDTH = 120;
+const LOOP_INPUT_RE = /^max_(loops?|turns?|iterations?|rounds?|refinements?)$/i;
+const COUNTED_SUFFIX_RE = /^(.*?)-(\d+)$/;
+const LETTER_SUFFIX_RE = /^(reviewer|review|locator|pattern|analyzer|online|design-system|system|worker)-[a-z]$/i;
+
+export interface WorkflowLoopSource {
+  readonly name: string;
+  readonly status: RunStatus;
+  readonly inputs: Readonly<WorkflowInputValues>;
+  readonly stages: readonly StageSnapshot[];
+  readonly result?: WorkflowOutputValues;
+  readonly endedAt?: number;
+}
+
+export interface WorkflowLoopSummary {
+  readonly phases: readonly string[];
+  readonly oneLine: string;
+  readonly detailLines: readonly string[];
+}
+
+interface LoopHint {
+  readonly maxKey: string;
+  readonly max: number;
+  readonly completed: number;
+  readonly remaining: number;
+  readonly noun: string;
+}
+
+interface PhaseGroup {
+  readonly label: string;
+  readonly count: number;
+  readonly parallel: boolean;
+}
+
+export function buildWorkflowLoopSummary(
+  source: WorkflowLoopSource,
+  opts: { width?: number; includePrefix?: boolean } = {},
+): WorkflowLoopSummary {
+  const width = Math.max(0, opts.width ?? DEFAULT_WIDTH);
+  const includePrefix = opts.includePrefix ?? true;
+  const groups = phaseGroups(source);
+  const specialPhases = builtinPhases(source, groups);
+  const phases = specialPhases ?? (groups.length > 0 ? groups.map(formatPhaseGroup) : fallbackPhases(source));
+  const hint = loopHint(source);
+  const conditional = conditionalHint(source);
+
+  const raw = composeLoopText(source, phases, hint, conditional);
+  const oneLine = fitLoopLine(raw, width, {
+    includePrefix,
+    phaseCount: phases.length,
+    first: phases[0],
+    last: phases.at(-1),
+    hint,
+    conditional,
+    sourceName: source.name,
+    phases,
+  });
+
+  return {
+    phases,
+    oneLine,
+    detailLines: detailLines(phases, groups, hint, conditional, source),
+  };
+}
+
+export function fitLoopSummaryText(text: string, width: number): string {
+  return truncateToWidth(text, Math.max(0, width), ELLIPSIS);
+}
+
+function phaseGroups(source: WorkflowLoopSource): PhaseGroup[] {
+  const groups: PhaseGroup[] = [];
+  let i = 0;
+  while (i < source.stages.length) {
+    const stage = source.stages[i]!;
+    const parentKey = parentSignature(stage);
+    const siblings: StageSnapshot[] = [stage];
+    let j = i + 1;
+    while (j < source.stages.length) {
+      const next = source.stages[j]!;
+      if (parentSignature(next) !== parentKey) break;
+      const previous = source.stages[j - 1]!;
+      const nextBase = normalizeStageName(next.name);
+      const previousBase = normalizeStageName(previous.name);
+      if (nextBase !== previousBase && !looksParallelSibling(stage, next)) break;
+      siblings.push(next);
+      j++;
+    }
+    groups.push(groupSiblings(siblings));
+    i = j;
+  }
+  return coalesceSequentialRepeats(groups);
+}
+
+function groupSiblings(stages: readonly StageSnapshot[]): PhaseGroup {
+  const labels = stages.map((stage) => normalizeStageName(stage.name));
+  const unique = [...new Set(labels)];
+  const parallel = stages.length > 1 && sameParents(stages);
+  if (unique.length === 1) {
+    return { label: unique[0]!, count: stages.length, parallel };
+  }
+  const families = compactFamilies(unique);
+  return { label: families.join("/"), count: partitionLikeCount(stages) ?? stages.length, parallel };
+}
+
+function partitionLikeCount(stages: readonly StageSnapshot[]): number | undefined {
+  const suffixes = new Set<number>();
+  for (const stage of stages) {
+    const match = COUNTED_SUFFIX_RE.exec(stage.name.toLowerCase());
+    if (!match) return undefined;
+    const parsed = Number.parseInt(match[2] ?? "", 10);
+    if (!Number.isFinite(parsed)) return undefined;
+    suffixes.add(parsed);
+  }
+  return suffixes.size > 0 ? suffixes.size : undefined;
+}
+
+function coalesceSequentialRepeats(groups: readonly PhaseGroup[]): PhaseGroup[] {
+  const out: PhaseGroup[] = [];
+  for (const group of groups) {
+    const previous = out.at(-1);
+    if (previous && previous.label === group.label && !previous.parallel && !group.parallel) {
+      out[out.length - 1] = { label: group.label, count: previous.count + group.count, parallel: false };
+    } else {
+      out.push(group);
+    }
+  }
+  return out;
+}
+
+function compactFamilies(labels: readonly string[]): string[] {
+  const roots = labels.map((label) => label.replace(/-(locator|pattern|analyzer|online)$/i, "-$1"));
+  return [...new Set(roots)];
+}
+
+function looksParallelSibling(first: StageSnapshot, next: StageSnapshot): boolean {
+  return sameParents([first, next]);
+}
+
+function sameParents(stages: readonly StageSnapshot[]): boolean {
+  if (stages.length < 2) return false;
+  const first = parentSignature(stages[0]!);
+  return stages.every((stage) => parentSignature(stage) === first);
+}
+
+function parentSignature(stage: StageSnapshot): string {
+  return [...stage.parentIds].sort().join("|");
+}
+
+function normalizeStageName(name: string): string {
+  const lower = name.trim().toLowerCase();
+  const withoutKnownPrefix = lower.replace(/^research-prompt-refinement$/, "prompt-refine");
+  const counted = COUNTED_SUFFIX_RE.exec(withoutKnownPrefix);
+  if (counted) return displayStageBase(counted[1] ?? withoutKnownPrefix);
+  const lettered = LETTER_SUFFIX_RE.exec(withoutKnownPrefix);
+  if (lettered) return displayStageBase(lettered[1] ?? withoutKnownPrefix);
+  return displayStageBase(withoutKnownPrefix);
+}
+
+function displayStageBase(base: string): string {
+  if (base === "prompt-refinement" || base === "research-prompt-refinement") return "prompt-refine";
+  if (base === "reviewer" || base.endsWith("-reviewer")) return "review";
+  if (base === "history-locator") return "history";
+  if (base === "codebase-scout") return "scout";
+  if (base === "pattern-finder") return "pattern";
+  if (base === "online-researcher") return "online";
+  return base;
+}
+
+function formatPhaseGroup(group: PhaseGroup): string {
+  if (group.count <= 1) return group.label;
+  return `${group.label} ×${group.count}`;
+}
+
+function builtinPhases(source: WorkflowLoopSource, _groups: readonly PhaseGroup[]): string[] | undefined {
+  if (source.name === "ralph" || source.name === "goal") return fallbackPhases(source);
+  if (source.name === "deep-research-codebase") return deepResearchPhases(source);
+  if (source.name === "open-claude-design") return fallbackPhases(source);
+  return undefined;
+}
+
+function deepResearchPhases(source: WorkflowLoopSource): string[] {
+  const partitionCount = maxSuffixForBases(source.stages, new Set(["locator", "pattern", "analyzer", "online"]));
+  if (partitionCount === 0) return fallbackPhases(source);
+  const phases = ["scout + history", "partition", `locator/pattern ×${partitionCount}`, `analyzer/online ×${partitionCount}`];
+  if (source.stages.some((stage) => normalizeStageName(stage.name) === "aggregator")) phases.push("aggregator");
+  else phases.push("aggregator");
+  return phases;
+}
+
+function fallbackPhases(source: WorkflowLoopSource): string[] {
+  switch (source.name) {
+    case "ralph":
+      return ["prompt-refine", "research", "orchestrator", "review ×3"];
+    case "goal":
+      return ["work-turn", "review ×3"];
+    case "deep-research-codebase":
+      return ["scout + history-locator", "history-analyzer", "partition", "specialist waves", "aggregator"];
+    case "open-claude-design":
+      return referencesDisabled(source.inputs)
+        ? ["discovery", "design-system ×3", "generate/feedback", "export"]
+        : ["discovery", "design-system ×3", "references", "generate/feedback", "export"];
+    default:
+      return [];
+  }
+}
+
+function referencesDisabled(inputs: Readonly<WorkflowInputValues>): boolean {
+  return inputs.discover_references === false || inputs.references === false || inputs.reference === false || inputs.include_references === false;
+}
+
+function loopHint(source: WorkflowLoopSource): LoopHint | undefined {
+  for (const [key, value] of Object.entries(source.inputs)) {
+    if (!LOOP_INPUT_RE.test(key) || typeof value !== "number" || !Number.isFinite(value)) continue;
+    const max = Math.max(0, Math.floor(value));
+    const completed = completedLoopCount(source, key);
+    return {
+      maxKey: key,
+      max,
+      completed,
+      remaining: Math.max(0, max - completed),
+      noun: loopNoun(key),
+    };
+  }
+  return undefined;
+}
+
+function completedLoopCount(source: WorkflowLoopSource, maxKey: string): number {
+  const resultKey = resultCountKey(maxKey);
+  const fromResult = readNumber(source.result?.[resultKey]);
+  if (fromResult !== undefined) return fromResult;
+  const preferredBases = preferredLoopStageBases(source, maxKey);
+  if (preferredBases === undefined) return genericSequentialLoopCount(source.stages);
+  return maxSuffixForBases(source.stages, preferredBases);
+}
+
+function genericSequentialLoopCount(stages: readonly StageSnapshot[]): number {
+  const parsed = stages.flatMap((stage) => {
+    const match = COUNTED_SUFFIX_RE.exec(stage.name.toLowerCase());
+    if (!match) return [];
+    const suffix = Number.parseInt(match[2] ?? "", 10);
+    if (!Number.isFinite(suffix)) return [];
+    return [{ stage, base: normalizeStageName(match[1] ?? ""), suffix }];
+  });
+  const fanoutParentKeys = new Set<string>();
+  const countsByParent = new Map<string, number>();
+  for (const item of parsed) {
+    const key = parentSignature(item.stage);
+    countsByParent.set(key, (countsByParent.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of countsByParent) {
+    if (count > 1) fanoutParentKeys.add(key);
+  }
+  const suffixesByBase = new Map<string, Set<number>>();
+  for (const item of parsed) {
+    if (fanoutParentKeys.has(parentSignature(item.stage))) continue;
+    const suffixes = suffixesByBase.get(item.base) ?? new Set<number>();
+    suffixes.add(item.suffix);
+    suffixesByBase.set(item.base, suffixes);
+  }
+  let max = 0;
+  for (const suffixes of suffixesByBase.values()) {
+    if (!suffixes.has(1) && suffixes.size < 2) continue;
+    max = Math.max(max, ...suffixes);
+  }
+  return max;
+}
+
+function maxSuffixForBases(stages: readonly StageSnapshot[], preferredBases: ReadonlySet<string> | undefined): number {
+  let maxSuffix = 0;
+  for (const stage of stages) {
+    const match = COUNTED_SUFFIX_RE.exec(stage.name.toLowerCase());
+    if (!match) continue;
+    const base = normalizeStageName(match[1] ?? "");
+    if (preferredBases !== undefined && !preferredBases.has(base)) continue;
+    const parsed = Number.parseInt(match[2] ?? "0", 10);
+    if (Number.isFinite(parsed)) maxSuffix = Math.max(maxSuffix, parsed);
+  }
+  return maxSuffix;
+}
+
+function readNumber(value: WorkflowSerializableValue | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
+}
+
+function resultCountKey(maxKey: string): string {
+  const stem = maxKey.replace(/^max_/, "");
+  if (stem === "loops") return "iterations_completed";
+  if (stem === "turns") return "turns_completed";
+  if (stem === "refinements") return "refinements_completed";
+  return `${stem}_completed`;
+}
+
+function preferredLoopStageBases(source: WorkflowLoopSource, maxKey: string): ReadonlySet<string> | undefined {
+  if (maxKey === "max_turns") return new Set(["work-turn"]);
+  if (maxKey === "max_refinements") return new Set(["generate", "user-feedback"]);
+  if (maxKey === "max_loops" && source.name === "ralph") return new Set(["orchestrator"]);
+  return undefined;
+}
+
+function loopNoun(maxKey: string): string {
+  if (maxKey.includes("turn")) return "turns";
+  if (maxKey.includes("refinement")) return "refinements";
+  if (maxKey.includes("iteration")) return "iterations";
+  return "rounds";
+}
+
+function conditionalHint(source: WorkflowLoopSource): string | undefined {
+  if (source.inputs.create_pr !== true) return undefined;
+  return source.name === "ralph" ? "PR if approved" : "PR if complete";
+}
+
+function loopHintLine(hint: LoopHint, suffix: "remain" | "may remain"): string {
+  return `↻ ${hint.remaining} ${hint.noun} ${suffix}`;
+}
+
+function composeLoopText(
+  source: WorkflowLoopSource,
+  phases: readonly string[],
+  hint: LoopHint | undefined,
+  conditional: string | undefined,
+): string {
+  if (phases.length === 0) return "waiting for stages";
+  const hintText = hint ? loopHintLine(hint, source.endedAt !== undefined ? "may remain" : "remain") : undefined;
+  if (source.name === "open-claude-design" && hintText) {
+    const generateIndex = phases.indexOf("generate/feedback");
+    if (generateIndex >= 0) {
+      const before = phases.slice(0, generateIndex + 1).join(" → ");
+      const after = phases.slice(generateIndex + 1).join(" → ");
+      const base = after.length > 0 ? `${before} · ${hintText} → ${after}` : `${before} · ${hintText}`;
+      return conditional ? `${base} · ${conditional}` : base;
+    }
+  }
+  const tailParts = [hintText, conditional].filter((part): part is string => part !== undefined);
+  const base = phases.join(" → ");
+  return tailParts.length > 0 ? `${base} · ${tailParts.join(" · ")}` : base;
+}
+
+function detailLines(
+  phases: readonly string[],
+  groups: readonly PhaseGroup[],
+  hint: LoopHint | undefined,
+  conditional: string | undefined,
+  source: WorkflowLoopSource,
+): string[] {
+  const lines: string[] = [];
+  const parallelPhases = new Set(
+    groups.filter((group) => group.parallel).map(formatPhaseGroup),
+  );
+  const detailPhases = phases.map((phase) =>
+    parallelPhases.has(phase) ? `${phase} parallel` : phase,
+  );
+  lines.push(detailPhases.length > 0 ? detailPhases.join(" → ") : "waiting for stages");
+  if (groups.some((group) => group.parallel)) lines.push("parallel phases are grouped by shared parents/name patterns");
+  if (hint) {
+    lines.push(source.endedAt === undefined ? `repeats until workflow exits or ${hint.maxKey} is reached` : `bounded by ${hint.maxKey}`);
+    lines.push(loopHintLine(hint, "may remain"));
+  }
+  if (source.inputs.create_pr === true) lines.push("pull-request conditional: create_pr=true");
+  else if (conditional) lines.push(conditional);
+  return lines;
+}
+
+function fitLoopLine(
+  raw: string,
+  width: number,
+  context: {
+    includePrefix: boolean;
+    phaseCount: number;
+    first?: string;
+    last?: string;
+    hint?: LoopHint;
+    conditional?: string;
+    sourceName: string;
+    phases: readonly string[];
+  },
+): string {
+  const prefix = context.includePrefix ? "Loop: " : "";
+  const full = `${prefix}${raw}`;
+  if (visibleWidth(full) <= width) return full;
+
+  const shortHint = context.hint ? `↻ ${context.hint.remaining} left` : undefined;
+  const tails = [shortHint, context.conditional].filter((part): part is string => part !== undefined);
+  if (context.sourceName === "open-claude-design" && shortHint && context.phases.includes("generate/feedback") && context.phases.at(-1) === "export") {
+    const special = `${prefix}${context.first ?? "discovery"} → … → generate/feedback · ${shortHint} → export${context.conditional ? ` · ${context.conditional}` : ""}`;
+    if (visibleWidth(special) <= width) return special;
+    const shorter = `${prefix}generate/feedback · ${shortHint} → export${context.conditional ? ` · ${context.conditional}` : ""}`;
+    if (visibleWidth(shorter) <= width) return shorter;
+  }
+  if (context.first && context.last && context.phaseCount > 2) {
+    const compressed = `${prefix}${context.first} → … → ${context.last}${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
+    if (visibleWidth(compressed) <= width) return compressed;
+  }
+
+  const counted = `${prefix}${context.phaseCount} phases${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
+  if (visibleWidth(counted) <= width) return counted;
+  return truncateToWidth(counted, width, ELLIPSIS);
+}

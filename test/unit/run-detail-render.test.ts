@@ -125,8 +125,8 @@ describe("renderRunDetail — themed", () => {
       startedAt: now - 117_000,
       stages: [
         makeStage("s1", "scout", "completed", { durationMs: 45_000 }),
-        makeStage("s2", "planner", "running", { startedAt: now - 72_000 }),
-        makeStage("s3", "worker", "pending"),
+        makeStage("s2", "planner", "running", { parentIds: ["s1"], startedAt: now - 72_000 }),
+        makeStage("s3", "worker", "pending", { parentIds: ["s2"] }),
       ],
     });
     const detail = detailFromRun(run);
@@ -138,18 +138,45 @@ describe("renderRunDetail — themed", () => {
     assert.match(plain, /refactor-auth/);
     assert.match(plain, /● running/);
 
-    // STAGES section label + stage glyphs.
-    assert.match(plain, /STAGES/);
+    // ALL STAGES section label + stage glyphs.
+    assert.match(plain, /ALL STAGES/);
+    assert.doesNotMatch(plain, /\n STAGES \n/);
     assert.doesNotMatch(plain, /\u258e/);
     assert.match(plain, /✓ scout/);
     assert.match(plain, /● planner/);
     assert.match(plain, /○ worker/);
+    assert.match(plain, /LOOP/);
+    assert.match(plain, /scout → planner → worker/);
 
     // Active run gets the interrupt action hint (shortId crops to 6 chars).
     assert.match(plain, /workflow interrupt\s+id=abc123/);
     assert.doesNotMatch(plain, /workflow resume/);
     // Pill label uses the short id too.
     assert.match(plain, /RUN abc123/);
+  });
+
+  test("built-in reviewer fan-out is marked parallel in the LOOP section", () => {
+    const now = 1_000_000;
+    const detail = detailFromRun(makeRun({
+      id: "ralph-reviewers",
+      name: "ralph",
+      status: "running",
+      startedAt: now - 30_000,
+      inputs: { max_loops: 10 },
+      stages: [
+        makeStage("prompt", "research-prompt-refinement-1", "completed"),
+        makeStage("research", "research-1", "completed", { parentIds: ["prompt"] }),
+        makeStage("orchestrator", "orchestrator-1", "completed", { parentIds: ["research"] }),
+        makeStage("review-a", "reviewer-a", "running", { parentIds: ["orchestrator"] }),
+        makeStage("review-b", "reviewer-b", "running", { parentIds: ["orchestrator"] }),
+        makeStage("review-c", "reviewer-c", "running", { parentIds: ["orchestrator"] }),
+      ],
+    }));
+
+    const plain = stripAnsi(renderRunDetail(detail, { theme: deriveGraphTheme({}), now, width: 110 }));
+
+    assert.match(plain, /LOOP/);
+    assert.match(plain, /prompt-refine → research → orchestrator → review ×3 parallel/);
   });
 
   test("paused run renders paused badges, summary state, and resume hint", () => {

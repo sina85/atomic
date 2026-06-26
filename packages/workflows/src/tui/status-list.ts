@@ -40,6 +40,7 @@ import {
 import type { FlatBandBadge } from "./chat-surface.js";
 import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
 import { visibleWidth, truncateToWidth } from "./text-helpers.js";
+import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
 
 const SHORT_ID_LEN = 6;
 const MIN_TITLE_BUDGET = 12;
@@ -151,8 +152,15 @@ function renderRunEntry(
   const modeSeg = theme ? `${muted}${mode}${reset}` : mode;
   const metaSeg = theme ? `${dim}${meta}${reset}` : meta;
   const line2 = `   ${modeSeg}    ${strip}${" ".repeat(gap)}${metaSeg} `;
+  const loopRaw = buildWorkflowLoopSummary(run, {
+    width: Math.max(1, interior - modeW - 4),
+    includePrefix: false,
+  }).oneLine;
+  const loopSeg = theme ? `${muted}loop ${reset}` : "loop ";
+  const loopText = theme ? `${dim}${loopRaw}${reset}` : loopRaw;
+  const line3 = `   ${loopSeg}    ${loopText} `;
 
-  return [line1, line2];
+  return [line1, line2, line3];
 }
 
 function runAccent(run: RunSnapshot, theme?: GraphTheme): string {

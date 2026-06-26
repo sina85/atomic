@@ -80,14 +80,44 @@ describe("GraphView keyboard navigation", () => {
     const text = view.render(96).join("\n");
     // Header pill carries the ORCHESTRATOR label in all caps.
     assert.match(text, /ORCHESTRATOR/);
-    // Bottom statusline carries the GRAPH mode pill.
+    // Bottom statusline carries the GRAPH mode pill and loop rail.
     assert.match(text, /GRAPH/);
+    assert.match(text, /Loop: a → b/);
     // Hints reflect the new vocabulary (navigate / attach / stages /
     // detach / quit) rather than the legacy j\/k focus row.
     assert.match(text, /navigate/);
     assert.match(text, /attach/);
     assert.match(text, /stages/);
     assert.match(text, /detach/);
+    view.dispose();
+  });
+
+  it("fits the graph loop rail without pushing right-side hints off the statusline", () => {
+    const stages = [
+      makeStage("prompt-refinement-1"),
+      makeStage("research-1", ["prompt-refinement-1"]),
+      makeStage("orchestrator-2", ["research-1"]),
+      makeStage("reviewer-a", ["orchestrator-2"]),
+      makeStage("reviewer-b", ["orchestrator-2"]),
+      makeStage("reviewer-c", ["orchestrator-2"]),
+    ];
+    const view = makeView(stages);
+    const wide = visibleText(view.render(128));
+    assert.match(wide, /Loop: prompt-refine/);
+    assert.match(wide, /navigate/);
+    assert.match(wide, /attach/);
+    assert.match(wide, /q\s+kill/);
+
+    const medium = visibleText(view.render(128));
+    assert.match(medium, /Loop: prompt-refine/);
+    assert.match(medium, /q\s+kill/);
+
+    const narrow = visibleText(view.render(80));
+    assert.match(narrow, /GRAPH/);
+    assert.match(narrow, /Loop:/);
+    assert.match(narrow, /\/\s+stages/);
+    assert.match(narrow, /ctrl\+d\s+detach/);
+    assert.match(narrow, /q\s+kill/);
     view.dispose();
   });
 

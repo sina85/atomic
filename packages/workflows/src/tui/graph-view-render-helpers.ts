@@ -14,6 +14,7 @@ import {
   visibleWidth,
 } from "./text-helpers.js";
 import { BOLD, hexBg, hexToAnsi, RESET } from "./color-utils.js";
+import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
 
 /** Low-level overlay geometry, chrome, ANSI canvas, and edge helpers. */
 export abstract class GraphViewRenderHelpers extends GraphViewState {
@@ -99,11 +100,41 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
         `${text}${BOLD}${key}${RESET}${chromeBg} ${muted}${label}${RESET}${chromeBg}`,
     );
     const hintsStyledRaw = segments.join(sep);
+    const compactSegments = HINT_KEYS.map(({ key, label }) => {
+      const compactLabel = label === "navigate" || label === "attach" ? "" : ` ${label}`;
+      return `${text}${BOLD}${key}${RESET}${chromeBg}${muted}${compactLabel}${RESET}${chromeBg}`;
+    });
+    const hintsStyledCompact = compactSegments.join(sep);
 
     const leftEdgePad = 1;
     const rightEdgePad = 2;
-    const hintsBudget = Math.max(0, width - leftEdgePad - pillW - rightEdgePad);
-    const hintsStyled = truncateToWidth(hintsStyledRaw, hintsBudget, "");
+    const contentBudget = Math.max(0, width - leftEdgePad - pillW - rightEdgePad);
+    const run = this._getCurrentRun();
+    const loopGap = run ? 2 : 0;
+    const rawHintsWidth = visibleWidth(hintsStyledRaw);
+    const compactHintsWidth = visibleWidth(hintsStyledCompact);
+    const minimumLoopBudget = Math.min(10, Math.max(0, contentBudget - loopGap));
+    const preferredHints = contentBudget - rawHintsWidth - loopGap >= minimumLoopBudget
+      ? hintsStyledRaw
+      : hintsStyledCompact;
+    const preferredHintsWidth = preferredHints === hintsStyledRaw ? rawHintsWidth : compactHintsWidth;
+    const hintsBudgetTarget = Math.min(contentBudget, preferredHintsWidth);
+    const loopBudget = run
+      ? Math.max(0, contentBudget - hintsBudgetTarget - loopGap)
+      : 0;
+    const loopText = run && loopBudget > 0
+      ? truncateToWidth(
+        buildWorkflowLoopSummary({ ...run, stages: this._displayStages(run) }, { width: loopBudget }).oneLine,
+        loopBudget,
+        "",
+      )
+      : "";
+    const loopStyled = loopText.length > 0
+      ? `${text}${loopText}${RESET}${chromeBg}${" ".repeat(loopGap)}`
+      : "";
+    const usedLoopWidth = visibleWidth(loopStyled);
+    const hintsBudget = Math.max(0, contentBudget - usedLoopWidth);
+    const hintsStyled = truncateToWidth(preferredHints, hintsBudget, "");
     const hintsVisibleLen = visibleWidth(hintsStyled);
     const fillerVisible = Math.max(0, hintsBudget - hintsVisibleLen);
     const filler = " ".repeat(fillerVisible);
@@ -111,7 +142,7 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
 
     return [
       `${chromeBg} ${RESET}${top}${chromeBg}${blankAcross}${RESET}`,
-      `${chromeBg} ${RESET}${mid}${chromeBg}${filler}${hintsStyled}${chromeBg}${" ".repeat(rightEdgePad)}${RESET}`,
+      `${chromeBg} ${RESET}${mid}${chromeBg}${loopStyled}${filler}${hintsStyled}${chromeBg}${" ".repeat(rightEdgePad)}${RESET}`,
       `${chromeBg} ${RESET}${bot}${chromeBg}${blankAcross}${RESET}`,
     ];
   }

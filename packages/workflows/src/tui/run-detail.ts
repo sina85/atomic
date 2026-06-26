@@ -26,6 +26,7 @@ import type { FlatBandBadge } from "./chat-surface.js";
 import { fmtDuration, statusIcon, statusColor } from "./status-helpers.js";
 import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
 import { truncateToWidth, visibleWidth } from "./text-helpers.js";
+import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
 
 const SHORT_ID_LEN = 6;
 const STAGE_NAME_COL = 14;
@@ -70,7 +71,7 @@ function renderPlain(detail: RunDetail, now: number, width: number): string {
   }
   out.push("");
 
-  out.push(" STAGES ");
+  out.push(" ALL STAGES ");
   if (detail.stages.length === 0) {
     out.push("  (no stages recorded yet) ");
   } else {
@@ -88,6 +89,12 @@ function renderPlain(detail: RunDetail, now: number, width: number): string {
     }
     out.push("");
   }
+
+  out.push(" LOOP ");
+  for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+    out.push(`  ${truncateToWidth(line, Math.max(1, width - 4), "…")} `);
+  }
+  out.push("");
 
   if (detail.endedAt === undefined) {
     const hint = detail.status === "paused"
@@ -126,7 +133,7 @@ function renderThemed(detail: RunDetail, now: number, theme: GraphTheme, width: 
   }
   out.push("");
 
-  out.push(` ${muted}${BOLD}STAGES${RESET} `);
+  out.push(` ${muted}${BOLD}ALL STAGES${RESET} `);
   if (detail.stages.length === 0) {
     out.push(`  ${dim}(no stages recorded yet)${RESET} `);
   } else {
@@ -144,6 +151,12 @@ function renderThemed(detail: RunDetail, now: number, theme: GraphTheme, width: 
     }
     out.push("");
   }
+
+  out.push(` ${muted}${BOLD}LOOP${RESET} `);
+  for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+    out.push(`  ${dim}${truncateToWidth(line, Math.max(1, width - 4), "…")}${RESET} `);
+  }
+  out.push("");
 
   if (detail.endedAt === undefined) {
     const hint = detail.status === "paused"

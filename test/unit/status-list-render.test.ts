@@ -80,8 +80,8 @@ describe("renderStatusList — populated", () => {
         startedAt: now - 117_000,
         stages: [
           makeStage("s1", "scout", "completed", { startedAt: now - 117_000, endedAt: now - 72_000, durationMs: 45_000 }),
-          makeStage("s2", "planner", "running", { startedAt: now - 72_000 }),
-          makeStage("s3", "worker", "pending"),
+          makeStage("s2", "planner", "running", { parentIds: ["s1"], startedAt: now - 72_000 }),
+          makeStage("s3", "worker", "pending", { parentIds: ["s2"] }),
         ],
       }),
       makeRun({
@@ -122,6 +122,7 @@ describe("renderStatusList — populated", () => {
     assert.match(plain, /1\/3/, "chain progress fraction renders in meta");
     assert.match(plain, /single\s+\[●\]/);
     assert.match(plain, /single\s+\[✓\]/);
+    assert.match(plain, /loop\s+scout → planner → worker/, "loop row appears under the chain row");
 
     // Run entries are compact rows, not per-stage expansion in list view.
     const runRows = plain.split("\n").filter((l) => /[●✓✗⊘○]\s+[a-z0-9]{6}\s+/.test(l));
