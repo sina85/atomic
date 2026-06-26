@@ -160,12 +160,11 @@ function parentSignature(stage: StageSnapshot): string {
 
 function normalizeStageName(name: string): string {
   const lower = name.trim().toLowerCase();
-  const withoutKnownPrefix = lower.replace(/^research-prompt-refinement$/, "prompt-refine");
-  const counted = COUNTED_SUFFIX_RE.exec(withoutKnownPrefix);
-  if (counted) return displayStageBase(counted[1] ?? withoutKnownPrefix);
-  const lettered = LETTER_SUFFIX_RE.exec(withoutKnownPrefix);
-  if (lettered) return displayStageBase(lettered[1] ?? withoutKnownPrefix);
-  return displayStageBase(withoutKnownPrefix);
+  const counted = COUNTED_SUFFIX_RE.exec(lower);
+  if (counted) return displayStageBase(counted[1] ?? lower);
+  const lettered = LETTER_SUFFIX_RE.exec(lower);
+  if (lettered) return displayStageBase(lettered[1] ?? lower);
+  return displayStageBase(lower);
 }
 
 function displayStageBase(base: string): string {
@@ -180,7 +179,8 @@ function displayStageBase(base: string): string {
 
 function formatPhaseGroup(group: PhaseGroup): string {
   if (group.count <= 1) return group.label;
-  return `${group.label} ×${group.count}`;
+  if (group.parallel) return `${group.label} ×${group.count}`;
+  return `${group.label} ×${group.count} repeats`;
 }
 
 function builtinPhases(source: WorkflowLoopSource): string[] | undefined {
@@ -433,7 +433,11 @@ function fitLoopLine(
     return fitLoopSummaryText(empty, width);
   }
 
-  const counted = `${prefix}${context.phaseCount} phases${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
+  const counted = `${prefix}${phaseCountLabel(context.phaseCount)}${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
   if (visibleWidth(counted) <= width) return counted;
   return fitLoopSummaryText(counted, width);
+}
+
+function phaseCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "phase" : "phases"}`;
 }

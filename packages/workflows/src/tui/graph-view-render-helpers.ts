@@ -117,8 +117,7 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
     const rawHintsWidth = visibleWidth(hintsStyledRaw);
     const compactHintsWidth = visibleWidth(hintsStyledCompact);
     // Below this width the loop rail is more noise than signal; give hints priority.
-    const minimumLoopBudget = Math.min(MIN_LOOP_STATUSLINE_BUDGET, Math.max(0, contentBudget - loopGap));
-    const preferredHints = contentBudget - rawHintsWidth - loopGap >= minimumLoopBudget
+    const preferredHints = contentBudget - rawHintsWidth - loopGap >= MIN_LOOP_STATUSLINE_BUDGET
       ? hintsStyledRaw
       : hintsStyledCompact;
     const preferredHintsWidth = preferredHints === hintsStyledRaw ? rawHintsWidth : compactHintsWidth;
@@ -126,7 +125,7 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
     const loopBudget = run
       ? Math.max(0, contentBudget - hintsBudgetTarget - loopGap)
       : 0;
-    const loopText = run && loopBudget > 0
+    const loopText = run && loopBudget >= MIN_LOOP_STATUSLINE_BUDGET
       ? truncateToWidth(
         buildWorkflowLoopSummary({ ...run, stages: this._displayStages(run) }, { width: loopBudget }).oneLine,
         loopBudget,

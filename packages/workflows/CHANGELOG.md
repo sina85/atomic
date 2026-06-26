@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Added builtin workflow drift-guard coverage for the stage names and output keys used by loop-summary rendering, aligned the status-list loop label with the progress row, and restricted PR hints to workflows that actually support `create_pr` handoff.
+- Clarified compact loop summaries by marking sequential repeats separately from parallel fan-out, pluralizing narrow phase-count fallbacks correctly, tightening builtin drift guards to exact stage-name fragments, and hiding the graph `Loop:` rail below its minimum useful width so keyboard hints stay intact.
 
 ## [0.9.3-alpha.1] - 2026-06-25
 

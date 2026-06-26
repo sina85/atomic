@@ -108,8 +108,8 @@ describe("GraphView keyboard navigation", () => {
     assert.match(wide, /attach/);
     assert.match(wide, /q\s+kill/);
 
-    const medium = visibleText(view.render(128));
-    assert.match(medium, /Loop: prompt-refine/);
+    const medium = visibleText(view.render(96));
+    assert.match(medium, /Loop: 4 phases/);
     assert.match(medium, /q\s+kill/);
 
     const narrow = visibleText(view.render(80));
@@ -118,6 +118,13 @@ describe("GraphView keyboard navigation", () => {
     assert.match(narrow, /\/\s+stages/);
     assert.match(narrow, /ctrl\+d\s+detach/);
     assert.match(narrow, /q\s+kill/);
+
+    const belowLoopBudget = visibleText(view.render(72));
+    assert.doesNotMatch(belowLoopBudget, /Loop:/);
+    assert.match(belowLoopBudget, /↑↓←→/);
+    assert.match(belowLoopBudget, /\/\s+stages/);
+    assert.match(belowLoopBudget, /ctrl\+d\s+detach/);
+    assert.match(belowLoopBudget, /q\s+kill/);
     view.dispose();
   });
 

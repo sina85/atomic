@@ -223,13 +223,15 @@ describe("buildWorkflowLoopSummary", () => {
   });
 
   test("counts generic sequential bounded loop suffixes", () => {
-    assert.match(buildWorkflowLoopSummary(run({
+    const cycleSummary = buildWorkflowLoopSummary(run({
       inputs: { max_iterations: 5 },
       stages: [
         stage("cycle-1", "cycle-1", "completed"),
         stage("cycle-2", "cycle-2", "running", ["cycle-1"]),
       ],
-    })).oneLine, /↻ 3 iterations remain/);
+    })).oneLine;
+    assert.match(cycleSummary, /cycle ×2 repeats/);
+    assert.match(cycleSummary, /↻ 3 iterations remain/);
 
     assert.match(buildWorkflowLoopSummary(run({
       inputs: { max_loops: 4 },
@@ -259,6 +261,19 @@ describe("buildWorkflowLoopSummary", () => {
     assert.doesNotMatch(buildWorkflowLoopSummary(run({ stages: [] }), { width: 8 }).oneLine, /0 phases/);
   });
 
+  test("pluralizes narrow phase-count fallback", () => {
+    assert.equal(buildWorkflowLoopSummary(run({
+      stages: [stage("single", "very-long-single-phase", "running")],
+    }), { width: 7, includePrefix: false }).oneLine, "1 phase");
+
+    assert.equal(buildWorkflowLoopSummary(run({
+      stages: [
+        stage("first", "very-long-first-phase", "completed"),
+        stage("second", "very-long-second-phase", "running", ["first"]),
+      ],
+    }), { width: 8, includePrefix: false }).oneLine, "2 phases");
+  });
+
   test("shows loop rails only for active multi-stage or bounded/built-in runs", () => {
     assert.equal(shouldRenderWorkflowLoopSummary(run({ stages: [stage("s", "worker", "running")] })), false);
     assert.equal(shouldRenderWorkflowLoopSummary(run({ inputs: { max_turns: 2 }, stages: [stage("s", "worker", "running")] })), true);
@@ -271,30 +286,30 @@ describe("buildWorkflowLoopSummary", () => {
     assert.ok("max_loops" in ralph.inputs);
     assert.ok("iterations_completed" in ralph.outputs);
     const ralphRunner = sourceText("ralph-runner.ts");
-    for (const token of ["research-prompt-refinement-", "research-", "orchestrator-", "reviewer-a", "reviewer-b", "reviewer-c", "pull-request"]) {
-      assert.match(ralphRunner, new RegExp(token));
+    for (const fragment of ["ctx.task(`research-prompt-refinement-${iteration}`", "ctx.task(`research-${iteration}`", "ctx.task(`orchestrator-${iteration}`", "name: \"reviewer-a\"", "name: \"reviewer-b\"", "name: \"reviewer-c\"", "ctx.task(\"pull-request\""]) {
+      assert.ok(ralphRunner.includes(fragment), fragment);
     }
 
     assert.equal(goal.name, "goal");
     assert.ok("max_turns" in goal.inputs);
     assert.ok("turns_completed" in goal.outputs);
     const goalRunner = sourceText("goal-runner.ts");
-    for (const token of ["work-turn-", "completion-reviewer-", "evidence-reviewer-", "risk-reviewer-", "pull-request"]) {
-      assert.match(goalRunner, new RegExp(token));
+    for (const fragment of ["ctx.task(`work-turn-${turn}`", "`completion-reviewer-${turn}`", "`evidence-reviewer-${turn}`", "`risk-reviewer-${turn}`", "ctx.task(\"pull-request\""]) {
+      assert.ok(goalRunner.includes(fragment), fragment);
     }
 
     assert.equal(deepResearchCodebase.name, "deep-research-codebase");
     const deepRunner = sourceText("deep-research-codebase-runner.ts");
-    for (const token of ["codebase-scout", "history-locator", "history-analyzer", "partition", "locator-", "pattern-finder-", "analyzer-", "online-researcher-", "aggregator"]) {
-      assert.match(deepRunner, new RegExp(token));
+    for (const fragment of ["name: \"codebase-scout\"", "name: \"history-locator\"", "name: \"history-analyzer\"", "ctx.task(\"partition\"", "name: `locator-${i}`", "name: `pattern-finder-${i}`", "name: `analyzer-${i}`", "name: `online-researcher-${i}`", "ctx.task(\"aggregator\""]) {
+      assert.ok(deepRunner.includes(fragment), fragment);
     }
 
     assert.equal(openClaudeDesign.name, "open-claude-design");
     assert.ok("max_refinements" in openClaudeDesign.inputs);
     assert.ok("refinements_completed" in openClaudeDesign.outputs);
     const designSources = `${sourceText("open-claude-design-setup.ts")}\n${sourceText("open-claude-design-runner.ts")}\n${sourceText("open-claude-design-phases.ts")}`;
-    for (const token of ["discovery", "ds-locator", "ds-analyzer", "ds-patterns", "reference-discovery", "generate-", "user-feedback-", "exporter", "final-display"]) {
-      assert.match(designSources, new RegExp(token));
+    for (const fragment of ["task(\"discovery\"", "name: \"ds-locator\"", "name: \"ds-analyzer\"", "name: \"ds-patterns\"", "task(\"reference-discovery\"", "`generate-${iteration}`", "task(`user-feedback-${iteration}`", "task(\"exporter\"", "task(\"final-display\""]) {
+      assert.ok(designSources.includes(fragment), fragment);
     }
   });
 
