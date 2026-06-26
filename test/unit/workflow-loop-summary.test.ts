@@ -1,6 +1,11 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { buildWorkflowLoopSummary } from "../../packages/workflows/src/tui/workflow-loop-summary.js";
+import { readFileSync } from "node:fs";
+import { buildWorkflowLoopSummary, shouldRenderWorkflowLoopSummary } from "../../packages/workflows/src/tui/workflow-loop-summary.js";
+import deepResearchCodebase from "../../packages/workflows/builtin/deep-research-codebase.js";
+import goal from "../../packages/workflows/builtin/goal.js";
+import openClaudeDesign from "../../packages/workflows/builtin/open-claude-design.js";
+import ralph from "../../packages/workflows/builtin/ralph.js";
 import { visibleWidth } from "../../packages/workflows/src/tui/text-helpers.js";
 import type { RunSnapshot, StageSnapshot } from "../../packages/workflows/src/shared/store-types.js";
 
@@ -24,6 +29,10 @@ function run(overrides: Partial<RunSnapshot> = {}): RunSnapshot {
     endedAt: overrides.endedAt,
     result: overrides.result,
   };
+}
+
+function sourceText(path: string): string {
+  return readFileSync(new URL(`../../packages/workflows/builtin/${path}`, import.meta.url), "utf8");
 }
 
 describe("buildWorkflowLoopSummary", () => {
@@ -165,6 +174,12 @@ describe("buildWorkflowLoopSummary", () => {
     assert.match(summary, /work-turn → review ×3/);
     assert.match(summary, /PR if complete/);
     assert.doesNotMatch(summary, /completion-reviewer|evidence-reviewer|risk-reviewer|PR if approved/);
+
+    const design = buildWorkflowLoopSummary(run({
+      name: "open-claude-design",
+      inputs: { create_pr: true, max_refinements: 2 },
+    })).oneLine;
+    assert.doesNotMatch(design, /PR if complete|PR if approved/);
   });
 
   test("summarizes deep-research partition waves by partition count", () => {
@@ -241,6 +256,46 @@ describe("buildWorkflowLoopSummary", () => {
     const summary = buildWorkflowLoopSummary(run({ stages: [] }));
     assert.equal(summary.oneLine, "Loop: waiting for stages");
     assert.deepEqual(summary.phases, []);
+    assert.doesNotMatch(buildWorkflowLoopSummary(run({ stages: [] }), { width: 8 }).oneLine, /0 phases/);
+  });
+
+  test("shows loop rails only for active multi-stage or bounded/built-in runs", () => {
+    assert.equal(shouldRenderWorkflowLoopSummary(run({ stages: [stage("s", "worker", "running")] })), false);
+    assert.equal(shouldRenderWorkflowLoopSummary(run({ inputs: { max_turns: 2 }, stages: [stage("s", "worker", "running")] })), true);
+    assert.equal(shouldRenderWorkflowLoopSummary(run({ name: "ralph", stages: [stage("s", "research-1", "running")] })), true);
+    assert.equal(shouldRenderWorkflowLoopSummary(run({ endedAt: 2_000, stages: [stage("a", "a"), stage("b", "b", "completed", ["a"])] })), false);
+  });
+
+  test("guards loop-summary built-in workflow stage contracts against drift", () => {
+    assert.equal(ralph.name, "ralph");
+    assert.ok("max_loops" in ralph.inputs);
+    assert.ok("iterations_completed" in ralph.outputs);
+    const ralphRunner = sourceText("ralph-runner.ts");
+    for (const token of ["research-prompt-refinement-", "research-", "orchestrator-", "reviewer-a", "reviewer-b", "reviewer-c", "pull-request"]) {
+      assert.match(ralphRunner, new RegExp(token));
+    }
+
+    assert.equal(goal.name, "goal");
+    assert.ok("max_turns" in goal.inputs);
+    assert.ok("turns_completed" in goal.outputs);
+    const goalRunner = sourceText("goal-runner.ts");
+    for (const token of ["work-turn-", "completion-reviewer-", "evidence-reviewer-", "risk-reviewer-", "pull-request"]) {
+      assert.match(goalRunner, new RegExp(token));
+    }
+
+    assert.equal(deepResearchCodebase.name, "deep-research-codebase");
+    const deepRunner = sourceText("deep-research-codebase-runner.ts");
+    for (const token of ["codebase-scout", "history-locator", "history-analyzer", "partition", "locator-", "pattern-finder-", "analyzer-", "online-researcher-", "aggregator"]) {
+      assert.match(deepRunner, new RegExp(token));
+    }
+
+    assert.equal(openClaudeDesign.name, "open-claude-design");
+    assert.ok("max_refinements" in openClaudeDesign.inputs);
+    assert.ok("refinements_completed" in openClaudeDesign.outputs);
+    const designSources = `${sourceText("open-claude-design-setup.ts")}\n${sourceText("open-claude-design-runner.ts")}\n${sourceText("open-claude-design-phases.ts")}`;
+    for (const token of ["discovery", "ds-locator", "ds-analyzer", "ds-patterns", "reference-discovery", "generate-", "user-feedback-", "exporter", "final-display"]) {
+      assert.match(designSources, new RegExp(token));
+    }
   });
 
   test("covers terminal and non-terminal statuses without changing phase derivation", () => {

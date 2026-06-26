@@ -40,7 +40,7 @@ import {
 import type { FlatBandBadge } from "./chat-surface.js";
 import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
 import { visibleWidth, truncateToWidth } from "./text-helpers.js";
-import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
+import { buildWorkflowLoopSummary, shouldRenderWorkflowLoopSummary } from "./workflow-loop-summary.js";
 
 const SHORT_ID_LEN = 6;
 const MIN_TITLE_BUDGET = 12;
@@ -152,11 +152,14 @@ function renderRunEntry(
   const modeSeg = theme ? `${muted}${mode}${reset}` : mode;
   const metaSeg = theme ? `${dim}${meta}${reset}` : meta;
   const line2 = `   ${modeSeg}    ${strip}${" ".repeat(gap)}${metaSeg} `;
+  if (!shouldRenderWorkflowLoopSummary(run)) return [line1, line2];
+
   const loopRaw = buildWorkflowLoopSummary(run, {
     width: Math.max(1, interior - modeW - 4),
     includePrefix: false,
   }).oneLine;
-  const loopSeg = theme ? `${muted}loop ${reset}` : "loop ";
+  const loopLabel = padVisible("loop", mode.length);
+  const loopSeg = theme ? `${muted}${loopLabel}${reset}` : loopLabel;
   const loopText = theme ? `${dim}${loopRaw}${reset}` : loopRaw;
   const line3 = `   ${loopSeg}    ${loopText} `;
 
@@ -314,6 +317,11 @@ function stageStatusFromRun(run: RunSnapshot): StageStatus {
  */
 function effectiveWidth(width?: number): number {
   return chatWidth(width);
+}
+
+function padVisible(text: string, width: number): string {
+  const padding = Math.max(0, width - visibleWidth(text));
+  return `${text}${" ".repeat(padding)}`;
 }
 
 // ---------------------------------------------------------------------------

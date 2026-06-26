@@ -123,6 +123,8 @@ describe("renderStatusList — populated", () => {
     assert.match(plain, /single\s+\[●\]/);
     assert.match(plain, /single\s+\[✓\]/);
     assert.match(plain, /loop\s+scout → planner → worker/, "loop row appears under the chain row");
+    assert.doesNotMatch(plain, /loop\s+writer/);
+    assert.doesNotMatch(plain, /loop\s+primer/);
 
     // Run entries are compact rows, not per-stage expansion in list view.
     const runRows = plain.split("\n").filter((l) => /[●✓✗⊘○]\s+[a-z0-9]{6}\s+/.test(l));
@@ -232,7 +234,41 @@ describe("renderStatusList — populated", () => {
     assert.match(out, /●\s+xyz000/, "plain entry has status glyph and run id");
     assert.match(out, /scratch/);
     assert.match(out, /single\s+\[●\]/);
+    assert.doesNotMatch(out, /loop\s+worker/);
     assert.match(out, /▸ \/workflow status xyz000/);
+  });
+
+  test("loop row aligns with chain progress and is hidden for terminal runs", () => {
+    const now = 1_000_000;
+    const active = makeRun({
+      id: "active-loop",
+      name: "active-loop",
+      status: "running",
+      stages: [
+        makeStage("a", "scout", "completed"),
+        makeStage("b", "worker", "running", { parentIds: ["a"] }),
+      ],
+    });
+    const done = makeRun({
+      id: "done-loop",
+      name: "done-loop",
+      status: "completed",
+      startedAt: now - 10_000,
+      endedAt: now - 1_000,
+      stages: [
+        makeStage("c", "scout", "completed"),
+        makeStage("d", "worker", "completed", { parentIds: ["c"] }),
+      ],
+    });
+
+    const plain = stripAnsi(renderStatusList([active, done], { theme: deriveGraphTheme({}), now, width: 100, showDetailHint: false }));
+    assert.match(plain, /chain\s+\[✓\]\[●\]/);
+    const chainLine = plain.split("\n").find((line) => line.includes("[✓][●]"));
+    const loopLine = plain.split("\n").find((line) => line.includes("scout → worker"));
+    assert.ok(chainLine);
+    assert.ok(loopLine);
+    assert.equal(chainLine.indexOf("[✓]"), loopLine.indexOf("scout"));
+    assert.equal(plain.split("\n").filter((line) => /loop\s+scout → worker/.test(line)).length, 1);
   });
 
   test("failed run carries the killed/failed-at-stage meta", () => {

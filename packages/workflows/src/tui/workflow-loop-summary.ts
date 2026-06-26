@@ -37,6 +37,13 @@ interface PhaseGroup {
   readonly parallel: boolean;
 }
 
+export function shouldRenderWorkflowLoopSummary(source: WorkflowLoopSource): boolean {
+  if (source.endedAt !== undefined) return false;
+  if (source.stages.length > 1) return true;
+  if (loopHint(source) !== undefined) return true;
+  return fallbackPhases(source).length > 0;
+}
+
 export function buildWorkflowLoopSummary(
   source: WorkflowLoopSource,
   opts: { width?: number; includePrefix?: boolean } = {},
@@ -335,7 +342,9 @@ function loopNoun(maxKey: string): string {
 
 function conditionalHint(source: WorkflowLoopSource): string | undefined {
   if (source.inputs.create_pr !== true) return undefined;
-  return source.name === "ralph" ? "PR if approved" : "PR if complete";
+  if (source.name === "ralph") return "PR if approved";
+  if (source.name === "goal") return "PR if complete";
+  return undefined;
 }
 
 function loopHintLine(hint: LoopHint, suffix: "remain" | "may remain"): string {
@@ -384,8 +393,7 @@ function detailLines(
     lines.push(source.endedAt === undefined ? `repeats until workflow exits or ${hint.maxKey} is reached` : `bounded by ${hint.maxKey}`);
     lines.push(loopHintLine(hint, "may remain"));
   }
-  if (source.inputs.create_pr === true) lines.push("pull-request conditional: create_pr=true");
-  else if (conditional) lines.push(conditional);
+  if (conditional) lines.push(`pull-request conditional: ${conditional}`);
   return lines;
 }
 
@@ -418,6 +426,11 @@ function fitLoopLine(
   if (context.first && context.last && context.phaseCount > 2) {
     const compressed = `${prefix}${context.first} → … → ${context.last}${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
     if (visibleWidth(compressed) <= width) return compressed;
+  }
+
+  if (context.phaseCount === 0) {
+    const empty = `${prefix}waiting for stages`;
+    return fitLoopSummaryText(empty, width);
   }
 
   const counted = `${prefix}${context.phaseCount} phases${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;

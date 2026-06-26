@@ -223,6 +223,7 @@ describe("renderRunDetail — themed", () => {
     assert.match(plain, /ended\s+00:16:32/);
     assert.doesNotMatch(plain, /\([^)]*ago\)/);
     assert.match(plain, /duration/);
+    assert.doesNotMatch(plain, /LOOP/);
     assert.doesNotMatch(plain, /workflow interrupt/);
   });
 
@@ -306,6 +307,7 @@ describe("renderRunDetail — plain", () => {
     assert.doesNotMatch(out, /\x1b\[/);
     assert.match(out, /╭ RUN scratc/);
     assert.match(out, /refactor-auth/);
+    assert.doesNotMatch(out, /LOOP/);
     assert.match(out, /╰─+╯/);
   });
 });

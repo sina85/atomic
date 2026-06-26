@@ -26,7 +26,7 @@ import type { FlatBandBadge } from "./chat-surface.js";
 import { fmtDuration, statusIcon, statusColor } from "./status-helpers.js";
 import { hexToAnsi, RESET, BOLD } from "./color-utils.js";
 import { truncateToWidth, visibleWidth } from "./text-helpers.js";
-import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
+import { buildWorkflowLoopSummary, shouldRenderWorkflowLoopSummary } from "./workflow-loop-summary.js";
 
 const SHORT_ID_LEN = 6;
 const STAGE_NAME_COL = 14;
@@ -90,11 +90,13 @@ function renderPlain(detail: RunDetail, now: number, width: number): string {
     out.push("");
   }
 
-  out.push(" LOOP ");
-  for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
-    out.push(`  ${truncateToWidth(line, Math.max(1, width - 4), "…")} `);
+  if (shouldRenderWorkflowLoopSummary(detail)) {
+    out.push(" LOOP ");
+    for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+      out.push(`  ${truncateToWidth(line, Math.max(1, width - 4), "…")} `);
+    }
+    out.push("");
   }
-  out.push("");
 
   if (detail.endedAt === undefined) {
     const hint = detail.status === "paused"
@@ -152,11 +154,13 @@ function renderThemed(detail: RunDetail, now: number, theme: GraphTheme, width: 
     out.push("");
   }
 
-  out.push(` ${muted}${BOLD}LOOP${RESET} `);
-  for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
-    out.push(`  ${dim}${truncateToWidth(line, Math.max(1, width - 4), "…")}${RESET} `);
+  if (shouldRenderWorkflowLoopSummary(detail)) {
+    out.push(` ${muted}${BOLD}LOOP${RESET} `);
+    for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+      out.push(`  ${dim}${truncateToWidth(line, Math.max(1, width - 4), "…")}${RESET} `);
+    }
+    out.push("");
   }
-  out.push("");
 
   if (detail.endedAt === undefined) {
     const hint = detail.status === "paused"

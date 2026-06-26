@@ -14,7 +14,9 @@ import {
   visibleWidth,
 } from "./text-helpers.js";
 import { BOLD, hexBg, hexToAnsi, RESET } from "./color-utils.js";
-import { buildWorkflowLoopSummary } from "./workflow-loop-summary.js";
+import { buildWorkflowLoopSummary, shouldRenderWorkflowLoopSummary } from "./workflow-loop-summary.js";
+
+const MIN_LOOP_STATUSLINE_BUDGET = 10;
 
 /** Low-level overlay geometry, chrome, ANSI canvas, and edge helpers. */
 export abstract class GraphViewRenderHelpers extends GraphViewState {
@@ -109,11 +111,13 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
     const leftEdgePad = 1;
     const rightEdgePad = 2;
     const contentBudget = Math.max(0, width - leftEdgePad - pillW - rightEdgePad);
-    const run = this._getCurrentRun();
+    const currentRun = this._getCurrentRun();
+    const run = currentRun && shouldRenderWorkflowLoopSummary(currentRun) ? currentRun : undefined;
     const loopGap = run ? 2 : 0;
     const rawHintsWidth = visibleWidth(hintsStyledRaw);
     const compactHintsWidth = visibleWidth(hintsStyledCompact);
-    const minimumLoopBudget = Math.min(10, Math.max(0, contentBudget - loopGap));
+    // Below this width the loop rail is more noise than signal; give hints priority.
+    const minimumLoopBudget = Math.min(MIN_LOOP_STATUSLINE_BUDGET, Math.max(0, contentBudget - loopGap));
     const preferredHints = contentBudget - rawHintsWidth - loopGap >= minimumLoopBudget
       ? hintsStyledRaw
       : hintsStyledCompact;

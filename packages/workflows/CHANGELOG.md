@@ -10,6 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Added compact workflow `Loop:` summaries to `/workflow status`, `/workflow status <runId>`, and the graph overlay statusline, derived from existing run stages and bounded-loop inputs without adding new run metadata.
 
+### Changed
+
+- Limited workflow loop rails to active multi-stage, bounded-loop, or builtin workflow runs so one-shot single-stage and terminal status cards do not imply future loop work remains.
+
+### Fixed
+
+- Added builtin workflow drift-guard coverage for the stage names and output keys used by loop-summary rendering, aligned the status-list loop label with the progress row, and restricted PR hints to workflows that actually support `create_pr` handoff.
+
 ## [0.9.3-alpha.1] - 2026-06-25
 
 ### Changed
