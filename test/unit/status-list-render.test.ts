@@ -123,9 +123,9 @@ describe("renderStatusList — populated", () => {
     assert.match(plain, /1\/3/, "chain progress fraction renders in meta");
     assert.match(plain, /single\s+\[●\]/);
     assert.match(plain, /single\s+\[✓\]/);
-    assert.match(plain, /loop\s+scout → planner → worker/, "loop row appears under the chain row");
-    assert.doesNotMatch(plain, /loop\s+writer/);
-    assert.doesNotMatch(plain, /loop\s+primer/);
+    assert.match(plain, /phases\s+scout → planner → worker/, "phases row appears under the chain row");
+    assert.doesNotMatch(plain, /phases\s+writer/);
+    assert.doesNotMatch(plain, /phases\s+primer/);
 
     // Run entries are compact rows, not per-stage expansion in list view.
     const runRows = plain.split("\n").filter((l) => /[●✓✗⊘○]\s+[a-z0-9]{6}\s+/.test(l));
@@ -256,7 +256,7 @@ describe("renderStatusList — populated", () => {
     assert.match(out, /▸ \/workflow status xyz000/);
   });
 
-  test("loop row aligns with chain progress and is hidden for terminal runs", () => {
+  test("phase row aligns with chain progress and is hidden for terminal runs", () => {
     const now = 1_000_000;
     const active = makeRun({
       id: "active-loop",
@@ -282,11 +282,11 @@ describe("renderStatusList — populated", () => {
     const plain = stripAnsi(renderStatusList([active, done], { theme: deriveGraphTheme({}), now, width: 100, showDetailHint: false }));
     assert.match(plain, /chain\s+\[✓\]\[●\]/);
     const chainLine = plain.split("\n").find((line) => line.includes("[✓][●]"));
-    const loopLine = plain.split("\n").find((line) => line.includes("scout → worker"));
+    const phaseLine = plain.split("\n").find((line) => line.includes("scout → worker"));
     assert.ok(chainLine);
-    assert.ok(loopLine);
-    assert.equal(chainLine.indexOf("[✓]"), loopLine.indexOf("scout"));
-    assert.equal(plain.split("\n").filter((line) => /loop\s+scout → worker/.test(line)).length, 1);
+    assert.ok(phaseLine);
+    assert.equal(chainLine.indexOf("[✓]"), phaseLine.indexOf("scout"));
+    assert.equal(plain.split("\n").filter((line) => /phases\s+scout → worker/.test(line)).length, 1);
   });
 
   test("builtin loop row uses runner defaults for non-positive limits", () => {

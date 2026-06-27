@@ -158,13 +158,13 @@ function renderRunEntry(
   const line2 = `   ${modeSeg}    ${strip}${" ".repeat(gap)}${metaSeg} `;
   if (!shouldRenderWorkflowLoopSummary(run)) return [line1, line2];
 
-  const loopRaw = buildWorkflowLoopSummary(run, {
+  const summary = buildWorkflowLoopSummary(run, {
     width: Math.max(1, interior - modeW - 4),
     includePrefix: false,
-  }).oneLine;
-  const loopLabel = padVisible("loop", mode.length);
+  });
+  const loopLabel = padVisible(summary.label, mode.length);
   const loopSeg = theme ? `${muted}${loopLabel}${reset}` : loopLabel;
-  const loopText = theme ? `${dim}${loopRaw}${reset}` : loopRaw;
+  const loopText = theme ? `${dim}${summary.oneLine}${reset}` : summary.oneLine;
   const line3 = `   ${loopSeg}    ${loopText} `;
 
   return [line1, line2, line3];

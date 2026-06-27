@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Limited workflow loop rails to active multi-stage, bounded-loop, or builtin workflow runs so one-shot single-stage and terminal status cards do not imply future loop work remains.
+- Limited workflow status rails to active multi-stage, bounded-loop, or builtin workflow runs so one-shot single-stage and terminal status cards do not imply future work remains, and relabeled non-bounded multi-stage rails as `Phases:`/`phases` while preserving `Loop:`/`loop` for runs with bounded-loop hints.
 
 ### Fixed
 

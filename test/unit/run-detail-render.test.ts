@@ -145,7 +145,8 @@ describe("renderRunDetail — themed", () => {
     assert.match(plain, /✓ scout/);
     assert.match(plain, /● planner/);
     assert.match(plain, /○ worker/);
-    assert.match(plain, /LOOP/);
+    assert.match(plain, /PHASES/);
+    assert.doesNotMatch(plain, /LOOP/);
     assert.match(plain, /scout → planner → worker/);
 
     // Active run gets the interrupt action hint (shortId crops to 6 chars).
@@ -179,7 +180,7 @@ describe("renderRunDetail — themed", () => {
     assert.match(plain, /prompt-refine → research → orchestrator → review ×3 parallel/);
   });
 
-  test("LOOP section preserves ordinary numeric labels", () => {
+  test("PHASES section preserves ordinary numeric labels", () => {
     const detail = detailFromRun(makeRun({
       id: "numeric-label",
       name: "custom",
@@ -191,7 +192,7 @@ describe("renderRunDetail — themed", () => {
     }));
 
     const plain = stripAnsi(renderRunDetail(detail, { width: 100 }));
-    assert.match(plain, /LOOP/);
+    assert.match(plain, /PHASES/);
     assert.match(plain, /oauth-2 → review/);
     assert.doesNotMatch(plain, /oauth → review/);
   });

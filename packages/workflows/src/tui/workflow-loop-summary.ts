@@ -37,7 +37,10 @@ export interface WorkflowLoopSource {
   readonly endedAt?: number;
 }
 
+export type WorkflowLoopSummaryLabel = "loop" | "phases";
+
 export interface WorkflowLoopSummary {
+  readonly label: WorkflowLoopSummaryLabel;
   readonly phases: readonly string[];
   readonly oneLine: string;
   readonly detailLines: readonly string[];
@@ -72,6 +75,7 @@ export function buildWorkflowLoopSummary(
   const specialPhases = builtinPhases(source);
   const phases = specialPhases ?? (groups.length > 0 ? groups.map(formatPhaseGroup) : fallbackPhases(source));
   const hint = loopHint(source);
+  const label = summaryLabel(hint);
   const conditional = conditionalHint(source);
 
   const raw = composeLoopText(source, phases, hint, conditional);
@@ -84,13 +88,19 @@ export function buildWorkflowLoopSummary(
     conditional,
     sourceName: source.name,
     phases,
+    label,
   });
 
   return {
+    label,
     phases,
     oneLine,
     detailLines: detailLines(phases, groups, hint, conditional, source),
   };
+}
+
+function summaryLabel(hint: LoopHint | undefined): WorkflowLoopSummaryLabel {
+  return hint === undefined ? "phases" : "loop";
 }
 
 function fitLoopSummaryText(text: string, width: number): string {
@@ -440,9 +450,10 @@ function fitLoopLine(
     conditional?: string;
     sourceName: string;
     phases: readonly string[];
+    label: WorkflowLoopSummaryLabel;
   },
 ): string {
-  const prefix = context.includePrefix ? "Loop: " : "";
+  const prefix = context.includePrefix ? `${titleCase(context.label)}: ` : "";
   const full = `${prefix}${raw}`;
   if (visibleWidth(full) <= width) return full;
 
@@ -467,6 +478,10 @@ function fitLoopLine(
   const counted = `${prefix}${phaseCountLabel(context.phaseCount)}${tails.length > 0 ? ` · ${tails.join(" · ")}` : ""}`;
   if (visibleWidth(counted) <= width) return counted;
   return fitLoopSummaryText(counted, width);
+}
+
+function titleCase(label: WorkflowLoopSummaryLabel): string {
+  return label === "loop" ? "Loop" : "Phases";
 }
 
 function phaseCountLabel(count: number): string {

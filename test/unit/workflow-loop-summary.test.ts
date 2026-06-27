@@ -41,7 +41,8 @@ describe("buildWorkflowLoopSummary", () => {
       stages: [stage("s1", "scout", "completed"), stage("s2", "plan", "running", ["s1"])],
     }));
 
-    assert.equal(summary.oneLine, "Loop: scout → plan");
+    assert.equal(summary.label, "phases");
+    assert.equal(summary.oneLine, "Phases: scout → plan");
     assert.deepEqual(summary.phases, ["scout", "plan"]);
   });
 
@@ -158,8 +159,8 @@ describe("buildWorkflowLoopSummary", () => {
     const ordinary = buildWorkflowLoopSummary(run({
       stages: [stage("oauth", "oauth-2", "running")],
     })).oneLine;
-    assert.match(ordinary, /Loop: oauth-2/);
-    assert.doesNotMatch(ordinary, /Loop: oauth(?:\s|$)/);
+    assert.match(ordinary, /Phases: oauth-2/);
+    assert.doesNotMatch(ordinary, /Phases: oauth(?:\s|$)/);
 
     const repeated = buildWorkflowLoopSummary(run({
       stages: [
@@ -167,7 +168,7 @@ describe("buildWorkflowLoopSummary", () => {
         stage("oauth2", "oauth-2", "running", ["oauth1"]),
       ],
     })).oneLine;
-    assert.match(repeated, /Loop: oauth ×2 repeats/);
+    assert.match(repeated, /Phases: oauth ×2 repeats/);
   });
 
   test("chooses bounded-loop input by deterministic semantic priority", () => {
@@ -311,7 +312,8 @@ describe("buildWorkflowLoopSummary", () => {
 
   test("reports no-stage custom runs without fake future stages", () => {
     const summary = buildWorkflowLoopSummary(run({ stages: [] }));
-    assert.equal(summary.oneLine, "Loop: waiting for stages");
+    assert.equal(summary.oneLine, "Phases: waiting for stages");
+    assert.equal(summary.label, "phases");
     assert.deepEqual(summary.phases, []);
     assert.doesNotMatch(buildWorkflowLoopSummary(run({ stages: [] }), { width: 8 }).oneLine, /0 phases/);
   });
@@ -375,7 +377,7 @@ describe("buildWorkflowLoopSummary", () => {
         status: status === "awaiting_input" ? "running" : status,
         stages: [stage("s", "worker-1", stageStatus)],
       }));
-      assert.match(summary.oneLine, /Loop: worker/);
+      assert.match(summary.oneLine, /Phases: worker/);
     }
   });
 

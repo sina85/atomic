@@ -80,9 +80,9 @@ describe("GraphView keyboard navigation", () => {
     const text = view.render(96).join("\n");
     // Header pill carries the ORCHESTRATOR label in all caps.
     assert.match(text, /ORCHESTRATOR/);
-    // Bottom statusline carries the GRAPH mode pill and loop rail.
+    // Bottom statusline carries the GRAPH mode pill and phase rail.
     assert.match(text, /GRAPH/);
-    assert.match(text, /Loop: a → b/);
+    assert.match(text, /Phases: a → b/);
     // Hints reflect the new vocabulary (navigate / attach / stages /
     // detach / quit) rather than the legacy j\/k focus row.
     assert.match(text, /navigate/);
@@ -92,7 +92,7 @@ describe("GraphView keyboard navigation", () => {
     view.dispose();
   });
 
-  it("fits the graph loop rail without pushing right-side hints off the statusline", () => {
+  it("fits the graph phase rail without pushing right-side hints off the statusline", () => {
     const stages = [
       makeStage("prompt-refinement-1"),
       makeStage("research-1", ["prompt-refinement-1"]),
@@ -103,24 +103,24 @@ describe("GraphView keyboard navigation", () => {
     ];
     const view = makeView(stages);
     const wide = visibleText(view.render(128));
-    assert.match(wide, /Loop: prompt-refine/);
+    assert.match(wide, /Phases: prompt-refine/);
     assert.match(wide, /navigate/);
     assert.match(wide, /attach/);
     assert.match(wide, /q\s+quit/);
 
     const medium = visibleText(view.render(96));
-    assert.match(medium, /Loop: 4 phases/);
+    assert.match(medium, /Phases: 4 pha/);
     assert.match(medium, /q\s+quit/);
 
     const narrow = visibleText(view.render(80));
     assert.match(narrow, /GRAPH/);
-    assert.match(narrow, /Loop:/);
+    assert.match(narrow, /Phases:/);
     assert.match(narrow, /\/\s+stages/);
     assert.match(narrow, /ctrl\+d\s+detach/);
     assert.match(narrow, /q\s+quit/);
 
     const belowLoopBudget = visibleText(view.render(72));
-    assert.doesNotMatch(belowLoopBudget, /Loop:/);
+    assert.doesNotMatch(belowLoopBudget, /Phases:/);
     assert.match(belowLoopBudget, /↑↓←→/);
     assert.match(belowLoopBudget, /\/\s+stages/);
     assert.match(belowLoopBudget, /ctrl\+d\s+detach/);
@@ -133,6 +133,7 @@ describe("GraphView keyboard navigation", () => {
     for (const width of [80, 84, 88]) {
       const rendered = visibleText(view.render(width));
       assert.doesNotMatch(rendered, /Loop:/);
+      assert.doesNotMatch(rendered, /Phases:/);
       assert.match(rendered, /↑↓←→\s+navigate/, `${width}: navigate label`);
       assert.match(rendered, /↵\s+attach/, `${width}: attach label`);
     }

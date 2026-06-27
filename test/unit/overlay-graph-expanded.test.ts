@@ -138,7 +138,7 @@ describe("expanded workflow graph", () => {
     const rendered = visibleText(view.render(128));
     assert.doesNotMatch(rendered, /workflow:child/);
     assert.match(rendered, /child-first/);
-    assert.match(rendered, /Loop: child-first → child-second/);
+    assert.match(rendered, /Phases: child-first → child-second/);
     view.dispose();
   });
 

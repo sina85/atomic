@@ -91,8 +91,9 @@ function renderPlain(detail: RunDetail, now: number, width: number): string {
   }
 
   if (shouldRenderWorkflowLoopSummary(detail)) {
-    out.push(" LOOP ");
-    for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+    const summary = buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false });
+    out.push(` ${sectionLabel(summary.label)} `);
+    for (const line of summary.detailLines) {
       out.push(`  ${truncateToWidth(line, Math.max(1, width - 4), "…")} `);
     }
     out.push("");
@@ -155,8 +156,9 @@ function renderThemed(detail: RunDetail, now: number, theme: GraphTheme, width: 
   }
 
   if (shouldRenderWorkflowLoopSummary(detail)) {
-    out.push(` ${muted}${BOLD}LOOP${RESET} `);
-    for (const line of buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false }).detailLines) {
+    const summary = buildWorkflowLoopSummary(detail, { width: Math.max(1, width - 4), includePrefix: false });
+    out.push(` ${muted}${BOLD}${sectionLabel(summary.label)}${RESET} `);
+    for (const line of summary.detailLines) {
       out.push(`  ${dim}${truncateToWidth(line, Math.max(1, width - 4), "…")}${RESET} `);
     }
     out.push("");
@@ -361,6 +363,10 @@ function statePlain(detail: RunDetail): string {
 // ---------------------------------------------------------------------------
 // Tiny formatters
 // ---------------------------------------------------------------------------
+
+function sectionLabel(label: "loop" | "phases"): string {
+  return label.toUpperCase();
+}
 
 function shortId(id: string): string {
   return id.length > SHORT_ID_LEN ? id.slice(0, SHORT_ID_LEN) : id;
