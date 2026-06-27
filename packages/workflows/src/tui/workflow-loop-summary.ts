@@ -14,9 +14,9 @@ const BUILTIN_COUNTED_BASES = new Set([
   "analyzer", "online-researcher", "online",
 ]);
 const BUILTIN_LOOP_DEFAULTS: Record<string, Record<string, number>> = {
-  ralph: { max_loops: 10 },
-  goal: { max_turns: 10 },
-  "open-claude-design": { max_refinements: 3 },
+  ralph: { max_loop: 10, max_loops: 10 },
+  goal: { max_turn: 10, max_turns: 10 },
+  "open-claude-design": { max_refinement: 3, max_refinements: 3 },
 };
 
 export interface WorkflowLoopSource {
@@ -36,8 +36,6 @@ export interface WorkflowLoopSummary {
 
 interface LoopHint {
   readonly maxKey: string;
-  readonly max: number;
-  readonly completed: number;
   readonly remaining: number;
   readonly noun: string;
 }
@@ -102,10 +100,8 @@ function phaseGroups(source: WorkflowLoopSource): PhaseGroup[] {
     while (j < source.stages.length) {
       const next = source.stages[j]!;
       if (parentSignature(next) !== parentKey) break;
-      const previous = source.stages[j - 1]!;
-      const nextBase = normalizeStageName(next.name, countedBases);
-      const previousBase = normalizeStageName(previous.name, countedBases);
-      if (nextBase !== previousBase && !looksParallelSibling(stage, next)) break;
+      // Consecutive same-parent stages are a fan-out/fan-in group even when
+      // their display names differ (for example locator/pattern/analyzer).
       siblings.push(next);
       j++;
     }
@@ -165,10 +161,6 @@ function coalesceSequentialRepeats(groups: readonly PhaseGroup[]): PhaseGroup[] 
 function compactFamilies(labels: readonly string[]): string[] {
   const roots = labels.map((label) => label.replace(/-(locator|pattern|analyzer|online)$/i, ""));
   return [...new Set(roots)];
-}
-
-function looksParallelSibling(first: StageSnapshot, next: StageSnapshot): boolean {
-  return sameParents([first, next]);
 }
 
 function sameParents(stages: readonly StageSnapshot[]): boolean {
@@ -242,7 +234,7 @@ function fallbackPhases(source: WorkflowLoopSource): string[] {
 }
 
 function referencesDisabled(inputs: Readonly<WorkflowInputValues>): boolean {
-  return inputs.discover_references === false || inputs.references === false || inputs.reference === false || inputs.include_references === false;
+  return inputs.discover_references === false;
 }
 
 function loopHint(source: WorkflowLoopSource): LoopHint | undefined {
@@ -252,8 +244,6 @@ function loopHint(source: WorkflowLoopSource): LoopHint | undefined {
   const completed = completedLoopCount(source, candidate.key);
   return {
     maxKey: candidate.key,
-    max,
-    completed,
     remaining: Math.max(0, max - completed),
     noun: loopNoun(candidate.key),
   };
@@ -268,7 +258,7 @@ function loopInputCandidates(inputs: Readonly<WorkflowInputValues>): LoopInputCa
   return Object.entries(inputs)
     .flatMap(([key, value]) => {
       if (!LOOP_INPUT_RE.test(key) || typeof value !== "number" || !Number.isFinite(value)) return [];
-      return [{ key, value }];
+      return [{ key: key.toLowerCase(), value }];
     })
     .sort((left, right) => {
       const priorityDelta = loopInputPriority(left.key) - loopInputPriority(right.key);
@@ -287,9 +277,10 @@ function loopInputPriority(key: string): number {
 }
 
 function completedLoopCount(source: WorkflowLoopSource, maxKey: string): number {
-  const resultKey = resultCountKey(maxKey);
-  const fromResult = readNumber(source.result?.[resultKey]);
-  if (fromResult !== undefined) return fromResult;
+  for (const resultKey of resultCountKeys(maxKey)) {
+    const fromResult = readNumber(source.result?.[resultKey]);
+    if (fromResult !== undefined) return fromResult;
+  }
   const preferredBases = preferredLoopStageBases(source, maxKey);
   if (preferredBases === undefined) return genericSequentialLoopCount(source.stages);
   return maxSuffixForBases(source.stages, preferredBases);
@@ -326,7 +317,6 @@ function genericSequentialLoopCount(stages: readonly StageSnapshot[]): number {
   }
   let max = 0;
   for (const suffixes of suffixesByBase.values()) {
-    if (!suffixes.has(1) && suffixes.size < 2) continue;
     max = Math.max(max, ...suffixes);
   }
   return max;
@@ -349,18 +339,19 @@ function readNumber(value: WorkflowSerializableValue | undefined): number | unde
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
 }
 
-function resultCountKey(maxKey: string): string {
-  const stem = maxKey.replace(/^max_/, "");
-  if (stem === "loops") return "iterations_completed";
-  if (stem === "turns") return "turns_completed";
-  if (stem === "refinements") return "refinements_completed";
-  return `${stem}_completed`;
+function resultCountKeys(maxKey: string): readonly string[] {
+  const stem = maxKey.replace(/^max_/, "").toLowerCase();
+  const generic = `${stem}_completed`;
+  if (/^loops?$/.test(stem)) return [generic, "loops_completed", "iterations_completed"];
+  if (/^turns?$/.test(stem)) return [generic, "turns_completed"];
+  if (/^refinements?$/.test(stem)) return [generic, "refinements_completed"];
+  return [generic];
 }
 
 function preferredLoopStageBases(source: WorkflowLoopSource, maxKey: string): ReadonlySet<string> | undefined {
-  if (maxKey === "max_turns") return new Set(["work-turn"]);
-  if (maxKey === "max_refinements") return new Set(["generate", "user-feedback"]);
-  if (maxKey === "max_loops" && source.name === "ralph") return new Set(["orchestrator"]);
+  if (/^max_turns?$/.test(maxKey)) return new Set(["work-turn"]);
+  if (/^max_refinements?$/.test(maxKey)) return new Set(["generate", "user-feedback"]);
+  if (/^max_loops?$/.test(maxKey) && source.name === "ralph") return new Set(["orchestrator"]);
   return undefined;
 }
 
@@ -422,7 +413,7 @@ function detailLines(
   if (groups.some((group) => group.parallel)) lines.push("parallel phases are grouped by shared parents/name patterns");
   if (hint) {
     lines.push(source.endedAt === undefined ? `repeats until workflow exits or ${hint.maxKey} is reached` : `bounded by ${hint.maxKey}`);
-    lines.push(loopHintLine(hint, "may remain"));
+    lines.push(loopHintLine(hint, source.endedAt === undefined ? "remain" : "may remain"));
   }
   if (conditional) lines.push(`pull-request conditional: ${conditional}`);
   return lines;

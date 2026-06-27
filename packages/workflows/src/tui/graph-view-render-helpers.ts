@@ -135,7 +135,7 @@ export abstract class GraphViewRenderHelpers extends GraphViewState {
       : 0;
     const loopText = run && loopBudget >= MIN_LOOP_STATUSLINE_BUDGET
       ? truncateToWidth(
-        buildWorkflowLoopSummary({ ...run, stages: this._displayStages(run) }, { width: loopBudget }).oneLine,
+        buildWorkflowLoopSummary(run, { width: loopBudget }).oneLine,
         loopBudget,
         "",
       )

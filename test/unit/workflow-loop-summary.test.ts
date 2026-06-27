@@ -120,6 +120,20 @@ describe("buildWorkflowLoopSummary", () => {
     assert.match(designLoop, /generate\/feedback · ↻ 1 refinements remain → export/);
   });
 
+  test("uses generic result counters and singular bounded-loop aliases", () => {
+    assert.match(buildWorkflowLoopSummary(run({
+      inputs: { max_loops: 5 },
+      result: { loops_completed: 2 },
+      stages: [stage("loop", "loop-2", "running")],
+    })).oneLine, /↻ 3 rounds remain/);
+
+    assert.match(buildWorkflowLoopSummary(run({
+      name: "goal",
+      inputs: { max_turn: 0 },
+      stages: [stage("turn", "work-turn-1", "running")],
+    })).oneLine, /↻ 9 turns remain/);
+  });
+
   test("uses builtin defaults for non-positive bounded-loop inputs", () => {
     assert.match(buildWorkflowLoopSummary(run({
       name: "ralph",
@@ -276,6 +290,11 @@ describe("buildWorkflowLoopSummary", () => {
         stage("draft-2", "draft-2", "running", ["draft-1"]),
       ],
     })).oneLine, /↻ 2 rounds remain/);
+
+    assert.match(buildWorkflowLoopSummary(run({
+      inputs: { max_iterations: 5 },
+      stages: [stage("cycle-3", "cycle-3", "running")],
+    })).oneLine, /↻ 2 iterations remain/);
   });
 
   test("keeps open-claude-design refinement hint before export when compressed", () => {
