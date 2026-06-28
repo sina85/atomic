@@ -1,6 +1,7 @@
 import type { ThinkingLevel, ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { CURSOR_API, CURSOR_API_BASE_URL } from "./config.js";
 import rawFallbackModels from "./cursor-models-raw.json" with { type: "json" };
+import { positiveIntOrUndefined, resolveCursorModelReferenceLimits, type CursorModelReferenceCandidate } from "./model-reference.js";
 
 export type CursorCatalogSource = "live" | "estimated";
 export type CursorEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max" | "default";
@@ -60,12 +61,13 @@ interface CursorVariantGroup {
 const CURSOR_FALLBACK_RAW_MODELS = rawFallbackModels satisfies readonly CursorUsableModel[];
 const PARSEABLE_EFFORTS: readonly Exclude<CursorEffort, "default">[] = ["none", "low", "medium", "high", "xhigh", "max"];
 const EFFORT_ORDER: readonly CursorEffort[] = ["none", "low", "default", "medium", "high", "xhigh", "max"];
+const THINKING_LEVELS: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh"];
 const THINKING_LEVEL_EFFORT_PREFERENCES: Record<ThinkingLevel, readonly CursorEffort[]> = {
 	minimal: ["none", "low", "default"],
 	low: ["low", "none", "default"],
 	medium: ["medium", "default", "low"],
 	high: ["high", "medium", "default"],
-	xhigh: ["max", "xhigh", "high"],
+	xhigh: ["max", "xhigh"],
 };
 
 const ESTIMATED_CONTEXT_WINDOW = 200_000;
@@ -85,24 +87,58 @@ export function createEstimatedCursorCatalog(now = Date.now()): CursorModelCatal
 }
 
 export function mapCursorCatalogToProviderModels(catalog: CursorModelCatalog): CursorProviderModelDefinition[] {
-	return groupCursorModels(catalog.models).map((group) => {
+	const groups = groupCursorModels(catalog.models);
+	const familyReferenceVariants = cursorReferenceVariantsByBaseId(groups);
+	return groups.map((group) => {
 		const effortVariants = collectEffortVariants(group.variants, group.primaryId);
 		const supportsEffort = group.variants.some((variant) => Boolean(variant.effort)) || effortVariants.size >= 2;
 		const supportsReasoning = supportsReasoningModelId(group.primaryId);
 		const name = catalog.source === "estimated" ? `${group.displayName} (estimated)` : group.displayName;
+		// Cursor's private API omits token limits, so when neither a live nor a
+		// static explicit limit is present, derive the window/output from the
+		// bundled pi-ai model catalog before falling back to a conservative
+		// estimate. This never changes which models are registered. One-million
+		// labels are tracked across fast/thinking sibling groups for the same
+		// family so Cursor's mode suffixes do not hide the advertised long window.
+		const referenceLimits = resolveCursorModelReferenceLimits(cursorModelReferenceCandidates(group, familyReferenceVariants.get(group.baseId) ?? []));
 		return {
 			id: group.primaryId,
 			name,
 			api: CURSOR_API,
 			baseUrl: CURSOR_API_BASE_URL,
 			reasoning: supportsReasoning,
-			thinkingLevelMap: supportsEffort ? buildThinkingLevelMap(effortVariants, group.primaryId) : undefined,
+			thinkingLevelMap: supportsEffort ? buildCursorThinkingLevelMap(group, effortVariants) : undefined,
 			input: cursorModelInput(group.primaryId),
 			cost: subscriptionCost(),
-			contextWindow: chooseLargestNumber(group.variants.map((variant) => variant.contextWindow)) ?? ESTIMATED_CONTEXT_WINDOW,
-			maxTokens: chooseLargestNumber(group.variants.map((variant) => variant.maxTokens)) ?? ESTIMATED_MAX_TOKENS,
+			contextWindow: positiveIntLimit(chooseLargestNumber(group.variants.map((variant) => variant.contextWindow)) ?? referenceLimits.contextWindow, ESTIMATED_CONTEXT_WINDOW),
+			maxTokens: positiveIntLimit(chooseLargestNumber(group.variants.map((variant) => variant.maxTokens)) ?? referenceLimits.maxTokens, ESTIMATED_MAX_TOKENS),
 		};
 	});
+}
+
+function cursorModelReferenceCandidates(group: CursorVariantGroup, familyVariants: readonly CursorVariant[]): CursorModelReferenceCandidate[] {
+	return [
+		{ id: group.primaryId, displayName: group.displayName },
+		...group.variants.map((variant) => ({ id: variant.id, displayName: variant.displayName })),
+		...familyVariants.map((variant) => ({ id: variant.id, displayName: variant.displayName })),
+	];
+}
+
+function cursorReferenceVariantsByBaseId(groups: readonly CursorVariantGroup[]): ReadonlyMap<string, readonly CursorVariant[]> {
+	const variantsByBaseId = new Map<string, CursorVariant[]>();
+	for (const group of groups) {
+		const variants = variantsByBaseId.get(group.baseId) ?? [];
+		variants.push(...group.variants);
+		variantsByBaseId.set(group.baseId, variants);
+	}
+	return variantsByBaseId;
+}
+
+function positiveIntLimit(value: number | undefined, fallback: number): number {
+	// Provider registration rejects non-positive/non-integer windows and would
+	// drop the whole catalog; guarantee a valid positive integer here so limit
+	// values can never affect which Cursor models are listed.
+	return positiveIntOrUndefined(value) ?? fallback;
 }
 
 export function resolveCursorModelVariant(
@@ -110,11 +146,38 @@ export function resolveCursorModelVariant(
 	thinkingLevelMap: ThinkingLevelMap | undefined,
 	thinkingLevel: ThinkingLevel | undefined,
 ): string {
-	if (!thinkingLevel || !thinkingLevelMap) return baseModelId;
-	const mapped = thinkingLevelMap[thinkingLevel];
-	if (!mapped || mapped === "default") return baseModelId;
+	if (!thinkingLevelMap) return baseModelId;
+	// With no explicit thinking level, fall back to the `off` default variant.
+	// Effort-only Cursor models have no real base id (Cursor lists only
+	// `gpt-5.5-medium`, never a bare `gpt-5.5`), so sending the synthesized base
+	// id makes Cursor reject the run with `not_found`; the `off` entry carries a
+	// concrete variant id to send instead.
+	const mapped = thinkingLevel ? thinkingLevelMap[thinkingLevel] : thinkingLevelMap.off;
+	if (mapped === null) {
+		const fallbackLevel = nearestSupportedThinkingLevel(thinkingLevelMap, thinkingLevel);
+		return fallbackLevel ? resolveCursorModelVariant(baseModelId, thinkingLevelMap, fallbackLevel) : baseModelId;
+	}
+	if (mapped === undefined || mapped === "default") return baseModelId;
 	if (isCursorEffort(mapped)) return replaceEffortBeforeCursorSuffix(baseModelId, mapped);
 	return mapped;
+}
+
+function nearestSupportedThinkingLevel(
+	thinkingLevelMap: ThinkingLevelMap,
+	thinkingLevel: ThinkingLevel | undefined,
+): ThinkingLevel | undefined {
+	if (!thinkingLevel) return undefined;
+	const requestedIndex = THINKING_LEVELS.indexOf(thinkingLevel);
+	if (requestedIndex === -1) return undefined;
+	for (let index = requestedIndex - 1; index >= 0; index--) {
+		const level = THINKING_LEVELS[index];
+		if (level && thinkingLevelMap[level] !== null && thinkingLevelMap[level] !== undefined) return level;
+	}
+	for (let index = requestedIndex + 1; index < THINKING_LEVELS.length; index++) {
+		const level = THINKING_LEVELS[index];
+		if (level && thinkingLevelMap[level] !== null && thinkingLevelMap[level] !== undefined) return level;
+	}
+	return undefined;
 }
 
 export function insertEffortBeforeCursorSuffix(modelId: string, effort: CursorEffort): string {
@@ -205,14 +268,34 @@ function collectEffortVariants(variants: readonly CursorVariant[], primaryId: st
 	return byEffort;
 }
 
+function buildCursorThinkingLevelMap(group: CursorVariantGroup, effortVariants: ReadonlyMap<CursorEffort, string>): ThinkingLevelMap {
+	const map = buildThinkingLevelMap(effortVariants, group.primaryId);
+	// When the group has no real base id (every Cursor variant carries an effort
+	// suffix), the synthesized primary id is not a sendable Cursor model. Record
+	// an `off` default so a no-thinking request maps to a concrete variant instead
+	// of the base id, which Cursor would reject with `not_found`. Prefer the
+	// minimal/least-effort variant because `off` means minimum reasoning.
+	const hasRealBaseId = group.variants.some((variant) => variant.id === group.primaryId);
+	if (!hasRealBaseId) {
+		const defaultVariant = map.minimal ?? map.low ?? map.medium ?? map.high ?? map.xhigh ?? null;
+		if (defaultVariant) map.off = defaultVariant;
+	}
+	return map;
+}
+
 function buildThinkingLevelMap(effortVariants: ReadonlyMap<CursorEffort, string>, primaryId: string): ThinkingLevelMap {
 	return {
 		minimal: chooseEffortVariant(effortVariants, THINKING_LEVEL_EFFORT_PREFERENCES.minimal, primaryId),
 		low: chooseEffortVariant(effortVariants, THINKING_LEVEL_EFFORT_PREFERENCES.low, primaryId),
 		medium: chooseEffortVariant(effortVariants, THINKING_LEVEL_EFFORT_PREFERENCES.medium, primaryId),
 		high: chooseEffortVariant(effortVariants, THINKING_LEVEL_EFFORT_PREFERENCES.high, primaryId),
-		xhigh: chooseEffortVariant(effortVariants, THINKING_LEVEL_EFFORT_PREFERENCES.xhigh, primaryId),
+		// `xhigh` should only be offered when Cursor advertises a true xhigh/max variant.
+		xhigh: chooseCursorXhighVariant(effortVariants),
 	};
+}
+
+function chooseCursorXhighVariant(effortVariants: ReadonlyMap<CursorEffort, string>): string | null {
+	return effortVariants.get("max") ?? effortVariants.get("xhigh") ?? null;
 }
 
 function chooseEffortVariant(effortVariants: ReadonlyMap<CursorEffort, string>, preferences: readonly CursorEffort[], _primaryId: string): string | null {
@@ -232,8 +315,10 @@ function isCursorEffort(value: string): value is CursorEffort {
 }
 
 function chooseLargestNumber(values: readonly (number | undefined)[]): number | undefined {
-	const finiteValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-	return finiteValues.length > 0 ? Math.max(...finiteValues) : undefined;
+	// Cursor's private API omits token limits; treat any non-positive value as
+	// bogus so a stray 0/negative never becomes an invalid context window.
+	const positiveValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+	return positiveValues.length > 0 ? Math.max(...positiveValues) : undefined;
 }
 
 function choosePrimaryId(variants: readonly CursorVariant[], baseId: string): string {

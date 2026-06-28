@@ -4,7 +4,7 @@ First-party Atomic provider for Cursor subscription models.
 
 ## Status
 
-This package registers `cursor` via Atomic's bundled extension provider API. `/login` shows **Cursor** and stores credentials through Atomic OAuth storage (`~/.atomic/agent/auth.json`). The login URL and PKCE polling behavior intentionally match the MIT-licensed [`ndraiman/pi-cursor-provider`](https://github.com/ndraiman/pi-cursor-provider) reference: `callbacks.onAuth({ url: loginUrl })`, no extra login warning/instruction copy, and polling `api2.cursor.sh/auth/poll` until Cursor returns tokens.
+This package registers `cursor` via Atomic's bundled extension provider API. `/login` shows **Cursor (Experimental)** and stores credentials through Atomic OAuth storage (`~/.atomic/agent/auth.json`). The login URL and PKCE polling behavior intentionally match the MIT-licensed [`ndraiman/pi-cursor-provider`](https://github.com/ndraiman/pi-cursor-provider) reference: `callbacks.onAuth({ url: loginUrl })`, no extra login warning/instruction copy, and polling `api2.cursor.sh/auth/poll` until Cursor returns tokens.
 
 The runtime protocol is also aligned to `ndraiman/pi-cursor-provider` at commit `82fc4e73f9ae820d87b34ac36713b18989910a36`: Atomic vendors the reference `cursor-models-raw.json` and generated `proto/agent_pb.ts`, and builds Cursor request/control messages through `@bufbuild/protobuf` descriptors instead of hand-maintained protobuf bytes. HTTP/2 itself is handled by the generated `@bastani/atomic-natives` Rust/N-API package rather than a separate local proxy.
 
@@ -17,6 +17,7 @@ The unavoidable Atomic-specific integration difference is the provider surface: 
 - Cursor's private API may change without notice.
 - HTTP/2 transport requires the bundled `@bastani/atomic-natives` Rust/N-API native client for the current platform.
 - Credentials are OAuth-only. Do not pass Cursor tokens via command-line args, environment variables, logs, or local proxy processes.
+- Cursor's private `GetUsableModels` response omits context-window and output-token limits. Atomic preserves positive limits when present and otherwise resolves them from Atomic's bundled `@earendil-works/pi-ai` model catalog by matching the Cursor model ID's family/version, falling back to a conservative 200k context / 64k output estimate for Cursor-only models without a pi-ai match. Cursor IDs or labels that explicitly say `1M` keep a 1,000,000-token context floor even when the nearest reference match advertises a smaller base window. Limit resolution never adds or removes models from the list.
 
 ## Attribution
 
