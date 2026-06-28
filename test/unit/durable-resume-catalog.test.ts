@@ -14,6 +14,7 @@ import {
   persistDurableCacheEntry,
   formatResumableWorkflowList,
   listResumableFromBackend,
+  listCompletedFromBackend,
 } from "../../packages/workflows/src/durable/resume-catalog.js";
 import { InMemoryDurableBackend } from "../../packages/workflows/src/durable/backend.js";
 import type { DurableCheckpointEntry } from "../../packages/workflows/src/durable/types.js";
@@ -153,6 +154,17 @@ describe("listResumableFromBackend", () => {
     assert.ok(ids.includes("wf-1"));
     assert.ok(ids.includes("wf-2"));
     assert.ok(!ids.includes("wf-3"));
+  });
+
+  test("lists completed workflows only through the completed-list path", () => {
+    const backend = new InMemoryDurableBackend();
+    backend.registerWorkflow({ workflowId: "wf-paused", name: "paused", inputs: {}, createdAt: Date.now(), status: "paused", completedCheckpoints: 1 });
+    backend.registerWorkflow({ workflowId: "wf-done", name: "done", inputs: {}, createdAt: Date.now(), status: "completed", completedCheckpoints: 2 });
+
+    const resumableIds = listResumableFromBackend(backend).map((e) => e.workflowId);
+    const completedIds = listCompletedFromBackend(backend).map((e) => e.workflowId);
+    assert.deepEqual(resumableIds, ["wf-paused"]);
+    assert.deepEqual(completedIds, ["wf-done"]);
   });
 });
 

@@ -177,6 +177,10 @@ export function listResumableFromBackend(backend: DurableWorkflowBackend): reado
   return backend.listResumableWorkflows();
 }
 
+export function listCompletedFromBackend(backend: DurableWorkflowBackend): readonly ResumableWorkflowEntry[] {
+  return backend.listCompletedWorkflows();
+}
+
 /**
  * Append a durable checkpoint entry to a session JSONL persistence port.
  * This caches the top-level workflow metadata so a future session can discover
@@ -206,12 +210,13 @@ export function persistDurableCacheEntry(
  */
 export function formatResumableWorkflowList(entries: readonly ResumableWorkflowEntry[]): string {
   if (entries.length === 0) return "No resumable workflows found.";
+  const hasCompleted = entries.some((e) => e.status === "completed");
   const lines = entries.map((e, i) => {
     const id = e.workflowId.slice(0, 8);
-    const status = e.status.padEnd(8);
+    const status = e.status === "completed" ? "✓ completed" : e.status.padEnd(8);
     const checkpoints = `${e.completedCheckpoints} checkpoint${e.completedCheckpoints === 1 ? "" : "s"}`;
     const label = e.label ? ` "${e.label}"` : "";
     return `  ${i + 1}. ${id}  ${status}  ${e.name}${label}  (${checkpoints})`;
   });
-  return `Resumable workflows:\n${lines.join("\n")}`;
+  return `${hasCompleted ? "Workflow resume targets" : "Resumable workflows"}:\n${lines.join("\n")}`;
 }

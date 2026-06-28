@@ -46,9 +46,11 @@ export {
 export {
   scanResumableWorkflows,
   listResumableFromBackend,
+  listCompletedFromBackend,
   persistDurableCacheEntry,
   formatResumableWorkflowList,
 } from "./resume-catalog.js";
+export { listOpenableCompletedWorkflows, openCompletedDurableWorkflow, type OpenCompletedDurableResult } from "./completed-open.js";
 export {
   createToolPrimitive,
   createCheckpointIdGenerator,

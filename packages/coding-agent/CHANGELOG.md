@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the bundled workflows `/workflow resume` picker to include successful completed durable workflows, open them for inspection without re-running completed workflow work, and retain completed file-backed durable state while hiding stale completed entries with missing checkpoint/session data ([#1532](https://github.com/bastani-inc/atomic/issues/1532)).
+
 ## [0.9.3-alpha.3] - 2026-06-27
 
 ### Changed

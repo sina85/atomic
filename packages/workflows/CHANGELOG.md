@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/workflow resume` so successful completed durable workflows remain listed with `✓ completed` rows and open the completed workflow detail/chat snapshot for inspection instead of flowing through durable replay/re-dispatch. Completed file-backed durable state is retained for openable workflows, while stale completed entries lacking backend checkpoint or referenced session data stay hidden. ([#1532](https://github.com/bastani-inc/atomic/issues/1532))
+
 ## [0.9.3-alpha.3] - 2026-06-27
 
 ### Changed

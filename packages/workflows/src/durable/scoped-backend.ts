@@ -14,8 +14,9 @@
  *
  * Only checkpoint read/write methods are scoped. Lifecycle methods
  * (`registerWorkflow`, `setWorkflowStatus`, `listResumableWorkflows`,
- * `toCacheEntry`, `getWorkflow`) are no-ops for scoped children because child
- * runs are never independently resumable — only the root workflow is resumed.
+ * `listCompletedWorkflows`, `toCacheEntry`, `getWorkflow`) are no-ops for
+ * scoped children because child runs are never independently resumable — only
+ * the root workflow is resumed.
  *
  * cross-ref: issue #1498 — child side effects under the root durable workflow.
  */
@@ -111,6 +112,10 @@ export class ScopedDurableBackend implements DurableWorkflowBackend {
   }
 
   listResumableWorkflows(): readonly ResumableWorkflowEntry[] {
+    return [];
+  }
+
+  listCompletedWorkflows(): readonly ResumableWorkflowEntry[] {
     return [];
   }
 

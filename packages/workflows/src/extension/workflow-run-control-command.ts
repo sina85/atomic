@@ -16,6 +16,8 @@ import { stripYesFlag } from "./workflow-command-utils.js";
 import { workflowPolicyFromContext } from "./workflow-policy.js";
 import { formatResumableWorkflowList } from "../durable/resume-catalog.js";
 import type { ResumableWorkflowEntry } from "../durable/types.js";
+import { getDurableBackend } from "../durable/factory.js";
+import { listOpenableCompletedWorkflows, openCompletedDurableWorkflow } from "../durable/completed-open.js";
 import {
   formatAlreadyEndedRetainedMessage,
   overlaySurfaceFromContext,
@@ -67,7 +69,34 @@ async function handleDurableResume(
   // fresh process discovers workflows persisted by a prior session.
   const prepared = await runtime.prepareDurableResumable(target);
   const durable = filterSelectorDurableEntries(runtime, prepared);
+  const backend = getDurableBackend();
+  const completed = listOpenableCompletedWorkflows(backend);
+  const completedCatalog = backend.listCompletedWorkflows();
+  const allDurable = [...durable, ...completed];
   if (target !== undefined) {
+    const durableMatches = durable.filter((entry) => entry.workflowId === target || entry.workflowId.startsWith(target));
+    const completedMatches = completed.filter((entry) => entry.workflowId === target || entry.workflowId.startsWith(target));
+    const completedCatalogMatches = completedCatalog.filter((entry) => entry.workflowId === target || entry.workflowId.startsWith(target));
+    const durableExact = durableMatches.find((entry) => entry.workflowId === target);
+    const completedExact = completedMatches.find((entry) => entry.workflowId === target);
+    const completedTarget = completedExact ?? (durableExact === undefined && durableMatches.length === 0 && completedMatches.length === 1 ? completedMatches[0] : undefined);
+    if (completedTarget !== undefined) {
+      const opened = openCompletedDurableWorkflow(completedTarget.workflowId, { durableBackend: backend, store }, completed);
+      if (opened.ok) {
+        print(opened.message);
+        if (policy.allowInputPicker) deps.overlay.open(opened.runId, overlaySurfaceFromContext(ctx));
+      } else fail(opened.message);
+      return true;
+    }
+    if (durableExact === undefined && durableMatches.length + completedMatches.length > 1) {
+      fail(`Ambiguous workflow prefix "${target}" matches: ${[...durableMatches, ...completedMatches].map((m) => `${m.name} (${m.workflowId.slice(0, 8)})`).join(", ")}`);
+      return true;
+    }
+    if (durableExact === undefined && durableMatches.length === 0 && completedCatalogMatches.length > 0) {
+      const opened = openCompletedDurableWorkflow(target, { durableBackend: backend, store }, completedCatalog);
+      fail(opened.message);
+      return true;
+    }
     // Attempt resume by id/prefix against the durable catalog.
     const result = runtime.resumeDurableWorkflow(target, { policy });
     if (result.ok) {
@@ -77,34 +106,34 @@ async function handleDurableResume(
       return true;
     }
     // Not a durable workflow either — surface the catalog for discovery.
-    if (durable.length > 0) {
-      fail(`${result.message}\n\n${formatResumableWorkflowList(durable)}`);
-    } else {
-      fail(result.message);
-    }
+    if (allDurable.length > 0) fail(`${result.message}\n\n${formatResumableWorkflowList(allDurable)}`);
+    else fail(result.message);
     return true;
   }
   // No target: show the durable selector when interactive, otherwise print.
-  if (durable.length === 0) {
-    fail("No resumable durable workflows found. Usage: /workflow resume <id> (or /resume for Atomic sessions).");
+  if (allDurable.length === 0) {
+    fail("No resumable or completed durable workflows found. Usage: /workflow resume <id> (or /resume for Atomic sessions).");
     return true;
   }
   if (!policy.allowInputPicker) {
-    print(`${formatResumableWorkflowList(durable)}\n\nResume with: /workflow resume <id>`);
+    print(`${formatResumableWorkflowList(allDurable)}\n\nResume/open with: /workflow resume <id>`);
     return true;
   }
-  const picked = await openWorkflowResumeSelector(ctx.ui, [], durable);
+  const picked = await openWorkflowResumeSelector(ctx.ui, [], durable, completed);
   if (picked.kind === "durable") {
     const result = runtime.resumeDurableWorkflow(picked.workflowId, { policy });
     if (result.ok) {
       print(result.message);
       if (policy.allowInputPicker) deps.overlay.open(result.runId, overlaySurfaceFromContext(ctx));
-    } else {
-      fail(result.message);
-    }
-  }
-  if (picked.kind !== "durable") {
-    print(`${formatResumableWorkflowList(durable)}\n\nResume with: /workflow resume <id>`);
+    } else fail(result.message);
+  } else if (picked.kind === "completed") {
+    const opened = openCompletedDurableWorkflow(picked.workflowId, { durableBackend: backend, store }, completed);
+    if (opened.ok) {
+      print(opened.message);
+      if (policy.allowInputPicker) deps.overlay.open(opened.runId, overlaySurfaceFromContext(ctx));
+    } else fail(opened.message);
+  } else {
+    print(`${formatResumableWorkflowList(allDurable)}\n\nResume/open with: /workflow resume <id>`);
   }
   return true;
 }
@@ -303,9 +332,12 @@ export async function handleRunControlCommand(
         );
         const runtime = deps.runtimeForContext(ctx);
         let durableEntries: readonly ResumableWorkflowEntry[] = [];
+        let completedEntries: readonly ResumableWorkflowEntry[] = [];
         try {
           const prepared = await runtime.prepareDurableResumable(undefined);
           durableEntries = filterSelectorDurableEntries(runtime, prepared)
+            .filter((entry) => !activeLiveIds.has(entry.workflowId));
+          completedEntries = listOpenableCompletedWorkflows(getDurableBackend())
             .filter((entry) => !activeLiveIds.has(entry.workflowId));
         } catch (error) {
           if (liveRuns.length === 0) {
@@ -314,8 +346,8 @@ export async function handleRunControlCommand(
             return true;
           }
         }
-        const picked = await openWorkflowResumeSelector(ctx.ui, liveRuns, durableEntries);
-        if (picked.kind === "durable") return await handleDurableResume(picked.workflowId, ctx, reporter, deps);
+        const picked = await openWorkflowResumeSelector(ctx.ui, liveRuns, durableEntries, completedEntries);
+        if (picked.kind === "durable" || picked.kind === "completed") return await handleDurableResume(picked.workflowId, ctx, reporter, deps);
         if (picked.kind === "live") {
           const resolved = resolveRunIdPrefix(picked.runId);
           if (resolved.kind !== "exact") {

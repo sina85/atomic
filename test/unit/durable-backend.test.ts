@@ -86,15 +86,19 @@ describe("InMemoryDurableBackend", () => {
     assert.equal(cps[1]!.checkpointId, "cp-1");
   });
 
-  test("listResumableWorkflows includes running/paused after checkpoint progress", () => {
+  test("listResumableWorkflows excludes completed; listCompletedWorkflows includes completed after checkpoint progress", () => {
     // A `running` durable handle may belong to a crashed process (cross-session
     // crash recovery), so it is resumable at the backend level alongside
     // `paused`. Same-session double-resume is filtered by the command layer.
     assert.equal(backend.listResumableWorkflows().length, 0);
+    assert.equal(backend.listCompletedWorkflows().length, 0);
     backend.recordCheckpoint(makeToolCheckpoint(WORKFLOW_ID, "progress", "h-progress", "done"));
     assert.equal(backend.listResumableWorkflows().length, 1);
     backend.setWorkflowStatus(WORKFLOW_ID, "completed");
     assert.equal(backend.listResumableWorkflows().length, 0);
+    const completed = backend.listCompletedWorkflows();
+    assert.equal(completed.length, 1);
+    assert.equal(completed[0]!.workflowId, WORKFLOW_ID);
   });
 
   test("listResumableWorkflows filters children and non-recoverable failures", () => {
@@ -240,14 +244,15 @@ describe("WorkflowFileDurableBackend", () => {
     assert.deepEqual(ids, ["wf-a", "wf-b"]);
   });
 
-  test("prunes completed workflow files", () => {
+  test("retains completed workflow files for read-only inspection", () => {
     const backend = new WorkflowFileDurableBackend(tmpDir);
     backend.registerWorkflow({ workflowId: "wf-done", name: "done", inputs: {}, createdAt: 1, status: "running" });
     backend.recordCheckpoint(makeToolCheckpoint("wf-done", "done", "hash-done", "ok", "cp-done"));
     backend.setWorkflowStatus("wf-done", "completed");
 
-    assert.equal(existsSync(durableStateFileFor(tmpDir, "wf-done")), false);
+    assert.equal(existsSync(durableStateFileFor(tmpDir, "wf-done")), true);
     assert.equal(backend.listResumableWorkflows().length, 0);
+    assert.equal(backend.listCompletedWorkflows().length, 1);
   });
 
   test("reset clears workflow files without wiping unrelated durable-root files", () => {

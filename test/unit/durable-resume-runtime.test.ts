@@ -22,6 +22,7 @@ import { createJobTracker } from "../../packages/workflows/src/runs/background/j
 import { InMemoryDurableBackend, type DurableWorkflowBackend } from "../../packages/workflows/src/durable/backend.js";
 import { setDurableBackend } from "../../packages/workflows/src/durable/factory.js";
 import { prepareRuntimeDurableResumable, resolveDurableEntry, resumeDurableWorkflow, isBackendTerminal } from "../../packages/workflows/src/durable/resume-runtime.js";
+import { listOpenableCompletedWorkflows, openCompletedDurableWorkflow } from "../../packages/workflows/src/durable/completed-open.js";
 import type { DurableCheckpointEntry, ResumableWorkflowEntry } from "../../packages/workflows/src/durable/types.js";
 
 function makeEntry(workflowId: string, name: string, status: ResumableWorkflowEntry["status"]): ResumableWorkflowEntry {
@@ -279,6 +280,31 @@ describe("resumeDurableWorkflow", () => {
     }
   });
 
+  test("opens a completed durable workflow as a read-only store snapshot without re-dispatch", () => {
+    backend.registerWorkflow({ workflowId: "wf-completed-open", name: "resumable-pipeline", inputs: { topic: "done" }, createdAt: 1, status: "completed", completedCheckpoints: 1 });
+    backend.recordCheckpoint({ kind: "stage", workflowId: "wf-completed-open", checkpointId: "stage:1", name: "summarize", replayKey: "stage:summarize:1", output: "finished", completedAt: 2 });
+
+    const catalog = listOpenableCompletedWorkflows(backend);
+    assert.equal(catalog.length, 1);
+    const opened = openCompletedDurableWorkflow("wf-completed", { durableBackend: backend, store }, catalog);
+    assert.equal(opened.ok, true);
+    assert.equal(store.runs().length, 1);
+    const run = store.runs()[0]!;
+    assert.equal(run.id, "wf-completed-open");
+    assert.equal(run.status, "completed");
+    assert.equal(run.stages[0]!.name, "summarize");
+    assert.equal(run.stages[0]!.result, "finished");
+    assert.equal(backend.getWorkflow("wf-completed-open")!.status, "completed");
+  });
+
+  test("hides stale completed workflows without checkpoint data", () => {
+    backend.registerWorkflow({ workflowId: "wf-completed-stale", name: "resumable-pipeline", inputs: { topic: "done" }, createdAt: 1, status: "completed" });
+    assert.equal(listOpenableCompletedWorkflows(backend).length, 0);
+    const opened = openCompletedDurableWorkflow("wf-completed-stale", { durableBackend: backend, store });
+    assert.equal(opened.ok, false);
+    if (!opened.ok) assert.equal(opened.reason, "not_found");
+  });
+
   test("prepareRuntimeDurableResumable hydrates fresh persistent backend before resume", async () => {
     class HydratingBackend implements DurableWorkflowBackend {
       readonly persistent = true;
@@ -294,6 +320,7 @@ describe("resumeDurableWorkflow", () => {
       getWorkflow = this.mem.getWorkflow.bind(this.mem);
       setWorkflowStatus = this.mem.setWorkflowStatus.bind(this.mem);
       listResumableWorkflows = this.mem.listResumableWorkflows.bind(this.mem);
+      listCompletedWorkflows = this.mem.listCompletedWorkflows.bind(this.mem);
       toCacheEntry = this.mem.toCacheEntry.bind(this.mem) as (workflowId: string) => DurableCheckpointEntry | undefined;
       reset = this.mem.reset.bind(this.mem);
       async hydrateResumableWorkflows(): Promise<void> {
