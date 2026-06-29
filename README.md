@@ -1,23 +1,23 @@
-<h1 align="center">Atomic — The Reliable Loop Engine For All (∀) Engineering Work</h1>
+<h1 align="center">Atomic — The Verifiable Coding Agent Runtime</h1>
 
 <p align="center"><img width="800" height="450" alt="atomic-promo" src="./assets/atomic-promo.gif" /></p>
 
 <p align="center">
-  <b>Loops for all (∀).</b><br>
-  <b> Atomic runs reliable coding-agent loops for the work software engineers do every day.</b><br>
-  <i>Describe the loop in natural language. Program it when reliability matters. Run it with stages, tools, artifacts, subagents, verification, review gates, checkpoints, and human approvals.</i>
+  <b>The verifiable runtime for coding agents.</b><br>
+  <b>Run verifiable engineering loops with control, alignment, and confidence.</b><br>
+  <i>Define the work as stages, checks, gates, tools, artifacts, and approvals. Atomic runs the process so agent work is verifiable by design.</i>
 </p>
 
 <p align="center">
-  Real engineering matters. Agents should not just sound confident, they should leave proof. Atomic fights demo hype with explicit stages, artifacts, verification, review, and approval gates.
+  Atomic enforces controlled, instruction-following agent runs you can trust: instructions are explicit, stages are bounded, checks are enforced, approvals can block progress, and every run leaves auditable artifacts.
 </p>
 
 <p align="center">
   <a href="#get-started"><b>Get started →</b></a>
   &nbsp;·&nbsp;
-  <a href="#production-grade-development-loops">Production-grade loops</a>
+  <a href="#verifiable-agent-runs">Verifiable runs</a>
   &nbsp;·&nbsp;
-  <a href="#why-atomic">When to use Atomic</a>
+  <a href="#why-atomic">Why Atomic</a>
   &nbsp;·&nbsp;
   <a href="#faq">FAQ</a>
   &nbsp;·&nbsp;
@@ -114,23 +114,38 @@ Install and set up Atomic by following https://docs.bastani.ai/llms.txt.
 
 ---
 
-## Production-grade development loops
+## Verifiable agent runs
 
-Workflows are the default path for non-trivial work and for requests that already have structure plus a verifiable objective, including implementation, build, debugging, bug-fix, migration, new-feature, scoped multi-file, or docs/code-change work where validation matters. If your prompt says things like "do X until Y", "repeat until", "iterate until", "review/fix until passing", or "run checks and fix until green", you are describing a workflow-shaped loop. Pick the smallest loop that fits the work:
+Atomic is the **runtime**. **Loops** are the repeatable agent systems you build on it. **Workflows** are how Atomic makes loops executable: stages, tools, prompts, checks, artifacts, gates, and approvals. Describe a loop in natural language or define it as a workflow in TypeScript, then Atomic runs it and makes the work verifiable.
 
-**Need codebase context? Run research.**
+Use Atomic when coding-agent work needs more than chat: implementation, debugging, migration, refactoring, release prep, QA, docs, or any task with real done criteria. If your prompt says "do X until Y", "repeat until", "iterate until", "review/fix until passing", or "run checks and fix until green", use a workflow-shaped loop:
+
+Atomic can power:
+
+- **Coding loops** — research, plan, implement, test, review, and ship.
+- **Auto-research loops** — gather context, fan out analysis, synthesize findings, and write reports.
+- **Developer assistant loops** — recurring tasks with memory, tools, checkpoints, and approval.
+- **Issue triage loops** — classify, reproduce, deduplicate, route, prioritize, and draft fixes.
+- **Content and research pipelines** — collect sources, analyze, draft, review, and publish.
+- **Internal ops agents** — repeatable processes with approvals and logs.
+- **Engineering automation** — migrations, release prep, QA, docs, incidents, and compliance.
+- **Custom agent products** — build on Atomic's runtime, SDK, tools, and workflows.
+
+Use case examples:
+
+**Focused codebase research skill.**
 
 ```text
 /skill:research-codebase how the rate limiter works in src/middleware/
 ```
 
-For broad, cross-repo questions, run deep research instead:
+**Deep codebase research workflow.**
 
 ```text
 /workflow deep-research-codebase prompt="Map every callsite of the legacy auth middleware so we can migrate to session-v2"
 ```
 
-**Want a reviewed plan first? Create a spec.**
+**Create-spec skill.**
 
 ```text
 /skill:create-spec from research/docs/2026-03-rate-limit.md
@@ -154,11 +169,9 @@ Use goal to update the CLI docs for --json, include one example, run the docs bu
 
 ## Why Atomic
 
-Coding agents are good at local edits, but bigger work fails when the process is implicit: research gets skipped, acceptance criteria drift, checks are forgotten, and "done" arrives without evidence.
+Coding agents are powerful, but trust breaks when the process is hidden. Atomic is the control plane for agent work you need to verify: it enforces scoped instructions, bounded stages, tool access, artifacts, checks, review gates, checkpoints, and human approvals.
 
-Atomic is a development interface and loop engine for that work. It separates long-running tasks from chat in an inspectable shell, bundles workflows and skills for common engineering paths, and brings research, planning, implementation, review, and validation into one coherent place.
-
-Use it for loops like:
+Use it for runs like:
 
 - Research -> spec -> implement -> test -> review for features and refactors.
 - Reproduce -> diagnose -> patch -> verify for bugs.
@@ -166,7 +179,7 @@ Use it for loops like:
 - Inspect diffs -> fix risks -> re-check for reviews.
 - Release, QA, docs, or compliance work that needs evidence and approval gates.
 
-The point is lower-touch agent work: give agents a codified path for common tasks so you can focus on product and architecture decisions instead of babysitting tools. Some loops take longer because they research, verify, and review — that is what makes the output easier to inspect, resume, and trust.
+The point is trustworthy autonomy: agents follow the runtime, you inspect the proof, and long-running work stays controllable, auditable, resumable, and reviewable.
 
 ## What developers are saying
 
@@ -176,22 +189,22 @@ The point is lower-touch agent work: give agents a codified path for common task
 
 > "I spend less time babysitting agents because Atomic gives them a codified path for common tasks, so I can focus on product and architecture decisions."
 
-## What makes a loop reliable?
+## What makes a run verifiable?
 
-Reliable means the agent does not just say it finished. It leaves evidence.
+Verifiability is runtime behavior.
 
-Atomic reliability comes from:
+Atomic defines what runs, what context each stage receives, what it must produce, which checks pass next, and where humans approve. Artifacts make that enforced process auditable.
 
-- **Stages** that make the process explicit instead of one oversized autonomous prompt.
-- **Isolated context** so research, implementation, review, and verification can each focus on the right inputs.
-- **Tools and MCP access** for shell commands, repository edits, external systems, and team-specific actions.
-- **Durable artifacts** such as research docs, specs, transcripts, logs, diffs, reviewer notes, and check output.
-- **Verification checks** that prove the requested behavior, not merely that the agent feels confident.
-- **Subagent delegation** for locator, analyzer, debugger, reviewer, simplifier, web, browser, and terminal passes.
-- **Checkpoints and resumability** for long-running work that should survive interruption and continue with state.
-- **Review gates and human approvals** before risky, costly, or externally visible steps.
+Atomic verifiability comes from:
 
-Atomic makes the loop deterministic and inspectable: step order, inputs, handoffs, checks, gates, and artifacts are explicit. The selected model still generates the text and code, so correctness comes from evidence and review rather than a promise of deterministic model output.
+- **Explicit stages** instead of one oversized autonomous prompt.
+- **Scoped instructions and context** for research, implementation, review, and verification.
+- **Tool boundaries and MCP access** for repo edits, shell commands, external systems, and team tools.
+- **Required artifacts** such as research docs, specs, transcripts, logs, diffs, reviewer notes, and check output.
+- **Verification checks, review gates, and approvals** before risky or externally visible steps.
+- **Checkpoints, resumability, and subagents** for long-running or parallel work.
+
+The selected model still generates text and code. Confidence comes from runtime-enforced structure, evidence, and review.
 
 ## Connect your engineering stack
 
@@ -205,22 +218,22 @@ Atomic works with the tools already available in your development environment. T
 | Observability and data | <img width="24" alt="Sentry" src="https://cdn.simpleicons.org/sentry/362D59/FFFFFF" /> <img width="24" alt="Datadog" src="https://cdn.simpleicons.org/datadog/632CA6/FFFFFF" /> <img width="24" alt="PostgreSQL" src="https://cdn.jsdelivr.net/gh/devicons/devicon@v2.16.0/icons/postgresql/postgresql-original.svg" /> | CLIs, MCP servers, APIs, or custom tools |
 | UI validation | <img width="24" alt="Playwright" src="https://cdn.jsdelivr.net/gh/devicons/devicon@v2.16.0/icons/playwright/playwright-original.svg" /> <img width="24" alt="Chrome" src="https://cdn.jsdelivr.net/gh/devicons/devicon@v2.16.0/icons/chrome/chrome-original.svg" /> | Built-in skills and browser automation |
 
-You bring the credentials and permissions; Atomic brings the runtime that lets workflows use them in staged, inspectable loops.
+You bring the credentials and permissions; Atomic brings the runtime that lets workflows use them in staged, inspectable, verifiable runs.
 
 ---
 
 ## What you get
 
-Atomic ships three top-level building blocks for executable engineering loops: **workflows**, **skills**, and **specialized subagents**.
+Atomic ships three top-level building blocks for verifiable agent runs: **workflows**, **skills**, and **specialized subagents**.
 
 ### 1. Workflows
 
-Workflows define the executable loop: inputs, stages, branches, parallelism, retries, checks, artifacts, checkpoints, and human review gates. Each stage runs an Atomic coding-agent session with the model provider you configured. Use workflows by default for non-trivial tasks, structured requests, and anything with explicit done criteria or a repeat-until/review-until/fix-until stop condition, including implementation, build, debug, bug-fix, migration, new-feature, scoped multi-file, and validation-heavy docs/code work.
+Workflows define the executable process: inputs, stages, branches, parallelism, retries, checks, artifacts, checkpoints, and human review gates. Each stage runs an Atomic coding-agent session with the model provider you configured. Use workflows by default for non-trivial tasks, structured requests, and anything with explicit done criteria or a repeat-until/review-until/fix-until stop condition, including implementation, build, debug, bug-fix, migration, new-feature, scoped multi-file, and validation-heavy docs/code work.
 
 | Workflow                 | What it does                                                                                                                                                                                                                                                                                                                                                                | Example input                                                                                                                                                                                 |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `goal`                   | Focused workflow for small-to-medium changes when you can name the scope, exact desired outcome, and validation in the objective. It runs bounded worker turns, stores receipts in a goal ledger, requires reviewer quorum before completion, stops as `complete`, `blocked`, or `needs_human`, and only prepares a pull-request report when `create_pr=true` after approval.             | `/workflow goal objective="Update the CLI docs for --json, include one example, run the docs build, and finish when it passes"`                                                               |
-| `ralph`                  | Heavier prompt-engineering → research → orchestrate → review loop for larger migrations, broad refactors, and multi-package changes. It writes research artifacts under `research/`, delegates implementation through sub-agents from those findings, iterates on reviewer feedback with follow-up research, and only prepares a pull-request report when `create_pr=true`. | `/workflow ralph prompt="Port the rate-limit rollout to the new API gateway" create_pr=true`                                                                                                  |
+| `ralph`                  | Heavier prompt-engineering → research → orchestrate → review workflow for larger migrations, broad refactors, and multi-package changes. It writes research artifacts under `research/`, delegates implementation through sub-agents from those findings, iterates on reviewer feedback with follow-up research, and only prepares a pull-request report when `create_pr=true`. | `/workflow ralph prompt="Port the rate-limit rollout to the new API gateway" create_pr=true`                                                                                                  |
 | `deep-research-codebase` | Repo-wide research for broad, cross-cutting questions. It scouts the codebase, runs parallel specialist waves, aggregates findings, and writes durable research artifacts under `research/`. Prefer `/skill:research-codebase` for a focused subsystem or question.                                                                                                         | `/workflow deep-research-codebase prompt="How do payment retries work end to end?"`                                                                                                           |
 | `open-claude-design`     | End-to-end design generation: interviews for output type/references, discovers your design system, generates from a prompt, refines with feedback, and exports a handoff directory.                                                                                                                                                                                        | `/workflow open-claude-design prompt="Team activity feed prototype using ./mocks/feed.png as a reference"`                                                                                    |
 | _author your own_        | Anything outside the built-ins: issue-to-PR, review-to-merge, migration, triage, release, compliance, or team-specific review pipelines. Describe the process in natural language and Atomic can scaffold a typed `workflow({...})` file with CLI inputs.                                                                                                                   | _"Create a reusable workflow that takes an issue, writes a plan, creates a branch, runs implementation and review stages, runs tests and lint, then stops for approval before final output."_ |
@@ -280,52 +293,43 @@ The docs are open source in this repository under [`packages/coding-agent/docs`]
 
 ### Atomic is
 
-- The loop engine for all engineering work: a runtime for reliable coding-agent loops.
-- A way to automate repeatable developer processes: research, specs, implementation, checks, review, release prep, incident response, docs, QA, and handoff.
-- An open-source coding-agent CLI and TypeScript workflow SDK.
-- A powerful, extensible Pi-based harness with first-party workflow, subagent, MCP, web-access, and intercom extensions bundled in.
-- A model-agnostic way to connect providers, tools, approvals, and artifacts into explicit engineering loops instead of a single fragile agent session.
+- The verifiable coding agent runtime.
+- A runtime for building and running agent loops in natural language or TypeScript.
+- A control plane for loops that prompt agents, run tools, enforce checks, create artifacts, and stop for approval.
+- An open-source terminal runtime and TypeScript workflow SDK.
+- A model-agnostic harness for providers, tools, MCP, subagents, artifacts, checks, and review gates.
 
 ### Atomic is not
 
+- Just another coding assistant.
 - A wrapper around Claude Code, Codex, Cursor, OpenCode, or Copilot CLI.
-- A replacement for those tools when you want a quick interactive coding session.
-- A generic agent framework where you build agents from primitives.
+- A generic agent framework where you assemble every primitive from scratch.
 - A promise that model output is deterministic.
-- A markdown loop library or checklist that the model may or may not follow.
+- A checklist that the model may or may not follow.
 
 ---
 
 ## What happens during a run?
 
-An Atomic loop is an explicit execution graph around model-backed agent sessions:
+An Atomic run is one execution of a loop on the Atomic runtime:
 
 ```text
-issue or goal -> research -> spec or plan -> branch or workspace -> agent stages -> artifacts -> checks -> review gate -> final output
+issue or goal -> research -> plan -> agent stages -> artifacts -> checks -> review gate -> final output
 ```
 
-Each stage can:
+Each stage can prompt an agent, run tools, call MCP servers, save artifacts, pass selected output forward, branch, retry, run in parallel, or pause for approval.
 
-- run an Atomic coding-agent session with scoped context,
-- call tools and MCP servers,
-- run shell commands,
-- save artifacts such as research, specs, transcripts, logs, diffs, and check output,
-- pass selected output to later stages,
-- run stages in parallel,
-- retry or branch based on results,
-- pause for human approval before continuing.
-
-Atomic makes the **loop structure** deterministic and inspectable: stage order, inputs, handoffs, checks, gates, and artifacts are explicit. The model's exact text and code output is still generated by the selected model and can vary.
+The loop structure is deterministic and inspectable. Model output can vary; the stage order, inputs, handoffs, checks, gates, and artifacts are explicit.
 
 ---
 
-## Built on Pi, extended for loops
+## Built on Pi, extended for verifiable runs
 
 Atomic is the Atomic-branded fork of Pi's coding-agent CLI. The published `@bastani/atomic` package bundles first-party workflow, subagent, MCP, web-access, and intercom extensions.
 
 That means Atomic is itself the coding-agent runtime: the selected model gets file editing, shell, write/edit tools, MCP, skills, workflows, and subagent capabilities inside Atomic. Atomic connects to model providers directly through API keys or supported subscription login.
 
-Pi gives Atomic a mature, extensible harness. Atomic adds the loop engine for coding-agent work: workflow files, review gates, artifacts, resumable runs, checkpoints, and multi-stage execution.
+Pi gives Atomic a mature, extensible harness. Atomic adds the runtime layer for verifiable agent work: workflow files, review gates, auditable artifacts, resumable runs, checkpoints, and multi-stage execution.
 
 ---
 
@@ -333,24 +337,24 @@ Pi gives Atomic a mature, extensible harness. Atomic adds the loop engine for co
 
 ### Is Atomic another coding agent?
 
-Atomic is a coding-agent CLI, but its main product idea is the loop engine around the agent session. It connects to model providers and gives the selected model tools for repo work, then adds explicit process: research, specs, stages, checks, artifacts, checkpoints, subagents, review gates, and human approvals.
+Atomic is a coding-agent CLI, but its main product idea is the verifiable runtime around the agent session: scoped instructions, stages, checks, artifacts, checkpoints, subagents, review gates, and human approvals.
 
 ### Why not just use Claude Code, Codex, Cursor, or OpenCode?
 
-Use interactive coding tools when you want a fast back-and-forth session. Use Atomic when the work needs a repeatable engineering loop you can inspect: repo research, spec creation, implementation stages, tests, lint, reviewer passes, artifacts, and human approval before final handoff.
+Use interactive coding tools for fast back-and-forth. Use Atomic when work needs a verifiable run you can control and inspect: research, specs, implementation stages, tests, lint, reviewer passes, artifacts, and approval before handoff.
 
-Atomic is not running those tools under the hood. It is a Pi-based coding-agent harness and loop runtime that connects to model providers directly.
+Atomic is not running those tools under the hood. It is a Pi-based coding-agent harness and verifiable runtime that connects to model providers directly.
 
 ### How is Atomic different from Claude Code Dynamic Workflows?
 
-Claude Code Dynamic Workflows and Atomic are trying to solve a similar class of problem: important software engineering work is too large for one agent pass, so the system should split the job into stages, run agents in parallel, verify the result, and keep enough state to finish long-running work.
+Claude Code Dynamic Workflows and Atomic both split larger work into stages, run agents in parallel, verify results, and preserve enough state to finish long-running tasks.
 
-Atomic's category is broader and more explicit: it is the loop engine for engineering work. The difference is where control lives and how much of the loop you can inspect, version, extend, and connect to your stack.
+Atomic's category is broader and more explicit: the verifiable coding agent runtime. The difference is where control lives and how much of the run you can inspect, version, extend, verify, and connect to your stack.
 
 | Dimension                  | Atomic                                                                                                                                                                                                                                                                  | Claude Code Dynamic Workflows                                                                                                                                      |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Core idea                  | Open-source, repo-native loop engine for coding agents. You can run built-ins, tell the coding agent to use a workflow for a task, describe new loops in natural language for Atomic to scaffold dynamically, or version them as explicit TypeScript files. | Claude dynamically creates orchestration scripts for a task and fans work out to many parallel Claude subagents.                                                   |
-| Best fit                   | Teams that want repeatable software engineering loops they can inspect, version, extend, connect to tools, and run across providers.                                                                                                                                                  | Claude Code users who want Claude to decide when a task needs a larger dynamic workflow and orchestrate it automatically.                                          |
+| Core idea                  | Open-source, repo-native runtime for verifiable coding-agent runs. You can run built-ins, tell the coding agent to use a workflow for a task, describe new runs in natural language for Atomic to scaffold dynamically, or version them as explicit TypeScript files. | Claude dynamically creates orchestration scripts for a task and fans work out to many parallel Claude subagents.                                                   |
+| Best fit                   | Teams that want repeatable software engineering runs they can control, inspect, version, extend, connect to tools, and verify.                                                                                                                                                  | Claude Code users who want Claude to decide when a task needs a larger dynamic workflow and orchestrate it automatically.                                          |
 | Workflow control           | The process is explicit: stages, inputs, handoffs, retries, artifacts, model choices, checkpoints, and human gates are part of the workflow definition.                                                                                                                              | The process is generated dynamically by Claude for the current task, with confirmation before the first workflow run.                                              |
 | Models                     | Model-agnostic. Atomic connects directly to supported API-key and subscription providers, and workflows can use model fallback chains.                                                                                                                                  | Claude-first. Availability is tied to Claude Code, Claude plans, and Anthropic-supported API/cloud channels.                                                       |
 | Extensibility              | Built on Pi extensions: add tools, TUI, MCP, web access, intercom, skills, prompt templates, themes, custom providers, and packaged workflows.                                                                                                                          | Optimized for Claude Code's built-in dynamic orchestration experience rather than an open extension SDK you own in-repo.                                           |
@@ -359,19 +363,19 @@ Atomic's category is broader and more explicit: it is the loop engine for engine
 
 ### Why not markdown checklists or CLAUDE.md?
 
-Markdown instructions help set context, but the model still has to remember and follow them. Prompt libraries tell an agent what loop to follow; Atomic runs the loop. It turns the process into executable stages: which stage runs, what context it receives, what artifact it must produce, what checks run next, and where a human must approve.
+Markdown instructions help set context, but the model still has to remember and follow them. Atomic runs the process: which stage runs, what context it receives, what artifact it must produce, what checks run next, and where a human approves.
 
 ### Is Atomic deterministic?
 
-Atomic makes the loop structure deterministic: stage order, inputs, handoffs, checks, gates, and artifacts are explicit. The model's output is not deterministic; it is generated by the selected model during each agent session.
+Atomic makes the run structure deterministic: stage order, inputs, handoffs, checks, gates, and artifacts are explicit. Model output is generated by the selected model and can vary.
 
 ### Why not LangGraph or a generic agent framework?
 
-Atomic is repo-native and software-engineering-native. It is designed around engineering loops: issues, research docs, specs, branches, diffs, tests, lint, artifacts, reviewers, workflow files, approvals, and PR-ready handoffs — not around building a generic agent application from primitives.
+Atomic is repo-native and software-engineering-native. It is designed around verifiable engineering runs: issues, research docs, specs, branches, diffs, tests, lint, artifacts, reviewers, workflow files, approvals, and PR-ready handoffs — not around building a generic agent application from primitives.
 
 ### Where do artifacts live?
 
-Research lives in `research/`, specs live in `specs/`, and workflow runs can persist plans, logs, transcripts, reviewer notes, check output, and final summaries. The goal is to make every important agent decision inspectable after the run.
+Research lives in `research/`, specs live in `specs/`, and workflow runs can persist plans, logs, transcripts, reviewer notes, check output, and final summaries. These artifacts make each run auditable after Atomic has enforced the verifiable process at runtime.
 
 ---
 
