@@ -411,6 +411,14 @@ export interface WorkflowRunContext<
    * cross-ref: issue #1498 — DBOS-backed cross-session resumability.
    */
   tool: WorkflowToolPrimitive;
+  /**
+   * Stage-scoped monitor backed by the Pi/Atomic intercom package. Starts
+   * automatically when a monitored stage becomes active and stops when every
+   * monitored stage reaches a terminal state. Pure observer — not durable.
+   *
+   * cross-ref: issue #1497.
+   */
+  monitor: WorkflowMonitorPrimitive;
 }
 
 /**
@@ -437,6 +445,15 @@ export interface WorkflowToolOptions {
   /** Backoff multiplier. Default 2. */
   readonly backoffRate?: number;
 }
+
+// ---------------------------------------------------------------------------
+// ctx.monitor primitive (stage-scoped intercom monitoring)
+// ---------------------------------------------------------------------------
+
+export type WorkflowMonitorPrimitive = AuthoringContract.WorkflowMonitorPrimitive;
+export type WorkflowMonitorOptions = AuthoringContract.WorkflowMonitorOptions;
+export type WorkflowMonitorHandle = AuthoringContract.WorkflowMonitorHandle;
+export type WorkflowMonitorLifecycleInfo = AuthoringContract.WorkflowMonitorLifecycleInfo;
 
 // ---------------------------------------------------------------------------
 // WorkflowRuntimeConfig — resolved runtime tunables injected at composition root

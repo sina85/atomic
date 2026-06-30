@@ -253,6 +253,7 @@ export function makeMockCtx<TInputs extends WorkflowInputValues>(
         tool: async () => {
             throw new Error("ctx.tool should not be used by builtin workflow mocks");
         },
+        monitor: () => ({ stages: [] }),
     };
 
     return ctx;

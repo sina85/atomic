@@ -113,6 +113,17 @@ export interface WorkflowRunContext<
    * cross-ref: issue #1498 — DBOS-backed cross-session resumability.
    */
   tool: WorkflowToolPrimitive;
+  /**
+   * Stage-scoped monitor backed by the Pi/Atomic intercom package. A monitor
+   * starts automatically when a monitored stage becomes active and stops
+   * automatically when every monitored stage reaches a terminal state
+   * (completed/failed/skipped) or is skipped via ctx.exit / parallel fail-fast.
+   * Monitors are pure observers: they are NOT durable checkpoints and never
+   * start on durable-replayed stages.
+   *
+   * cross-ref: issue #1497.
+   */
+  monitor: WorkflowMonitorPrimitive;
 }
 
 /**
@@ -135,6 +146,50 @@ export interface WorkflowToolOptions {
   readonly backoffRate?: number;
 }
 
+/**
+ * `ctx.monitor` primitive signature. Registers a stage-scoped monitor whose
+ * liveness is owned by the executor — authors never call start/stop manually.
+ *
+ * cross-ref: issue #1497.
+ */
+export interface WorkflowMonitorPrimitive {
+  /**
+   * Register a monitor over one stage name (single-stage) or a set of stage
+   * names (multi-stage aggregate liveness). Returns a handle whose lifecycle
+   * is owned by the executor.
+   *
+   * @param stages   One stage name, or a readonly array of stage names to
+   *                 monitor as an aggregate set.
+   * @param options  Monitor configuration (intercom channel, callbacks).
+   */
+  (stages: string | readonly string[], options?: WorkflowMonitorOptions): WorkflowMonitorHandle;
+}
+
+/** Options for `ctx.monitor`. */
+export interface WorkflowMonitorOptions {
+  /** Free-form intercom channel/topic the monitor emits on while live. */
+  readonly channel?: string;
+  /** Called once when the monitored stage set transitions from inactive to active. */
+  readonly onStart?: (info: WorkflowMonitorLifecycleInfo) => void | Promise<void>;
+  /** Called once when the monitored stage set transitions from active back to inactive. */
+  readonly onStop?: (info: WorkflowMonitorLifecycleInfo & { readonly status: "completed" | "failed" | "skipped" }) => void | Promise<void>;
+  /** Optional human-readable label forwarded to intercom messages. */
+  readonly label?: string;
+}
+
+/** Handle returned by `ctx.monitor(...)`. */
+export interface WorkflowMonitorHandle {
+  /** Stage names this monitor is observing. */
+  readonly stages: readonly string[];
+}
+
+/** Lifecycle info passed to `ctx.monitor` onStart/onStop callbacks. */
+export interface WorkflowMonitorLifecycleInfo {
+  readonly runId: string;
+  readonly stageId?: string;
+  readonly stageName?: string;
+  readonly channel: string;
+}
 export type WorkflowRunFn<
   TInputs extends WorkflowInputValues = WorkflowInputValues,
   TOutputs extends WorkflowOutputValues = WorkflowOutputValues,

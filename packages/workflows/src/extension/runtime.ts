@@ -193,7 +193,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
       ...(defaultSessionDir !== undefined ? { defaultSessionDir } : {}),
       ...(policy !== undefined ? { executionMode: policy.mode } : {}),
       registry,
-      cwd: runtimeCwd,
+      cwd: runtimeCwd, monitorIntercom: intercom,
     };
   }
   function explicitIntercomDelivery(args: WorkflowToolArgs): WorkflowIntercomDelivery | undefined {

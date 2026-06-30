@@ -1,6 +1,6 @@
 import type { RunSnapshot } from "../shared/store-types.js";
 import type { Store } from "../shared/store.js";
-import type { StageOptions } from "../shared/types.js";
+import type { StageOptions, WorkflowMonitorPrimitive } from "../shared/types.js";
 import type { ConcurrencyLimiter } from "../runs/shared/concurrency.js";
 import type { ParallelFailFastScope } from "../runs/foreground/executor-types.js";
 import type { WorkflowExitManager } from "../runs/foreground/executor-exit-manager.js";
@@ -10,6 +10,7 @@ import type { StageControlRegistry } from "../runs/foreground/stage-control-regi
 import type { StageAdapters } from "../runs/foreground/stage-runner.js";
 import type { LiveStageRuntime, StageMcpScope, StageContextWithMeta } from "../runs/foreground/executor-stage-types.js";
 import { createWorkflowStageFactory } from "../runs/foreground/executor-stage-factory.js";
+import { createWorkflowMonitorPrimitive, type MonitorLifecyclePort, type WorkflowMonitorIntercomPort } from "./primitives/monitor.js";
 import { createWorkflowBoundaryFactory, type WorkflowBoundaryStage } from "../runs/foreground/executor-child-boundary.js";
 import type { GraphFrontierTracker } from "./graph-inference.js";
 import type { EngineChildRunOptions, EngineStageRuntimeOptions, EngineWorkflowBoundaryOptions } from "./options.js";
@@ -34,6 +35,7 @@ export interface EngineRuntimeInput {
   readonly stageRegistry: StageControlRegistry;
   readonly exit: WorkflowExitManager;
   readonly classifyExecutorFailure: LiveStageRuntime["classifyExecutorFailure"];
+  readonly monitorIntercom?: WorkflowMonitorIntercomPort;
 }
 
 export interface EngineSpawnAgentStageOptions {
@@ -73,6 +75,7 @@ export class EngineRuntime {
   readonly exit: WorkflowExitManager;
   readonly inputRuntimeDefaults: Partial<StageOptions>;
   readonly workflowInvocationCwd: string;
+  readonly monitor: WorkflowMonitorPrimitive;
 
   private readonly spawnAgentStage: (
     name: string,
@@ -80,6 +83,7 @@ export class EngineRuntime {
     stageFailFastScope?: ParallelFailFastScope,
   ) => StageContextWithMeta;
   private readonly spawnWorkflowBoundary: (name: string, replayKey: string) => WorkflowBoundaryStage;
+  private readonly monitorLifecycle: MonitorLifecyclePort;
 
   constructor(input: EngineRuntimeInput) {
     this.runId = input.runId;
@@ -93,6 +97,10 @@ export class EngineRuntime {
     this.exit = input.exit;
     this.inputRuntimeDefaults = input.inputRuntimeDefaults;
     this.workflowInvocationCwd = input.workflowInvocationCwd;
+
+    const monitorRuntime = createWorkflowMonitorPrimitive({ runId: input.runId, intercom: input.monitorIntercom });
+    this.monitor = monitorRuntime.monitor;
+    this.monitorLifecycle = monitorRuntime.lifecycle;
 
     // The runtime only wires host-injected ports; stage sessions are still
     // created lazily by the stage runner through input.adapters.agentSession.
@@ -112,6 +120,7 @@ export class EngineRuntime {
       exit: input.exit,
       classifyExecutorFailure: input.classifyExecutorFailure,
       createMcpScope: (stageId, options) => this.createMcpScope(stageId, options),
+      monitorLifecycle: this.monitorLifecycle,
     });
     this.spawnWorkflowBoundary = createWorkflowBoundaryFactory({
       runId: input.runId,

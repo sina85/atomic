@@ -971,6 +971,47 @@ export default workflow({
 });
 ```
 
+### `ctx.monitor` — stage-scoped intercom monitoring
+
+The `ctx.monitor(stages, options?)` primitive registers a stage-scoped monitor backed by the Pi/Atomic intercom package. A monitor starts automatically when a monitored stage becomes active (transitions to `running`) and stops automatically when every monitored stage reaches a terminal state — completed, failed, skipped, or exited early via `ctx.exit()` / parallel fail-fast. Authors never call start/stop manually: monitor lifecycle is driven entirely by the deterministic stage-lifecycle hooks owned by the executor.
+
+```ts
+export default workflow({
+  name: "monitored-pipeline",
+  inputs: { topic: Type.String() },
+  run: async (ctx) => {
+    // Monitor a single stage — fires onStart when "research" starts running,
+    // onStop when it completes/fails/is skipped.
+    ctx.monitor("research", {
+      channel: "research-presence",
+      onStart: (info) => { console.log(`monitor started: ${info.stageName}`); },
+      onStop: (info) => { console.log(`monitor stopped (${info.status}): ${info.stageName}`); },
+    });
+
+    // Monitor an aggregate set of stages — starts when the first monitored
+    // stage becomes active, stays live while any monitored stage is running,
+    // stops when the last monitored stage settles.
+    ctx.monitor(["draft", "review", "publish"], {
+      label: "content-pipeline",
+      onStart: () => { /* emit intercom presence */ },
+      onStop: (info) => { /* tear down intercom presence */ },
+    });
+
+    const research = await ctx.task("research", { prompt: `Research: ${ctx.inputs.topic}` });
+    return { summary: research.text };
+  },
+});
+```
+
+**Single-stage monitoring.** `ctx.monitor("stageName", { onStart, onStop })` fires `onStart` once when the named stage transitions to `running` and `onStop` once with the terminal `status` (`"completed"`, `"failed"`, or `"skipped"`) when the stage settles. The monitor is armed at registration time and fires when the stage later becomes active, so you can register a monitor before calling `ctx.stage(...)`.
+
+**Multi-stage aggregate monitoring.** `ctx.monitor(["a", "b", "c"], { onStart, onStop })` uses reference-counted aggregate liveness: it starts when the first monitored stage becomes active, remains live while any monitored stage is still running (including overlapping parallel stages), and stops once none of the monitored stages are active. For sequential stages that do not overlap, this produces one start/stop pair per active window.
+
+**Automatic teardown on all terminal paths.** Monitor stop fires through the single terminal owner (`finalizeStageSnapshot`), so it is guaranteed on success, failure, `ctx.exit()`, parallel fail-fast, and external kill/abort. You do not need to add cleanup code in `finally` blocks or error handlers.
+
+**No-start on durable replay.** Monitors are pure observers, not durable checkpoints. Durable-replayed stages (cached/replay contexts) bypass the live stage-lifecycle paths that drive monitor hooks, so monitors never start for replayed stages on resume.
+
+**Intercom transport.** When a `WorkflowResultIntercomPort` is configured (via the extension runtime's `intercom` option), each monitor emits `workflow:monitor-intercom` events with `{ kind: "start" | "stop", runId, channel, stageId?, stageName?, status?, label?, createdAt }`. The `channel` defaults to `workflow-monitor:<stages>` and can be overridden via `options.channel`.
 ### `/workflow resume` — cross-session resume selector
 
 The `/workflow resume` command mirrors `/resume` ergonomics and now uses the same Atomic session-selector tree chrome as `/resume` for its interactive picker. With no id, interactive sessions show one `/resume`-style searchable/threaded selector that lists both live/paused runs and compatible cross-session durable workflows together, so the user can choose from all resumable workflows in one view. The selector uses async DBOS hydration (`prepareDurableResumable`) so cross-session durable entries discovered from Postgres are included even when live runs exist. Dismissing the selector returns to chat without opening a second picker, and selecting a failed-but-resumable live run uses the normal continuation path rather than opening a read-only snapshot. On a successful durable resume, the overlay connects to the resumed run automatically (matching live resume behavior). Headless sessions print the filtered durable catalog and durable resume dispatch preserves the same non-interactive tool/UI restrictions as normal workflow dispatch. With a target id, Atomic first checks live runs in the current session; when the target id is not a live run, it falls back to the cross-session durable resume catalog and resumes by top-level workflow id, then opens the overlay. Resume re-dispatches the workflow with its cached inputs and the **original workflow id**, so completed `ctx.tool`, `ctx.ui`, stage/task/chain/parallel items, and child workflow boundaries return cached results instead of re-executing — DBOS-style replay without Postgres. Replayed stages preserve graph parent/frontier lineage so subsequent stages connect correctly. Empty string stage outputs are preserved distinctly from undefined/no-result during checkpointing. Stale session-cache entries with no matching durable backend handle are hidden from the selector because they came from older non-checkpointed workflow engines and cannot resume usefully. Durable `running`/`failed`/`blocked` rows whose workflow definition is no longer registered are also hidden from no-arg discovery, which keeps old test or pre-engine rows out of the picker without changing targeted `/workflow resume <id>` diagnostics. Stale cache entries for workflows the durable backend knows are terminal (completed/cancelled/non-resumable) are also suppressed, so terminal workflows cannot be resurrected from old JSONL cache metadata.

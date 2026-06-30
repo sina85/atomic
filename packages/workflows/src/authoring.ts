@@ -103,6 +103,10 @@ export type {
   WorkflowUIAdapter,
   WorkflowUIContext,
   WorkflowWorktreeInputBinding,
+  WorkflowMonitorPrimitive,
+  WorkflowMonitorOptions,
+  WorkflowMonitorHandle,
+  WorkflowMonitorLifecycleInfo,
 } from "./shared/authoring-contract.js";
 
 import type * as AuthoringContract from "./shared/authoring-contract.js";

@@ -279,7 +279,7 @@ export async function run<
     workflowInvocationCwd,
     stageRegistry,
     exit,
-    classifyExecutorFailure,
+    classifyExecutorFailure, monitorIntercom: opts.monitorIntercom,
   });
   const workflowBoundaryReplayCounts = new Map<string, number>();
   const nextWorkflowBoundaryReplayKey = (name: string): string => {
@@ -396,7 +396,7 @@ export async function run<
     chain: createChainPrimitive({ runtime, task: durableTask }),
     parallel: createParallelPrimitive({ runtime, task: durableTask }),
     workflow: durableWorkflow,
-    tool,
+    tool, monitor: runtime.monitor,
   };
 
   try {

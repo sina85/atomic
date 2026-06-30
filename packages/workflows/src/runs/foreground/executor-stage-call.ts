@@ -30,6 +30,7 @@ export function createTrackedStageCaller(input: {
   readonly adapters: StageAdapters;
   readonly hasContinuation: boolean;
   readonly hasScopedParents: boolean;
+  readonly onStageRunning?: () => void;
 }): TrackedStageCaller {
   const { runtime } = input;
   const readinessGateEnabled = runtime.opts.confirmStageReadiness !== undefined || runtime.opts.usePromptNodesForUi === true;
@@ -129,6 +130,9 @@ export function createTrackedStageCaller(input: {
       runtime.applyModelFallbackMeta(runtime.innerCtx.__modelFallbackMeta());
       runtime.activeStore.recordStageStart(runtime.runId, runtime.stageSnapshot);
       runtime.appendStageStartOnce();
+      // Notify the monitor lifecycle controller that the stage became active.
+      // cross-ref: issue #1497.
+      input.onStageRunning?.();
     } else {
       runtime.applyModelFallbackMeta(runtime.innerCtx.__modelFallbackMeta());
     }

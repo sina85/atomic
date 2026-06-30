@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `ctx.monitor(stages, options?)` as a first-class workflow/stage context primitive backed by the Pi/Atomic intercom package. A monitor starts automatically when a monitored stage transitions to running and stops automatically when every monitored stage reaches a terminal state (completed/failed/skipped), including teardown on `ctx.exit()`, parallel fail-fast, and external kill/abort. Multi-stage monitors use reference-counted aggregate liveness: start on the first monitored stage becoming active, remain live while any monitored stage is still running, stop when none are active. Monitors are pure observers — not durable checkpoints — and never start on durable-replayed stages. When a `WorkflowResultIntercomPort` is configured, monitors emit `workflow:monitor-intercom` events with start/stop lifecycle payloads. ([#1497](https://github.com/bastani-inc/atomic/issues/1497))
+
 ## [0.9.4-alpha.3] - 2026-06-30
 
 ### Fixed

@@ -1,4 +1,5 @@
 import type * as AuthoringContract from "../../shared/authoring-contract.js";
+import type { WorkflowMonitorIntercomPort } from "../../engine/primitives/monitor.js";
 import type {
   WorkflowExecutionMode,
   WorkflowInputValues,
@@ -86,6 +87,8 @@ export interface RunOpts extends Omit<AuthoringContract.RunOpts, "adapters" | "s
    * cross-ref: issue #1498.
    */
   durableScope?: import("../../durable/scoped-backend.js").DurableScope;
+  /** Optional intercom port backing ctx.monitor lifecycle emissions. cross-ref: issue #1497. */
+  monitorIntercom?: WorkflowMonitorIntercomPort;
   /** Internal parent linkage for nested ctx.workflow(...) runs. */
   parentRun?: {
     readonly runId: string;

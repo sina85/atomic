@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Documented the new `ctx.monitor(stages, options?)` workflow primitive for stage-scoped intercom monitoring with automatic start/stop driven by deterministic stage-lifecycle hooks. ([#1497](https://github.com/bastani-inc/atomic/issues/1497))
+
 ## [0.9.4-alpha.3] - 2026-06-30
 
 ### Fixed

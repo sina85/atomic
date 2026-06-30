@@ -23,6 +23,7 @@ import { createReplayStageContext } from "./executor-stage-replay.js";
 import type { LiveStageMutableState, LiveStageRuntime, StageContextWithMeta, StageMcpScope } from "./executor-stage-types.js";
 import { createStageControlHandle } from "./executor-stage-control.js";
 import { createTrackedStageCaller } from "./executor-stage-call.js";
+import type { MonitorLifecyclePort } from "../../engine/primitives/monitor.js";
 import { createStageContext } from "./executor-stage-context.js";
 import { stageOptionsWithGitWorktree, stageOptionsWithInputDefaults } from "./executor-direct-helpers.js";
 
@@ -42,6 +43,7 @@ export function createWorkflowStageFactory(input: {
   readonly exit: WorkflowExitManager;
   readonly classifyExecutorFailure: (error: unknown) => WorkflowFailure;
   readonly createMcpScope: (stageId: string, options: StageOptions | undefined) => StageMcpScope;
+  readonly monitorLifecycle?: MonitorLifecyclePort;
 }): (name: string, options?: StageOptions, stageFailFastScope?: ParallelFailFastScope) => StageContextWithMeta {
   return (name: string, options?: StageOptions, stageFailFastScope?: ParallelFailFastScope): StageContextWithMeta => {
     input.exit.throwIfWorkflowExitSelected();
@@ -229,6 +231,16 @@ export function createWorkflowStageFactory(input: {
 
     const finalizeStageSnapshot = async (): Promise<boolean> => {
       if (state.stageFinalized) return false;
+      // Notify the monitor lifecycle controller of terminal status. This is
+      // the single terminal owner — the stageFinalized guard above ensures
+      // this fires exactly once across success/failure/skip/ctx.exit/fail-fast.
+      // cross-ref: issue #1497.
+      if (input.monitorLifecycle !== undefined) {
+        const monitorStatus = stageSnapshot.status === "completed" ? "completed"
+          : stageSnapshot.status === "skipped" ? "skipped"
+          : "failed";
+        input.monitorLifecycle.onStageTerminal(input.runId, stageId, name, monitorStatus);
+      }
       if (stageSnapshot.endedAt !== undefined && isTerminalStage(stageSnapshot)) {
         state.stageFinalized = true;
         runtime.unregisterWorkflowExitCleanup();
@@ -346,7 +358,6 @@ export function createWorkflowStageFactory(input: {
         await releaseLiveHandle().catch(() => {});
       },
     });
-
     const runTrackedStageCall = createTrackedStageCaller({
       runtime,
       limiter: input.limiter,
@@ -354,6 +365,9 @@ export function createWorkflowStageFactory(input: {
       adapters: input.adapters,
       hasContinuation: input.opts.continuation !== undefined,
       hasScopedParents: stageFailFastScope?.parentIds !== undefined,
+      onStageRunning: input.monitorLifecycle !== undefined
+        ? (): void => input.monitorLifecycle!.onStageRunning(input.runId, stageId, name)
+        : undefined,
     });
     return createStageContext({ runtime, runTrackedStageCall });
   };
