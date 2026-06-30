@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.4-alpha.1] - 2026-06-29
+
 ### Changed
 
 - Restored upstream Pi's provider retry default by leaving `retry.provider.maxRetries` unset/zero unless users configure it explicitly, so Atomic's agent-level retry observes provider transport failures directly instead of the SDK retrying them first.
