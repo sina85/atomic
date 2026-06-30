@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.4-alpha.3] - 2026-06-30
+
 ### Fixed
 
 - Classified generic provider `Connection error.` / `fetch failed` transport outages as explicit workflow transport errors so stage fallback metadata can distinguish them from ordinary provider/model outages while preserving the normal next-model fallback order.
