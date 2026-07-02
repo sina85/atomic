@@ -10,6 +10,8 @@
 
 ### Fixed
 
+- Fixed the upstream Pi v0.80.3 sync to use the currently available `prepareNextTurn` and Markdown renderer APIs, restoring TypeScript validation after the dependency update.
+
 - Fixed the `read` tool to parse colon-delimited `file:START:END` (and grep-style `file:LINE:COL`) path selectors as a line range instead of leaving the leading number glued to the path (`file:395`), which produced a bogus `ENOENT` and pushed models (e.g. Opus) to fall back to `sed` ([#1585](https://github.com/bastani-inc/atomic/issues/1585)).
 - Fixed GitHub Copilot models to use the live `max_output_tokens` value from the Copilot model catalog, preventing `github-copilot/claude-opus-4.8` from being capped by Atomic's stale built-in output-token limit after compaction ([#1582](https://github.com/bastani-inc/atomic/issues/1582)).
 - Fixed active GitHub Copilot sessions to adopt live catalog model metadata as soon as the catalog loads, so fallback models refresh their supported reasoning levels without requiring a restart.

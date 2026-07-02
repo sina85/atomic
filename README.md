@@ -45,7 +45,7 @@
 
 - **Node.js 24 LTS or newer** — Atomic requires the latest Node LTS runtime. Check with `node --version`.
 - **A package manager** — use npm (included with Node), pnpm, Yarn, or Bun. Use Bun 1.3.14+ for Bun installs or workflow-authoring examples.
-- **Model-provider access** — Use `/login` after startup. Supports provider subscriptions and APIs.
+- **Model-provider access** — Atomic supports subscription login for Codex, Anthropic, Cursor (experimental), and the Z.ai coding plan, plus OpenRouter with an API key.
 
 ### Install
 
@@ -71,21 +71,23 @@ Atomic does not require package install scripts. If you want to disable dependen
 
 ### Authenticate and run
 
-Set an API key and start a session:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-atomic
-```
-
-Or sign in to an existing subscription:
+Atomic works best with a subscription-backed provider (Codex, Anthropic, Cursor (experimental), or the Z.ai coding plan) or an OpenRouter API key:
 
 ```bash
 atomic
-/login   # then select a provider — Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, …
+/login   # then select your provider
 ```
 
-After signing in, run `/atomic` to start the guided onboarding for workflows, examples, and next steps.
+Using one of these providers is the best way to get the full Atomic workflow experience. **If Atomic is missing a provider you want, [open an issue](https://github.com/bastani-inc/atomic/issues/new) and we'll add it that day.**
+
+For API-key-only setup, export the key before starting Atomic:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+atomic
+```
+
+After authenticating, run `/atomic` to start the guided onboarding for workflows, examples, and next steps.
 
 See [Providers & Models](./packages/coding-agent/README.md#providers--models) for the full provider list (API keys + subscriptions). For non-interactive use, `atomic -p "<prompt>"` prints the response and exits.
 
@@ -236,7 +238,7 @@ Workflows define the executable process: inputs, stages, branches, parallelism, 
 | `ralph`                  | Heavier prompt-engineering → research → orchestrate → review workflow for larger migrations, broad refactors, and multi-package changes. It writes research artifacts under `research/`, delegates implementation through sub-agents from those findings, iterates on reviewer feedback with follow-up research, and only prepares a pull-request report when `create_pr=true`. | `/workflow ralph prompt="Port the rate-limit rollout to the new API gateway" create_pr=true`                                                                                                  |
 | `deep-research-codebase` | Repo-wide research for broad, cross-cutting questions. It scouts the codebase, runs parallel specialist waves, aggregates findings, and writes durable research artifacts under `research/`. Prefer `/skill:research-codebase` for a focused subsystem or question.                                                                                                         | `/workflow deep-research-codebase prompt="How do payment retries work end to end?"`                                                                                                           |
 | `open-claude-design`     | End-to-end design generation: interviews for output type/references, discovers your design system, generates from a prompt, refines with feedback, and exports a handoff directory.                                                                                                                                                                                        | `/workflow open-claude-design prompt="Team activity feed prototype using ./mocks/feed.png as a reference"`                                                                                    |
-| _author your own_        | Anything outside the built-ins: issue-to-PR, review-to-merge, migration, triage, release, compliance, or team-specific review pipelines. Describe the process in natural language and Atomic can scaffold a typed `workflow({...})` file with CLI inputs.                                                                                                                   | _"Create a reusable workflow that takes an issue, writes a plan, creates a branch, runs implementation and review stages, runs tests and lint, then stops for approval before final output."_ |
+| _author your own_        | Anything outside the built-ins: issue-to-PR, review-to-merge, migration, triage, release, compliance, or team-specific review pipelines. Describe the process in natural language and Atomic can scaffold a typed `workflow({...})` file with CLI inputs.<br><br>Atomic prompts your coding agent to reference these docs by default, but you can skim them to guide workflow construction yourself: choose a [starter pattern](./packages/coding-agent/docs/workflows.md#workflow-starter-patterns), then review [Writing a Workflow](./packages/coding-agent/docs/workflows.md#writing-a-workflow), [Guiding Principles](./packages/coding-agent/docs/workflows.md#guiding-principles), [context handoffs](./packages/coding-agent/docs/workflows.md#context-engineering-guidance), the [Design Checklist](./packages/coding-agent/docs/workflows.md#design-checklist), and [Common Mistakes](./packages/coding-agent/docs/workflows.md#common-mistakes). When designing a workflow, treat existing [Atomic workflows](./packages/coding-agent/docs/workflows.md#built-in-workflows), [subagents](./packages/coding-agent/docs/subagents.md), and [skills](./packages/coding-agent/docs/skills.md) as building blocks you can compose into your own process; they already package capabilities tuned for developer workflows, so you can leverage them instead of recreating that behavior from scratch. | _"Create a reusable workflow that takes an issue, writes a plan, creates a branch, runs implementation and review stages, runs tests and lint, then stops for approval before final output."_ |
 
 Run `/workflow list` to see installed workflows and `/workflow inputs <name>` for input schemas. `/workflow status <id>`, `/workflow connect <id>`, and `/workflow resume <id>` manage running or paused runs. First-run `goal`/`ralph` handoffs print the status/connect commands with the run id; use connect to watch, attach, and steer, or ask in the current chat for status or steering at any point. Runnable references live in [`packages/coding-agent/examples/`](./packages/coding-agent/examples).
 
