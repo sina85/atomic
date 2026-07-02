@@ -1,4 +1,4 @@
-import type { AgentContext, AgentLoopTurnUpdate } from "@earendil-works/pi-agent-core";
+import type { PrepareNextTurnContext } from "@earendil-works/pi-agent-core";
 import type { AgentSessionInternalSurface as AgentSession } from "./agent-session-methods.ts";
 import { redirectOversizedToolResult } from "./tools/oversized-tool-result.js";
 
@@ -71,19 +71,19 @@ export function _installAgentToolHooks(this: AgentSession): void {
 }
 
 /**
- * Install a prepareNextTurn hook so that extension tool changes
+ * Install a prepareNextTurnWithContext hook so that extension tool changes
  * (e.g. setActiveTools) and before_agent_start systemPrompt overrides are
  * applied to the next provider request within the same run.
  */
 export function _installAgentNextTurnRefresh(this: AgentSession): void {
-	const previousPrepareNextTurn = this.agent.prepareNextTurn;
-	this.agent.prepareNextTurn = async (signal?: AbortSignal): Promise<AgentLoopTurnUpdate> => {
-		const previousSnapshot = await previousPrepareNextTurn?.call(this.agent, signal);
-		const previousContext: AgentContext = previousSnapshot?.context ?? {
-			systemPrompt: this.agent.state.systemPrompt,
-			messages: this.agent.state.messages.slice(),
-			tools: this.agent.state.tools.slice(),
-		};
+	const previousPrepareNextTurnWithContext =
+		this.agent.prepareNextTurnWithContext ??
+		(this.agent.prepareNextTurn
+			? async (_turn: PrepareNextTurnContext, signal?: AbortSignal) => await this.agent.prepareNextTurn?.(signal)
+			: undefined);
+	this.agent.prepareNextTurnWithContext = async (turn, signal) => {
+		const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
+		const previousContext = previousSnapshot?.context ?? turn.context;
 
 		return {
 			...previousSnapshot,
