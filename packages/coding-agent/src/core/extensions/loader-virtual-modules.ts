@@ -183,15 +183,17 @@ export async function loadExtensionModule(
   }
 
   const isWindows = process.platform === "win32";
-  const forceTransformedImports = isBunBinary || isWindows;
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
-    ...(forceTransformedImports ? { tryNative: false } : {}),
-    // Windows always takes the transformed-import path, which re-transpiles the
-    // whole extension module graph on every launch. Persist jiti transforms in a
-    // per-user cache dir (content-hash keyed, so edits invalidate entries) to
-    // keep TUI startup fast. The agent dir stays writable even for the compiled
-    // binary, whose module dir is read-only.
+    // The compiled binary must route every import through jiti so virtualModules
+    // resolve; dev runtimes keep jiti's default tryNative (native import() under
+    // Bun/Node), which skips per-launch transpilation of the extension graph.
+    ...(isBunBinary ? { tryNative: false } : {}),
+    // Fallback transformed imports on Windows (e.g. modules native import cannot
+    // handle) persist jiti transforms in a per-user cache dir (content-hash
+    // keyed, so edits invalidate entries) instead of re-transpiling each launch.
+    // The agent dir stays writable even for the compiled binary, whose module
+    // dir is read-only.
     ...(isWindows ? { fsCache: getExtensionTransformCacheDir() } : isBunBinary ? { fsCache: false } : {}),
     ...(isBunBinary ? { virtualModules: await getVirtualModules() } : { alias: getAliases() }),
   });
