@@ -15,7 +15,6 @@ import { type AgentSessionRuntimeDiagnostic, createAgentSessionFromServices, cre
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage } from "./core/auth-storage.ts";
 import { getBuiltinPackagePaths } from "./core/builtin-packages.ts";
-import { exportFromFile } from "./core/export-html/index.ts";
 import { configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
 import { resolveModelScope } from "./core/model-resolver.ts";
@@ -84,6 +83,7 @@ export async function main(args: string[], options?: MainOptions) {
 		let result: string;
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
+			const { exportFromFile } = await import("./core/export-html/index.ts");
 			result = await exportFromFile(parsed.export, outputPath);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";

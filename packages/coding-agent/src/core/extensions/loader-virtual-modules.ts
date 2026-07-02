@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createJiti } from "jiti/static";
-import { isBunBinary } from "../../config.ts";
+import { getExtensionTranspileCacheDir, isBunBinary } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import type { ExtensionFactory } from "./types.ts";
 
@@ -66,6 +66,35 @@ async function getVirtualModules(): Promise<Record<string, object>> {
   return _virtualModulesPromise;
 }
 let _aliases: Record<string, string> | null = null;
+let _transpileCacheDir: string | null = null;
+
+/**
+ * Persistent on-disk cache for jiti-transpiled extension modules.
+ * jiti keys cache entries by source-content hash, so entries self-invalidate
+ * when extension sources change; stale sibling version dirs are pruned
+ * in the background.
+ */
+function getTranspileCacheDir(): string {
+  if (_transpileCacheDir) return _transpileCacheDir;
+  _transpileCacheDir = getExtensionTranspileCacheDir();
+  pruneStaleTranspileCaches(_transpileCacheDir);
+  return _transpileCacheDir;
+}
+
+function pruneStaleTranspileCaches(currentDir: string): void {
+  const parent = path.dirname(currentDir);
+  const keep = path.basename(currentDir);
+  void fs.promises
+    .readdir(parent)
+    .then((entries) =>
+      Promise.all(
+        entries
+          .filter((entry) => entry !== keep)
+          .map((entry) => fs.promises.rm(path.join(parent, entry), { recursive: true, force: true })),
+      ),
+    )
+    .catch(() => {});
+}
 
 let extensionCacheCwd: string | undefined;
 let extensionCacheGeneration = 0;
@@ -180,7 +209,7 @@ export async function loadExtensionModule(
   const forceTransformedImports = isBunBinary || process.platform === "win32";
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
-    ...(forceTransformedImports ? { fsCache: false, tryNative: false } : {}),
+    ...(forceTransformedImports ? { fsCache: getTranspileCacheDir(), tryNative: false } : {}),
     ...(isBunBinary ? { virtualModules: await getVirtualModules() } : { alias: getAliases() }),
   });
   const module = await jiti.import(extensionImportSpecifier(extensionPath, cacheToken), { default: true });

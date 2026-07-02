@@ -410,6 +410,14 @@ export function getBinDir(): string {
 	return join(getAgentDir(), "bin");
 }
 
+/**
+ * Get path to the extension transpile cache directory (jiti fsCache).
+ * Scoped by version so release upgrades never read stale transpiled output.
+ */
+export function getExtensionTranspileCacheDir(): string {
+	return join(getAgentDir(), "cache", "jiti", VERSION);
+}
+
 /** Get path to prompt templates directory */
 export function getPromptsDir(): string {
 	return join(getAgentDir(), "prompts");

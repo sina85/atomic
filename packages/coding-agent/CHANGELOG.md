@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Sped up TUI startup for the compiled Bun binary (and Windows) by ~2.8x on warm starts: builtin extensions transpiled at runtime through jiti now use a persistent on-disk cache at `~/.atomic/agent/cache/jiti/<version>` instead of re-transpiling ~280 TypeScript files on every launch (extension loading drops from ~4.1s to ~1.4s on Linux). Cache entries self-invalidate via jiti's source-content hashing, and stale version directories are pruned in the background.
+- Made `--version`/`-v` a fast path that prints the version before loading the full CLI module graph, dropping `atomic --version` from ~380ms to ~25ms. The CLI entrypoint now loads the main module graph dynamically so metadata fast paths skip it entirely.
+- Deferred loading of the HTML session export module (including its large generated template) until `--export` or `/export` is actually used.
+
 ## [0.9.4-alpha.7] - 2026-07-02
 
 ### Added
