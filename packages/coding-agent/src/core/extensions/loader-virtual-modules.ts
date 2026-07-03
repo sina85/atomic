@@ -203,6 +203,14 @@ export const extensionLoaderTestHooks = {
   getAliases,
 };
 
+/**
+ * Extension paths already evaluated via native import() in this process. Bun on
+ * Windows ignores the cache-busting query on file URLs, so re-loads of these
+ * paths (e.g. /reload) must go through jiti's transformed-import path to get a
+ * fresh module evaluation.
+ */
+const nativelyImportedPaths = new Set<string>();
+
 export async function loadExtensionModule(
   extensionPath: string,
   cacheToken?: ExtensionCacheToken,
@@ -212,13 +220,25 @@ export async function loadExtensionModule(
     if (cachedFactory) return cachedFactory;
   }
 
-  const forceTransformedImports = isBunBinary || process.platform === "win32";
+  const isWindows = process.platform === "win32";
+  // Windows first-load fast path: native import() (jiti's default tryNative)
+  // skips per-launch transpilation of the extension module graph. Re-loads of
+  // the same path fall back to transformed imports for fresh evaluation.
+  const forceTransformedImports = isBunBinary || (isWindows && nativelyImportedPaths.has(extensionPath));
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
-    ...(forceTransformedImports ? { fsCache: getTranspileCacheDir(), tryNative: false } : {}),
+    ...(forceTransformedImports ? { tryNative: false } : {}),
+    // Transformed imports persist jiti transforms in a per-user, version-scoped
+    // cache dir (content-hash keyed, so edits invalidate entries) instead of
+    // re-transpiling each launch. The agent dir stays writable even for the
+    // compiled binary, whose module dir is read-only.
+    ...(forceTransformedImports || isWindows ? { fsCache: getTranspileCacheDir() } : {}),
     ...(isBunBinary ? { virtualModules: await getVirtualModules() } : { alias: getAliases() }),
   });
   const module = await jiti.import(extensionImportSpecifier(extensionPath, cacheToken), { default: true });
+  if (isWindows && !forceTransformedImports) {
+    nativelyImportedPaths.add(extensionPath);
+  }
   const factory = module as ExtensionFactory;
   if (typeof factory !== "function") return undefined;
   if (isCurrentCacheToken(cacheToken)) {
