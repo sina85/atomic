@@ -227,12 +227,11 @@ export async function loadExtensionModule(
   const forceTransformedImports = isBunBinary || (isWindows && nativelyImportedPaths.has(extensionPath));
   const jiti = createJiti(import.meta.url, {
     moduleCache: false,
-    ...(forceTransformedImports ? { tryNative: false } : {}),
-    // Transformed imports persist jiti transforms in a per-user, version-scoped
-    // cache dir (content-hash keyed, so edits invalidate entries) instead of
-    // re-transpiling each launch. The agent dir stays writable even for the
-    // compiled binary, whose module dir is read-only.
-    ...(forceTransformedImports || isWindows ? { fsCache: getTranspileCacheDir() } : {}),
+    ...(forceTransformedImports
+      ? { fsCache: getTranspileCacheDir(), tryNative: false }
+      : isWindows
+        ? { fsCache: getTranspileCacheDir() }
+        : {}),
     ...(isBunBinary ? { virtualModules: await getVirtualModules() } : { alias: getAliases() }),
   });
   const module = await jiti.import(extensionImportSpecifier(extensionPath, cacheToken), { default: true });
