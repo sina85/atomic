@@ -150,22 +150,28 @@ function getAliases(): Record<string, string> {
   const typeboxValueEntry = require.resolve("typebox/value");
 
   const packagesRoot = path.resolve(__dirname, "../../../../");
-  const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
+  const resolveWorkspaceOrImport = (workspaceRelativePath: string, packageName: string): string => {
     const workspacePath = path.join(packagesRoot, workspaceRelativePath);
     if (fs.existsSync(workspacePath)) {
       return workspacePath;
     }
-    return fileURLToPath(import.meta.resolve(specifier));
+    // Resolve via the package.json export and join the built-entry path, not
+    // import.meta.resolve: its mere presence silently breaks bytecode
+    // generation for the compiled binary (CJS bundle), and require.resolve
+    // fails on these ESM-only packages.
+    const packageRoot = path.dirname(require.resolve(`${packageName}/package.json`));
+    const entryRelativePath = workspaceRelativePath.split("/").slice(1).join("/");
+    return path.join(packageRoot, entryRelativePath);
   };
 
   const piCodingAgentEntry = packageIndex;
   const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@earendil-works/pi-agent-core");
   const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui");
-  // The workspace path mirrors pi-ai 0.80.x's built compat export. If an
-  // upstream layout change moves that file, fall back to package export
-  // resolution so installed Atomic builds still load the canonical entrypoint.
-  const piAiEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@earendil-works/pi-ai/compat");
-  const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@earendil-works/pi-ai/oauth");
+  // The workspace path mirrors pi-ai 0.80.x's built dist layout. If an
+  // upstream layout change moves these files, this join needs updating to
+  // match the package's real dist paths.
+  const piAiEntry = resolveWorkspaceOrImport("ai/dist/compat.js", "@earendil-works/pi-ai");
+  const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@earendil-works/pi-ai");
 
   _aliases = {
     "@bastani/atomic": piCodingAgentEntry,
