@@ -6,6 +6,7 @@
 
 - Sped up TUI startup for the compiled Bun binary (and Windows) by ~2.8x on warm starts: builtin extensions transpiled at runtime through jiti now use a persistent on-disk cache at `~/.atomic/agent/cache/jiti/<version>` instead of re-transpiling ~280 TypeScript files on every launch (extension loading drops from ~4.1s to ~1.4s on Linux). Cache entries self-invalidate via jiti's source-content hashing, and stale version directories are pruned in the background.
 - Made `--version`/`-v` a fast path that prints the version before loading the full CLI module graph, dropping `atomic --version` from ~380ms to ~25ms. The CLI entrypoint now loads the main module graph dynamically so metadata fast paths skip it entirely.
+- Decoupled the TUI first paint from extension loading: in interactive mode the shell (header, editor, footer) now renders immediately with a "Loading extensions, skills, prompts, themes..." indicator while extension code loads in the background, dropping perceived compiled-binary startup from ~2s (warm) / ~5s (cold) to ~0.5s regardless of extension count. Deferred loading only engages when nothing before first paint needs extensions (no pending trust prompt, `-e` paths, extension flags, or CLI/settings model selection); resources, startup notices, and any saved-model restore that depends on extension-registered providers are applied once the background load completes.
 - Deferred loading of the HTML session export module (including its large generated template) until `--export` or `/export` is actually used.
 
 ## [0.9.4-alpha.7] - 2026-07-02
