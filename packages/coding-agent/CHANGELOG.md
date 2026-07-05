@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.5-alpha.4] - 2026-07-05
+
 ### Changed
 
 - Simplified first-run onboarding to a one-time verifiable-coding-agent-runtime explanation shown after any What's New notes and directly above the normal input box; Atomic no longer intercepts pasted tasks, saves pre-login seeds, routes first-run input to `goal`/`ralph`, raises reasoning for onboarding, or requires `/chat` to continue normally. The notice now reminds unauthenticated users to run `/login` first, and starting a new session with `/new` clears any rendered first-run notice state from the previous session canvas.
