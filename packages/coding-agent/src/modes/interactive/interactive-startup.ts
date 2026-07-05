@@ -45,15 +45,16 @@ InteractiveModeBase.prototype.showStartupNoticesIfNeeded = function(this: Intera
     }
 
     if (this.firstRunNoticeVisible) {
+      this.firstRunOnboardingNoticeComponents = [];
       if (this.chatContainer.children.length > 0) {
-        this.chatContainer.addChild(new Spacer(1));
+        this.firstRunOnboardingNoticeComponents.push(new Spacer(1));
       }
-      this.firstRunOnboardingNoticeComponents = [
+      this.firstRunOnboardingNoticeComponents.push(
         new DynamicBorder(),
         new Text(ONBOARDING_COPY, 1, 0),
         new DynamicBorder(),
         new Spacer(1),
-      ];
+      );
       for (const component of this.firstRunOnboardingNoticeComponents) {
         this.chatContainer.addChild(component);
       }
@@ -72,9 +73,8 @@ InteractiveModeBase.prototype.init = async function(this: InteractiveModeBase): 
 
     // Load changelog (only show new entries, skip for resumed sessions)
     this.hadLastChangelogVersionAtStartup = Boolean(this.settingsManager.getLastChangelogVersion());
-    const hadFirstRunOnboardingStarted = Boolean(this.settingsManager.getFirstRunOnboardingStartedVersion());
     this.changelogMarkdown = this.getChangelogForDisplay();
-    this.initializeFirstRunOnboardingMarkers(hadFirstRunOnboardingStarted);
+    this.initializeFirstRunOnboardingMarkers();
 
     // Add header container as first child. Populate it after theme initialization.
     this.ui.addChild(this.headerContainer);

@@ -58,7 +58,7 @@ Use direct chat only for tiny, deterministic, low-risk work where workflow track
 
 ## Quick Start
 
-On a fresh first run with no prior Atomic startup state, Atomic shows a one-time explanation after any What's New notes and directly above the normal input box describing Atomic as a verifiable coding agent runtime for building and running agent workflows you can feel confident in. It no longer intercepts the first message, saves a pasted seed, routes to `goal` or `ralph`, raises reasoning, or requires `/chat` to use normal chat. Type a normal message or slash command immediately; use `/atomic` for guides, `/workflow list` to discover built-ins, or launch a workflow command directly when you already know what you want.
+On a fresh first run with no prior Atomic startup state, Atomic shows a one-time explanation after any What's New notes and directly above the normal input box describing Atomic as a verifiable coding agent runtime for building and running agent workflows you can feel confident in. It no longer intercepts the first message, saves a pasted seed, routes to `goal` or `ralph`, raises reasoning, or requires `/chat` to use normal chat. Type a normal message or slash command immediately; run `/login` first if no provider is connected, use `/atomic` for guides, `/workflow list` to discover built-ins, or launch a workflow command directly when you already know what you want.
 
 The fastest way to get a workflow running is to **describe it in natural language** and let Atomic write it for you. If you'd rather write the TypeScript yourself, jump to [Or hand-write the TypeScript](#or-hand-write-the-typescript) below.
 

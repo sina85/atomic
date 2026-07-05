@@ -14,7 +14,7 @@ declare module "./interactive-mode-base.ts" {
   hadLastChangelogVersionAtStartup: boolean;
   firstRunNoticeVisible: boolean;
   firstRunOnboardingNoticeComponents: Component[];
-  initializeFirstRunOnboardingMarkers(hadFirstRunOnboardingStarted: boolean): void;
+  initializeFirstRunOnboardingMarkers(): void;
   isFirstRunOnboardingEligible(): boolean;
   clearFirstRunOnboardingUi(): void;
   init(): Promise<void>;

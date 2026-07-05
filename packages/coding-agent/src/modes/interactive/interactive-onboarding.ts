@@ -9,13 +9,14 @@ export const ONBOARDING_COPY = [
   "Start building a verifiable software factory.",
   "",
   "Type a message or slash command below to continue normally.",
+  "If you have not connected a provider yet, run `/login` first.",
   "Run `/atomic` for guides or `/workflow list` to see built-in workflows.",
 ].join("\n");
 
-InteractiveModeBase.prototype.initializeFirstRunOnboardingMarkers = function(this: InteractiveModeBase, hadFirstRunOnboardingStarted: boolean): void {
+InteractiveModeBase.prototype.initializeFirstRunOnboardingMarkers = function(this: InteractiveModeBase): void {
   if (
     this.session.state.messages.length !== 0
-    || hadFirstRunOnboardingStarted
+    || this.settingsManager.getFirstRunOnboardingStartedVersion()
     || this.settingsManager.getOnboardedVersion()
   ) {
     return;

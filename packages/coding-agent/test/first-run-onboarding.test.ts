@@ -30,6 +30,7 @@ describe("first-run onboarding", () => {
     expect(ONBOARDING_COPY).toContain("verifiable coding agent runtime");
     expect(ONBOARDING_COPY).toContain("Start building a verifiable software factory");
     expect(ONBOARDING_COPY).toContain("Type a message or slash command below to continue normally");
+    expect(ONBOARDING_COPY).toContain("run `/login` first");
     expect(ONBOARDING_COPY).not.toContain("Paste a ticket");
     expect(ONBOARDING_COPY).not.toContain("/chat");
     expect(ONBOARDING_COPY).not.toMatch(/goal.*ralph|ralph.*goal/);
@@ -88,9 +89,9 @@ describe("first-run onboarding", () => {
       hadLastChangelogVersionAtStartup: true,
       version: "0.2.0",
     };
-    const initialize = Reflect.get(InteractiveMode.prototype, "initializeFirstRunOnboardingMarkers") as (this: typeof host, hadFirstRunOnboardingStarted: boolean) => void;
+    const initialize = Reflect.get(InteractiveMode.prototype, "initializeFirstRunOnboardingMarkers") as (this: typeof host) => void;
 
-    initialize.call(host, false);
+    initialize.call(host);
 
     expect(manager.getOnboardedVersion()).toBe("0.2.0");
     expect(manager.getFirstRunOnboardingStartedVersion()).toBeUndefined();
@@ -104,10 +105,10 @@ describe("first-run onboarding", () => {
       hadLastChangelogVersionAtStartup: false,
       version: "0.2.0",
     };
-    const initialize = Reflect.get(InteractiveMode.prototype, "initializeFirstRunOnboardingMarkers") as (this: typeof host, hadFirstRunOnboardingStarted: boolean) => void;
+    const initialize = Reflect.get(InteractiveMode.prototype, "initializeFirstRunOnboardingMarkers") as (this: typeof host) => void;
     const isEligible = Reflect.get(InteractiveMode.prototype, "isFirstRunOnboardingEligible") as (this: typeof host & { options: { initialMessage?: string } }) => boolean;
 
-    initialize.call(host, false);
+    initialize.call(host);
 
     expect(manager.getFirstRunOnboardingStartedVersion()).toBe("0.2.0");
     expect(manager.getOnboardedVersion()).toBeUndefined();
@@ -142,6 +143,35 @@ describe("first-run onboarding", () => {
     expect(host.ui.requestRender).toHaveBeenCalledTimes(1);
   });
 
+  it("does not queue startup notices more than once", () => {
+    const setOnboardedVersion = vi.fn();
+    const children: unknown[] = [];
+    const host = {
+      startupNoticesShown: false,
+      changelogMarkdown: undefined,
+      firstRunNoticeVisible: true,
+      firstRunOnboardingNoticeComponents: [] as unknown[],
+      chatContainer: {
+        children,
+        addChild(child: unknown) {
+          this.children.push(child);
+        },
+      },
+      settingsManager: { setOnboardedVersion },
+      version: "0.2.0",
+      ui: { requestRender: vi.fn() },
+    };
+    const showStartupNoticesIfNeeded = Reflect.get(InteractiveMode.prototype, "showStartupNoticesIfNeeded") as (this: typeof host) => void;
+
+    showStartupNoticesIfNeeded.call(host);
+    showStartupNoticesIfNeeded.call(host);
+
+    expect(host.firstRunOnboardingNoticeComponents).toHaveLength(4);
+    expect(host.chatContainer.children).toHaveLength(4);
+    expect(setOnboardedVersion).toHaveBeenCalledTimes(1);
+    expect(host.ui.requestRender).toHaveBeenCalledTimes(1);
+  });
+
   it("renders first-run notice after the changelog so it stays closest to the input", () => {
     const existingResource = { name: "resource" };
     const children: unknown[] = [existingResource];
@@ -170,6 +200,41 @@ describe("first-run onboarding", () => {
     showStartupNoticesIfNeeded.call(host);
 
     const firstNoticeIndex = host.chatContainer.children.indexOf(host.firstRunOnboardingNoticeComponents[0]);
+    expect(host.firstRunOnboardingNoticeComponents).toHaveLength(5);
+    expect(firstNoticeIndex).toBeGreaterThan(0);
+    expect(host.chatContainer.children.slice(firstNoticeIndex, firstNoticeIndex + host.firstRunOnboardingNoticeComponents.length)).toEqual(host.firstRunOnboardingNoticeComponents);
+    expect(setOnboardedVersion).toHaveBeenCalledWith("0.2.0");
+    expect(host.ui.requestRender).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders first-run notice after a collapsed changelog", () => {
+    const children: unknown[] = [];
+    const setOnboardedVersion = vi.fn();
+    const host = {
+      startupNoticesShown: false,
+      changelogMarkdown: "## [0.2.0]\n\n- New workflow updates",
+      firstRunNoticeVisible: true,
+      firstRunOnboardingNoticeComponents: [] as unknown[],
+      chatContainer: {
+        children,
+        addChild(child: unknown) {
+          this.children.push(child);
+        },
+      },
+      settingsManager: {
+        getCollapseChangelog: () => true,
+        setOnboardedVersion,
+      },
+      version: "0.2.0",
+      getMarkdownThemeWithSettings: () => ({}),
+      ui: { requestRender: vi.fn() },
+    };
+    const showStartupNoticesIfNeeded = Reflect.get(InteractiveMode.prototype, "showStartupNoticesIfNeeded") as (this: typeof host) => void;
+
+    showStartupNoticesIfNeeded.call(host);
+
+    const firstNoticeIndex = host.chatContainer.children.indexOf(host.firstRunOnboardingNoticeComponents[0]);
+    expect(host.firstRunOnboardingNoticeComponents).toHaveLength(5);
     expect(firstNoticeIndex).toBeGreaterThan(0);
     expect(host.chatContainer.children.slice(firstNoticeIndex, firstNoticeIndex + host.firstRunOnboardingNoticeComponents.length)).toEqual(host.firstRunOnboardingNoticeComponents);
     expect(setOnboardedVersion).toHaveBeenCalledWith("0.2.0");
