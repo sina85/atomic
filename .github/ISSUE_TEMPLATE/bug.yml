@@ -39,6 +39,6 @@ body:
     id: version
     attributes:
       label: Version
-      description: e.g. 0.49.0
+      description: Output of `atomic --version` (e.g. 0.9.5). If you are using a prerelease, include the exact alpha version (e.g. 0.9.5-alpha.5).
     validations:
       required: false
