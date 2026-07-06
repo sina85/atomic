@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a warm-start TUI first-paint regression where persisted `enabledModels` or `--models` patterns forced all extensions to load synchronously before the first frame. Interactive startup now keeps the deferred-extension fast path and reapplies the model scope after extensions finish loading, preserving extension-registered provider matches and unmatched-pattern warnings without blocking paint.
+- Fixed the second-launch trust prompt regression for bare projects that create `.atomic/` or `.pi/` during an implicitly trusted first session. Atomic now records that existing implicit trust on deferred startup/shutdown when the directory later gains project config, without saving trust for prompt-required or untrusted sessions.
+- Fixed BOM-prefixed JSON state files being treated as parse failures: settings and project trust JSON readers now strip a leading UTF-8 BOM before parsing, so Windows-authored `settings.json` and `trust.json` files load the same as BOM-less files instead of silently ignoring user settings.
+
 ## [0.9.5-alpha.5] - 2026-07-06
 
 ### Added
