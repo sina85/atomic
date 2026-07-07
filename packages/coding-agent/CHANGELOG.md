@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.5-alpha.7] - 2026-07-07
+
 ### Changed
 
 - Changed interactive Ctrl+C to interrupt the agent when it is busy: a single Ctrl+C now aborts the running agent turn (restoring queued messages to the editor), a running bash command, an active context compaction, or an auto-retry countdown — matching Escape and common CLI muscle memory. When idle, Ctrl+C keeps its previous behavior (first press clears the editor, a quick double-press exits), and the Ctrl+C immediately following an interrupt clears rather than exits. Escape remains the primary interrupt key.
