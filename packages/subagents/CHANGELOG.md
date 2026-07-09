@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.5-alpha.9] - 2026-07-09
+
 ### Changed
 
 - Improved subagent extension startup by deferring old-run cleanup scans, result watcher startup, and existing-result priming to macrotasks while preserving immediate `subagent` tool and slash-command registration.
