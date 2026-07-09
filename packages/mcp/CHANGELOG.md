@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Aligned MCP tool result expansion hints with the CLI-wide `Ctrl+o` keybinding copy.
 - Fixed MCP background direct-tool warmup cancellation so stale in-flight connects are discarded before metadata/cache mutation, direct-tool refresh callbacks are guarded to the active session, completed warmups clear their active handle safely, and env-selected direct tool servers hydrate without forcing every lazy server eager.
 
 ## [0.9.4] - 2026-07-03

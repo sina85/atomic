@@ -342,6 +342,7 @@ describe("first-run onboarding", () => {
     hostWithClear.clearFirstRunOnboardingUi = () => clear.call(hostWithClear);
 
     await handleClearCommand.call(hostWithClear);
+    expect(host.ensureDeferredStartupComplete).toHaveBeenCalledTimes(1);
 
     expect(host.ensureDeferredStartupComplete).toHaveBeenCalledTimes(1);
     expect(host.firstRunNoticeVisible).toBe(false);
