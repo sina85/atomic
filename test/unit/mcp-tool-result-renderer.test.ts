@@ -1,12 +1,11 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import type { AgentToolResult, ToolRenderResultOptions } from "../../packages/coding-agent/src/index.ts";
+import { keyText, type AgentToolResult, type ToolRenderResultOptions } from "../../packages/coding-agent/src/index.ts";
 import {
   formatMcpToolResultLines,
   renderMcpToolResult,
   type McpToolResultDetails,
 } from "../../packages/mcp/tool-result-renderer.ts";
-
 
 const theme = {
   fg: (_name: string, text: string) => text,
@@ -25,14 +24,15 @@ function renderResult(text: string, options: ToolRenderResultOptions): string {
 }
 
 describe("MCP tool result rendering", () => {
-  test("formats collapsed result hint with CLI-wide Ctrl+o branding", () => {
+  test("formats collapsed result hint with the configured expand keybinding", () => {
     const rendered = renderResult("one\ntwo\nthree\nfour", {
       expanded: false,
       isPartial: false,
     });
 
-    assert.match(rendered, /\(Ctrl\+o Expand\)/);
+    assert.match(rendered, new RegExp(`\\(${keyText("app.tools.expand")} Expand\\)`));
     assert.doesNotMatch(rendered, /CTRL\+O/);
+    assert.doesNotMatch(rendered, /Ctrl\+o/);
   });
 
   test("omits expand hint when result is already expanded", () => {
@@ -41,7 +41,7 @@ describe("MCP tool result rendering", () => {
       isPartial: false,
     });
 
-    assert.doesNotMatch(rendered, /Ctrl\+o Expand/);
+    assert.doesNotMatch(rendered, new RegExp(`${keyText("app.tools.expand")} Expand`));
     assert.match(rendered, /four/);
   });
 
