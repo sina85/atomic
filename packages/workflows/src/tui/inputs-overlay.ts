@@ -48,6 +48,7 @@ import {
   handleInputsPickerInput,
   renderInputsPicker,
 } from "./inputs-picker.js";
+import { createWorkingVisibilityGuard } from "./working-visibility-guard.js";
 
 export interface InputsUiSurface {
   custom?: PiCustomOverlayFunction;
@@ -90,16 +91,7 @@ export function openInputsPicker(
       return;
     }
 
-    let workingHidden = false;
-    const hideWorking = (): void => {
-      ui.setWorkingVisible?.(false);
-      workingHidden = true;
-    };
-    const restoreWorking = (): void => {
-      if (!workingHidden) return;
-      workingHidden = false;
-      ui.setWorkingVisible?.(true);
-    };
+    const { hide: hideWorking, restore: restoreWorking } = createWorkingVisibilityGuard(ui);
 
     hideWorking();
 

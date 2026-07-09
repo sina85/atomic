@@ -40,6 +40,7 @@ import {
   getForm,
 } from "./inline-form-store.js";
 import { coerceValues } from "./inputs-picker.js";
+import { createWorkingVisibilityGuard } from "./working-visibility-guard.js";
 
 const CUSTOM_TYPE = "workflows:input-form";
 
@@ -161,7 +162,6 @@ export async function openInlineInputsForm(
   const ui = ctx.ui;
   const setEditor = ui?.setEditorComponent;
   const getEditor = ui?.getEditorComponent;
-  const setWorkingVisible = ui?.setWorkingVisible;
   const sendMessage = pi.sendMessage;
   if (typeof setEditor !== "function" || typeof sendMessage !== "function") {
     return { kind: "unsupported" };
@@ -171,27 +171,7 @@ export async function openInlineInputsForm(
     return { kind: "run", values: coerceValues(opts.fields, {}) };
   }
 
-  let workingHidden = false;
-  const hideWorking = (): void => {
-    try {
-      setWorkingVisible?.call(ui, false);
-      workingHidden = true;
-    } catch {
-      // If the host rejects Working visibility changes, keep the form path
-      // functional; editor restoration already handles stale contexts below.
-    }
-  };
-  const restoreWorking = (): void => {
-    if (!workingHidden) return;
-    workingHidden = false;
-    try {
-      setWorkingVisible?.call(ui, true);
-    } catch {
-      // A late settle after `/new`, `/resume`, `/fork`, or `/reload` may leave
-      // the command context stale. Do not let Working restoration prevent the
-      // workflow form promise from resolving.
-    }
-  };
+  const { hide: hideWorking, restore: restoreWorking } = createWorkingVisibilityGuard(ui);
 
   hideWorking();
 

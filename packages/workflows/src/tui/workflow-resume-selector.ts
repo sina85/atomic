@@ -6,6 +6,7 @@ import type {
   PiCustomOverlayFunction,
 } from "../extension/wiring.js";
 import type { RunSnapshot, StageSnapshot } from "../shared/store-types.js";
+import { createWorkingVisibilityGuard } from "./working-visibility-guard.js";
 
 export type WorkflowResumeSelectorResult =
   | { kind: "live"; runId: string }
@@ -104,16 +105,7 @@ export function openWorkflowResumeSelector(
     return [...sessions];
   };
 
-  let workingHidden = false;
-  const hideWorking = (): void => {
-    ui.setWorkingVisible?.(false);
-    workingHidden = true;
-  };
-  const restoreWorking = (): void => {
-    if (!workingHidden) return;
-    workingHidden = false;
-    ui.setWorkingVisible?.(true);
-  };
+  const { hide: hideWorking, restore: restoreWorking } = createWorkingVisibilityGuard(ui);
 
   hideWorking();
 

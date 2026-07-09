@@ -50,6 +50,7 @@ import {
   handleKillConfirmInput,
   renderKillConfirm,
 } from "./session-confirm.js";
+import { createWorkingVisibilityGuard } from "./working-visibility-guard.js";
 import type { RunSnapshot } from "../shared/store-types.js";
 
 /**
@@ -114,16 +115,7 @@ export function openSessionPicker(
       return;
     }
 
-    let workingHidden = false;
-    const hideWorking = (): void => {
-      ui.setWorkingVisible?.(false);
-      workingHidden = true;
-    };
-    const restoreWorking = (): void => {
-      if (!workingHidden) return;
-      workingHidden = false;
-      ui.setWorkingVisible?.(true);
-    };
+    const { hide: hideWorking, restore: restoreWorking } = createWorkingVisibilityGuard(ui);
 
     hideWorking();
     const state = createSessionPickerState();
@@ -219,16 +211,7 @@ export function openKillConfirm(
   theme: GraphTheme,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    let workingHidden = false;
-    const hideWorking = (): void => {
-      ui.setWorkingVisible?.(false);
-      workingHidden = true;
-    };
-    const restoreWorking = (): void => {
-      if (!workingHidden) return;
-      workingHidden = false;
-      ui.setWorkingVisible?.(true);
-    };
+    const { hide: hideWorking, restore: restoreWorking } = createWorkingVisibilityGuard(ui);
 
     const custom = ui.custom;
     if (typeof custom !== "function") {
