@@ -5,6 +5,7 @@
 ### Added
 
 - Added model-capability-aware `max` thinking support across the CLI, settings, SDK/RPC/extension surfaces, Cursor model mapping, workflow stages, and bundled subagents; models still expose only the levels in their own capability maps ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Added request-wide `cost.tiers` support for custom `models.json` models, partial `modelOverrides`, and extension-registered providers, including complete tier validation, aggregate-input threshold selection, inherited-tier preservation for scalar overrides, and explicit tier-array replacement/clearing ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 
 ### Changed
 

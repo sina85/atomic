@@ -138,6 +138,11 @@ export function applyModelOverride(model: Model<Api>, override: ModelOverride): 
 			output: override.cost.output ?? model.cost.output,
 			cacheRead: override.cost.cacheRead ?? model.cost.cacheRead,
 			cacheWrite: override.cost.cacheWrite ?? model.cost.cacheWrite,
+			...(override.cost.tiers !== undefined
+				? { tiers: override.cost.tiers }
+				: model.cost.tiers !== undefined
+					? { tiers: model.cost.tiers }
+					: {}),
 		};
 	}
 
