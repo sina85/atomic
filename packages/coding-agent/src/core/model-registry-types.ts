@@ -34,12 +34,15 @@ export type ResolvedRequestAuth =
 			error: string;
 	  };
 
+export type ModelRequestHeaderSource = "model" | "modelOverride";
+
 export interface CustomModelsResult {
 	models: Model<Api>[];
 	overrides: Map<string, ProviderOverride>;
 	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	providerRequestConfigs: Map<string, ProviderRequestConfig>;
 	modelRequestHeaders: Map<string, Record<string, string>>;
+	modelRequestHeaderSources: Map<string, ModelRequestHeaderSource>;
 	error: string | undefined;
 }
 

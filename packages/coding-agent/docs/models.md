@@ -2,6 +2,8 @@
 
 Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.atomic/agent/models.json` (legacy `~/.pi/agent/models.json` is also read).
 
+When both files exist, Atomic reads the legacy `.pi` file first and the primary `.atomic` file second. For `modelOverrides`, entries are layered by provider and model ID: disjoint legacy entries remain available, while an exact primary provider/model entry replaces the complete legacy override entry. Atomic does not field-merge one override entry across files; use `{}` in the primary file to restore the built-in model values for that exact entry.
+
 Built-in subscription providers such as Cursor (experimental) are selected with the same `provider/model` syntax, for example `cursor/composer-2`. Cursor image input is scoped to known multimodal Cursor Claude, Composer, Gemini, GPT, and Kimi model families (`claude-`, `composer-`, `gemini-`, `gpt-`, `kimi-`), plus `grok-4.3`; text-only Cursor models still reject images. Cursor image payloads must be non-empty standard base64, with MIME-style line wrapping whitespace accepted and stripped before serialization. Live private-API model metadata may fall back to estimated labels. Because Cursor support targets undocumented private endpoints with Cursor CLI-compatible headers, maintainers and users should explicitly accept the risk that it may conflict with Cursor's terms, break without notice, or affect the Cursor account used to authenticate.
 
 When Cursor omits token limits, Atomic derives them from its bundled `@earendil-works/pi-ai` model catalog and treats explicit `1M` Cursor labels as a 1,000,000-token context floor; unmatched Cursor-only models keep conservative estimates instead of disappearing from `/model`.
@@ -439,9 +441,14 @@ Use `modelOverrides` to customize specific models without replacing the provider
 
 `modelOverrides` supports these fields per model: `name`, `reasoning`, `thinkingLevelMap`, `input`, `cost` (partial scalar rates plus optional full tier-array replacement), `contextWindow`, `contextWindowOptions`, `maxTokens`, `headers`, `compat`.
 
+When both `~/.pi/agent/models.json` and `~/.atomic/agent/models.json` define `modelOverrides`, Atomic merges their nested provider/model maps in that order. Different model IDs survive from both files. For the same provider and model ID, the primary `.atomic` entry replaces the entire legacy `.pi` override entry rather than deep-merging individual fields. This complete-entry rule includes `headers`: a primary exact override without headers removes headers that came from the legacy override, but does not erase a surviving custom model definition's own headers. An empty primary override (`{}`) therefore restores the model's built-in values for that entry.
+
+Within a single file, the existing precedence is unchanged: a custom model definition supplies the base model values and its matching `modelOverrides` entry wins configured model fields, while custom-model headers win duplicate header names.
+
 Behavior notes:
 - Atomic retains the parsed override map even when an extension registers the matching provider/model after `models.json` is loaded.
-- For a matching built-in or extension-registered model, the model definition is the base and `modelOverrides` wins for configured fields. Model `headers` are shallow-merged, with override headers winning duplicate names.
+- Layered primary/legacy compatibility merges override maps by provider and model ID; disjoint entries survive, while a primary exact entry replaces the complete legacy entry without cross-file field-level merging.
+- For a matching built-in or extension-registered model, the model definition is the base and `modelOverrides` wins for configured fields. Request headers are shallow-merged within that file's effective entry, with custom-model headers winning duplicate names.
 - A scalar-only `cost` override preserves inherited tiers. Supplying `cost.tiers` replaces the complete tier array, including `[]` to clear it; omitted scalar cost fields remain inherited.
 - Provider-level request headers remain a separate provider layer and are combined at request time.
 - Unknown model IDs are ignored unless a matching model is subsequently registered by an extension.

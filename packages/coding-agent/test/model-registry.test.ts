@@ -3,5 +3,6 @@ import "./model-registry-base-url-overrides.suite.ts";
 import "./model-registry-custom-models.suite.ts";
 import "./model-registry-cost-tiers.suite.ts";
 import "./model-registry-model-overrides.suite.ts";
+import "./model-registry-layered-overrides.suite.ts";
 import "./model-registry-dynamic-providers.suite.ts";
 import "./model-registry-api-key-resolution.suite.ts";

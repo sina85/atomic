@@ -22,12 +22,12 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
-# Keep caller-provided relative temp roots stable across later directory changes.
+# Keep caller-provided relative temp roots stable across every directory change.
 if [[ -n "${TMPDIR:-}" && "$TMPDIR" != /* ]]; then
-    TMPDIR="$(cd "$TMPDIR" && pwd -P)"
+    TMPDIR="$(cd -- "$TMPDIR" && pwd -P)"
     export TMPDIR
 fi
+cd -- "$(dirname -- "$0")/.."
 
 SKIP_DEPS=false
 PLATFORM=""
@@ -82,7 +82,7 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
     # mktemp may echo a relative path when TMPDIR is relative. Canonicalize it
     # before the later cd into packages/coding-agent so staging and cleanup
     # keep referring to the same directory.
-    CLIPBOARD_STAGE_DIR="$(cd "$CLIPBOARD_STAGE_DIR" && pwd -P)"
+    CLIPBOARD_STAGE_DIR="$(cd -- "$CLIPBOARD_STAGE_DIR" && pwd -P)"
     bun run packages/coding-agent/scripts/stage-clipboard-native-bindings.ts \
         "$CLIPBOARD_STAGE_DIR" "$clipboard_version"
 else

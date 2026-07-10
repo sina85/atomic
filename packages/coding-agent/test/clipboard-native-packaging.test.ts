@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -107,13 +108,60 @@ describe("standalone clipboard native packaging", () => {
 		const buildScript = readFileSync(join(repoRoot, "scripts", "build-binaries.sh"), "utf-8");
 		const stageCreationIndex = buildScript.indexOf("CLIPBOARD_STAGE_DIR=\"$(mktemp -d");
 		const canonicalizationIndex = buildScript.indexOf(
-			'CLIPBOARD_STAGE_DIR="$(cd "$CLIPBOARD_STAGE_DIR" && pwd -P)"',
+			'CLIPBOARD_STAGE_DIR="$(cd -- "$CLIPBOARD_STAGE_DIR" && pwd -P)"',
 		);
 		const codingAgentCdIndex = buildScript.indexOf("cd packages/coding-agent");
 
 		expect(stageCreationIndex).toBeGreaterThan(-1);
 		expect(canonicalizationIndex).toBeGreaterThan(stageCreationIndex);
 		expect(canonicalizationIndex).toBeLessThan(codingAgentCdIndex);
+	});
+
+	it("resolves a caller-relative TMPDIR before entering the repository", () => {
+		const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
+		const buildScript = join(repoRoot, "scripts", "build-binaries.sh");
+		const callerRoot = mkdtempSync(join(tmpdir(), "atomic-clipboard-external-cwd-"));
+		tempDirs.push(callerRoot);
+		mkdirSync(join(callerRoot, "relative-tmp"));
+
+		const result = spawnSync("bash", [buildScript, "--platform", "not-a-platform"], {
+			cwd: callerRoot,
+			env: { ...process.env, TMPDIR: "relative-tmp" },
+			encoding: "utf-8",
+		});
+		const output = `${result.stdout}${result.stderr}`;
+
+		expect(result.status).toBe(1);
+		expect(output).toContain("Invalid platform: not-a-platform");
+		expect(output).not.toMatch(/No such file or directory/i);
+	});
+
+	it("fails loudly when a caller-relative TMPDIR does not exist", () => {
+		const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
+		const buildScript = join(repoRoot, "scripts", "build-binaries.sh");
+		const callerRoot = mkdtempSync(join(tmpdir(), "atomic-clipboard-missing-tmpdir-"));
+		tempDirs.push(callerRoot);
+
+		const result = spawnSync("bash", [buildScript, "--platform", "not-a-platform"], {
+			cwd: callerRoot,
+			env: { ...process.env, TMPDIR: "missing-relative-tmp" },
+			encoding: "utf-8",
+		});
+		const output = `${result.stdout}${result.stderr}`;
+
+		expect(result.status).toBe(1);
+		expect(output).toMatch(/No such file or directory/i);
+		expect(output).not.toContain("Invalid platform: not-a-platform");
+	});
+
+	it("normalizes TMPDIR before the robust repository-root directory change", () => {
+		const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
+		const buildScript = readFileSync(join(repoRoot, "scripts", "build-binaries.sh"), "utf-8");
+		const tmpdirNormalizationIndex = buildScript.indexOf('TMPDIR="$(cd -- "$TMPDIR" && pwd -P)"');
+		const repoCdIndex = buildScript.indexOf('cd -- "$(dirname -- "$0")/.."');
+
+		expect(tmpdirNormalizationIndex).toBeGreaterThan(-1);
+		expect(repoCdIndex).toBeGreaterThan(tmpdirNormalizationIndex);
 	});
 
 	it(
