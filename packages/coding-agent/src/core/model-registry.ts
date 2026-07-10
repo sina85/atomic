@@ -13,8 +13,12 @@ import { getModelRequestAuth, getApiKeyForProviderFromConfig, getProviderAuthSta
 import { applyProviderConfigToModels, migrateLegacyRegisterProviderConfigValues, validateProviderConfig } from "./model-registry-dynamic.ts";
 import { loadModelRegistryModels } from "./model-registry-loader.ts";
 import type { ProviderConfigInput, ProviderRequestConfig, ResolvedRequestAuth } from "./model-registry-types.ts";
+import type { ModelOverride } from "./model-registry-schemas.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
 import { clearConfigValueCache, isConfigValueConfigured } from "./resolve-config-value.ts";
+
+const REMOTE_CATALOG_PROVIDERS = new Set(["cursor", "github-copilot", "openrouter", "vercel-ai-gateway"]);
+const OPENAI_COMPATIBLE_APIS = new Set<Api>(["openai-completions", "openai-responses"]);
 
 export type { ProviderConfigInput, ResolvedRequestAuth } from "./model-registry-types.ts";
 
@@ -26,9 +30,12 @@ export const clearApiKeyCache = clearConfigValueCache;
  */
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
+	private modelOverrides: Map<string, Map<string, ModelOverride>> = new Map();
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
+	private builtInProviders: Set<string> = new Set();
+	private customOpenAICompatibleProviders: Set<string> = new Set();
 	private loadError: string | undefined = undefined;
 
 	declare readonly authStorage: AuthStorage;
@@ -90,9 +97,12 @@ export class ModelRegistry {
 
 	private loadModels(): void {
 		const loaded = loadModelRegistryModels(this.authStorage, this.modelsJsonPaths);
+		this.modelOverrides = loaded.modelOverrides;
 		this.models = loaded.models;
 		this.providerRequestConfigs = loaded.providerRequestConfigs;
 		this.modelRequestHeaders = loaded.modelRequestHeaders;
+		this.builtInProviders = loaded.builtInProviders;
+		this.customOpenAICompatibleProviders = loaded.customOpenAICompatibleProviders;
 		this.loadError = loaded.loadError;
 	}
 
@@ -117,6 +127,21 @@ export class ModelRegistry {
 	 */
 	find(provider: string, modelId: string): Model<Api> | undefined {
 		return this.models.find((m) => m.provider === provider && m.id === modelId);
+	}
+
+	/** Whether an authenticated provider may reconstruct an absent saved model ID. */
+	canRestoreUnknownModel(provider: string): boolean {
+		if (REMOTE_CATALOG_PROVIDERS.has(provider)) return true;
+		if (this.customOpenAICompatibleProviders.has(provider)) return true;
+		if (this.builtInProviders.has(provider)) return false;
+
+		const config = this.registeredProviders.get(provider);
+		return (
+			config?.models?.some((model) => {
+				const api = model.api ?? config.api;
+				return api !== undefined && OPENAI_COMPATIBLE_APIS.has(api);
+			}) === true
+		);
 	}
 
 	/**
@@ -257,6 +282,7 @@ export class ModelRegistry {
 			providerName,
 			config,
 			models: this.models,
+			modelOverrides: this.modelOverrides,
 			authStorage: this.authStorage,
 			storeProviderRequestConfig: (name, requestConfig) => this.storeProviderRequestConfig(name, requestConfig),
 			storeModelHeaders: (name, modelId, headers) => this.storeModelHeaders(name, modelId, headers),

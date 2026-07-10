@@ -54,6 +54,7 @@ const ThinkingLevelMapSchema = Type.Object({
 	medium: Type.Optional(ThinkingLevelMapValueSchema),
 	high: Type.Optional(ThinkingLevelMapValueSchema),
 	xhigh: Type.Optional(ThinkingLevelMapValueSchema),
+	max: Type.Optional(ThinkingLevelMapValueSchema),
 });
 const ContextWindowOptionsSchema = Type.Array(Type.Number());
 const ChatTemplateKwargScalarSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
@@ -62,6 +63,28 @@ const ChatTemplateKwargVariableSchema = Type.Object({
 	omitWhenOff: Type.Optional(Type.Boolean()),
 });
 const ChatTemplateKwargSchema = Type.Union([ChatTemplateKwargScalarSchema, ChatTemplateKwargVariableSchema]);
+
+const ModelCostRatesSchema = Type.Object({
+	input: Type.Number(),
+	output: Type.Number(),
+	cacheRead: Type.Number(),
+	cacheWrite: Type.Number(),
+});
+const ModelCostTierSchema = Type.Intersect([
+	ModelCostRatesSchema,
+	Type.Object({ inputTokensAbove: Type.Number() }),
+]);
+const ModelCostSchema = Type.Intersect([
+	ModelCostRatesSchema,
+	Type.Object({ tiers: Type.Optional(Type.Array(ModelCostTierSchema)) }),
+]);
+const ModelCostOverrideSchema = Type.Object({
+	input: Type.Optional(Type.Number()),
+	output: Type.Optional(Type.Number()),
+	cacheRead: Type.Optional(Type.Number()),
+	cacheWrite: Type.Optional(Type.Number()),
+	tiers: Type.Optional(Type.Array(ModelCostTierSchema)),
+});
 
 const OpenAICompletionsCompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
@@ -123,14 +146,7 @@ const ModelDefinitionSchema = Type.Object({
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
-	cost: Type.Optional(
-		Type.Object({
-			input: Type.Number(),
-			output: Type.Number(),
-			cacheRead: Type.Number(),
-			cacheWrite: Type.Number(),
-		}),
-	),
+	cost: Type.Optional(ModelCostSchema),
 	contextWindow: Type.Optional(Type.Number()),
 	contextWindowOptions: Type.Optional(ContextWindowOptionsSchema),
 	maxTokens: Type.Optional(Type.Number()),
@@ -143,14 +159,7 @@ const ModelOverrideSchema = Type.Object({
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
-	cost: Type.Optional(
-		Type.Object({
-			input: Type.Optional(Type.Number()),
-			output: Type.Optional(Type.Number()),
-			cacheRead: Type.Optional(Type.Number()),
-			cacheWrite: Type.Optional(Type.Number()),
-		}),
-	),
+	cost: Type.Optional(ModelCostOverrideSchema),
 	contextWindow: Type.Optional(Type.Number()),
 	contextWindowOptions: Type.Optional(ContextWindowOptionsSchema),
 	maxTokens: Type.Optional(Type.Number()),

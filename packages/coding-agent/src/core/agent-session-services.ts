@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
-import { getAgentDir } from "../config.ts";
+import { getAgentConfigPaths, getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
@@ -150,7 +150,8 @@ export async function createAgentSessionServices(
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	endTimingSpan(settingsSpan);
 	const modelRegistrySpan = startTimingSpan("createAgentSessionServices.modelRegistry");
-	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+	const modelsJsonPaths = agentDir === getAgentDir() ? getAgentConfigPaths("models.json") : join(agentDir, "models.json");
+	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsJsonPaths);
 	endTimingSpan(modelRegistrySpan);
 	const resourceLoader = new DefaultResourceLoader({
 		...(options.resourceLoaderOptions ?? {}),

@@ -9,7 +9,12 @@ import {
 	stripJsonComments,
 	validateModelsConfig,
 } from "./model-registry-schemas.ts";
-import type { CustomModelsResult, ProviderOverride, ProviderRequestConfig } from "./model-registry-types.ts";
+import type {
+	CustomModelsResult,
+	ModelRequestHeaderSource,
+	ProviderOverride,
+	ProviderRequestConfig,
+} from "./model-registry-types.ts";
 
 function modelRequestKey(provider: string, modelId: string): string {
 	return `${provider}:${modelId}`;
@@ -22,17 +27,67 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 		modelOverrides: new Map(),
 		providerRequestConfigs: new Map(),
 		modelRequestHeaders: new Map(),
+		modelRequestHeaderSources: new Map(),
 		error,
 	};
 }
 
+function mergeModelOverrides(
+	base: Map<string, Map<string, ModelOverride>>,
+	incoming: Map<string, Map<string, ModelOverride>>,
+): Map<string, Map<string, ModelOverride>> {
+	const merged = new Map<string, Map<string, ModelOverride>>(
+		[...base].map(([providerName, overrides]) => [providerName, new Map(overrides)]),
+	);
+	for (const [providerName, incomingOverrides] of incoming) {
+		const providerOverrides = new Map(merged.get(providerName) ?? []);
+		for (const [modelId, modelOverride] of incomingOverrides) {
+			providerOverrides.set(modelId, modelOverride);
+		}
+		merged.set(providerName, providerOverrides);
+	}
+	return merged;
+}
+
+interface MergedModelRequestHeaders {
+	headers: Map<string, Record<string, string>>;
+	sources: Map<string, ModelRequestHeaderSource>;
+}
+
+function mergeModelRequestHeaders(
+	base: CustomModelsResult,
+	incoming: CustomModelsResult,
+): MergedModelRequestHeaders {
+	const headers = new Map(base.modelRequestHeaders);
+	const sources = new Map(base.modelRequestHeaderSources);
+	const invalidate = (key: string, source: ModelRequestHeaderSource): void => {
+		if (sources.get(key) !== source) return;
+		headers.delete(key);
+		sources.delete(key);
+	};
+
+	for (const model of incoming.models) {
+		invalidate(modelRequestKey(model.provider, model.id), "model");
+	}
+	for (const [providerName, overrides] of incoming.modelOverrides) {
+		for (const modelId of overrides.keys()) {
+			invalidate(modelRequestKey(providerName, modelId), "modelOverride");
+		}
+	}
+	for (const [key, value] of incoming.modelRequestHeaders) headers.set(key, value);
+	for (const [key, source] of incoming.modelRequestHeaderSources) sources.set(key, source);
+	return { headers, sources };
+}
+
 function mergeCustomModelResults(base: CustomModelsResult, incoming: CustomModelsResult): CustomModelsResult {
+	const mergedHeaders = mergeModelRequestHeaders(base, incoming);
 	return {
 		models: mergeCustomModels(base.models, incoming.models),
 		overrides: new Map([...base.overrides, ...incoming.overrides]),
-		modelOverrides: new Map([...base.modelOverrides, ...incoming.modelOverrides]),
+		modelOverrides: mergeModelOverrides(base.modelOverrides, incoming.modelOverrides),
 		providerRequestConfigs: new Map([...base.providerRequestConfigs, ...incoming.providerRequestConfigs]),
-		modelRequestHeaders: new Map([...base.modelRequestHeaders, ...incoming.modelRequestHeaders]),
+		modelRequestHeaders: mergedHeaders.headers,
+		modelRequestHeaderSources: mergedHeaders.sources,
 		error: undefined,
 	};
 }
@@ -55,9 +110,13 @@ function collectModelHeaders(
 	modelId: string,
 	headers: Record<string, string> | undefined,
 	modelHeaders: Map<string, Record<string, string>>,
+	modelHeaderSources: Map<string, ModelRequestHeaderSource>,
+	source: ModelRequestHeaderSource,
 ): void {
 	if (!headers || Object.keys(headers).length === 0) return;
-	modelHeaders.set(modelRequestKey(providerName, modelId), headers);
+	const key = modelRequestKey(providerName, modelId);
+	modelHeaders.set(key, headers);
+	modelHeaderSources.set(key, source);
 }
 
 function validateContextWindowOptions(providerName: string, modelId: string, options: readonly number[] | undefined): void {
@@ -127,6 +186,7 @@ function validateConfig(config: ModelsConfig): void {
 function parseModels(
 	config: ModelsConfig,
 	modelHeaders: Map<string, Record<string, string>>,
+	modelHeaderSources: Map<string, ModelRequestHeaderSource>,
 ): Model<Api>[] {
 	const models: Model<Api>[] = [];
 	const builtInProviders = new Set<string>(getProviders());
@@ -155,7 +215,7 @@ function parseModels(
 			if (!baseUrl) continue;
 
 			const compat = mergeCompat(providerConfig.compat, modelDef.compat);
-			collectModelHeaders(providerName, modelDef.id, modelDef.headers, modelHeaders);
+			collectModelHeaders(providerName, modelDef.id, modelDef.headers, modelHeaders, modelHeaderSources, "model");
 
 			const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 			const contextWindow = modelDef.contextWindow ?? 128000;
@@ -207,6 +267,7 @@ function loadCustomModels(modelsJsonPath: string): CustomModelsResult {
 		const modelOverrides = new Map<string, Map<string, ModelOverride>>();
 		const providerRequestConfigs = new Map<string, ProviderRequestConfig>();
 		const modelRequestHeaders = new Map<string, Record<string, string>>();
+		const modelRequestHeaderSources = new Map<string, ModelRequestHeaderSource>();
 
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			if (providerConfig.baseUrl || providerConfig.compat) {
@@ -221,17 +282,25 @@ function loadCustomModels(modelsJsonPath: string): CustomModelsResult {
 			if (providerConfig.modelOverrides) {
 				modelOverrides.set(providerName, new Map(Object.entries(providerConfig.modelOverrides)));
 				for (const [modelId, modelOverride] of Object.entries(providerConfig.modelOverrides)) {
-					collectModelHeaders(providerName, modelId, modelOverride.headers, modelRequestHeaders);
+					collectModelHeaders(
+						providerName,
+						modelId,
+						modelOverride.headers,
+						modelRequestHeaders,
+						modelRequestHeaderSources,
+						"modelOverride",
+					);
 				}
 			}
 		}
 
 		return {
-			models: parseModels(config, modelRequestHeaders),
+			models: parseModels(config, modelRequestHeaders, modelRequestHeaderSources),
 			overrides,
 			modelOverrides,
 			providerRequestConfigs,
 			modelRequestHeaders,
+			modelRequestHeaderSources,
 			error: undefined,
 		};
 	} catch (error) {

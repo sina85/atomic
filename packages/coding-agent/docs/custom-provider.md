@@ -214,7 +214,8 @@ models: [{
     low: null,
     medium: null,
     high: "default",
-    xhigh: "max"
+    xhigh: null,
+    max: "max"
   },
   compat: {
     supportsDeveloperRole: false,   // use "system" instead of "developer"
@@ -510,6 +511,8 @@ output.usage.totalTokens = output.usage.input + output.usage.output +
 calculateCost(model, output.usage);
 ```
 
+`calculateCost()` selects one rate set for the whole request. Aggregate input is `usage.input + usage.cacheRead + usage.cacheWrite`; a tier applies only when that sum is strictly greater than `inputTokensAbove`, and the matching tier with the highest threshold wins. Every tier must provide complete `input`, `output`, `cacheRead`, and `cacheWrite` rates. Extension-registered models preserve these tiers, and matching `models.json` `modelOverrides` use the same replacement rules described in [Custom Models](/models#request-wide-cost-tiers).
+
 ### Registration
 
 Register your stream function:
@@ -591,10 +594,10 @@ interface ProviderConfig {
 
 ```typescript
 interface ProviderModelConfig {
-  /** Model ID (e.g., "claude-sonnet-4-20250514"). */
+  /** Model ID (e.g., "claude-sonnet-4-5"). */
   id: string;
 
-  /** Display name (e.g., "Claude 4 Sonnet"). */
+  /** Display name (e.g., "Claude Sonnet 4.5"). */
   name: string;
 
   /** API type override for this specific model. */
@@ -607,17 +610,25 @@ interface ProviderModelConfig {
   reasoning: boolean;
 
   /** Maps Atomic thinking levels to provider/model-specific values; null marks a level unsupported. */
-  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh", string | null>>;
+  thinkingLevelMap?: Partial<Record<"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max", string | null>>;
 
   /** Supported input types. */
   input: ("text" | "image")[];
 
-  /** Cost per million tokens (for usage tracking). */
+  /** Base cost per million tokens plus optional request-wide long-context tiers. */
   cost: {
     input: number;
     output: number;
     cacheRead: number;
     cacheWrite: number;
+    tiers?: Array<{
+      /** Tier applies only when input + cacheRead + cacheWrite strictly exceeds this value. */
+      inputTokensAbove: number;
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+    }>;
   };
 
   /** Default/effective context window size in tokens. */
@@ -649,6 +660,8 @@ interface ProviderModelConfig {
   };
 }
 ```
+
+The `cost` shape is equivalent to `Model<Api>["cost"]`. Base rates and every tier are complete rate sets. When multiple thresholds match, `calculateCost()` uses the highest threshold and applies that tier to all four cost buckets for the request.
 
 `openrouter` sends `reasoning: { effort }`. `deepseek` sends `thinking: { type: "enabled" | "disabled" }` and `reasoning_effort` when enabled. `together` sends `reasoning: { enabled }` and also `reasoning_effort` when `supportsReasoningEffort` is enabled. `qwen` is for DashScope-style top-level `enable_thinking`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`. Use `chat-template` for configurable `chat_template_kwargs`, for example DeepSeek V3.x behind vLLM with `chatTemplateKwargs: { "thinking": { "$var": "thinking.enabled" } }`.
 `cacheControlFormat: "anthropic"` applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user/assistant text content.

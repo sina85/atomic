@@ -1,11 +1,13 @@
 import type { Model } from "@earendil-works/pi-ai/compat";
 import { describe, expect, test } from "vitest";
+import { AuthStorage } from "../src/core/auth-storage.ts";
 import { getSupportedContextWindows } from "../src/core/context-window.ts";
 import {
 	defaultModelPerProvider,
 	findInitialModel,
 	restoreModelFromSession,
 } from "../src/core/model-resolver.ts";
+import { ModelRegistry } from "../src/core/model-registry.ts";
 
 const allModels: Model<"anthropic-messages">[] = [
 	{
@@ -115,7 +117,7 @@ describe("default model selection", () => {
 		expect(result.model?.provider).toBe("openrouter");
 		expect(result.model?.id).toBe("openai/ghost-model");
 	});
-	test("findInitialModel restores saved custom Cursor model ids from an authenticated provider template", async () => {
+	test("findInitialModel does not synthesize unknown saved settings model ids", async () => {
 		const registry = {
 			find: () => undefined,
 			getAvailable: async () => [cursorBaseModel],
@@ -128,14 +130,30 @@ describe("default model selection", () => {
 			defaultThinkingLevel: "medium",
 			modelRegistry: registry,
 		});
-		expect(result.model?.provider).toBe("cursor");
-		expect(result.model?.id).toBe("cursor-compose-2.5");
-		expect(result.model?.api).toBe("cursor-agent");
+		expect(result.model).toBe(cursorBaseModel);
+		expect(result.thinkingLevel).toBe("medium");
+	});
+	test("findInitialModel accepts an exact authenticated saved settings model", async () => {
+		const registry = {
+			find: () => cursorBaseModel,
+			hasConfiguredAuth: () => true,
+			getAvailable: async () => [],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: cursorBaseModel.provider,
+			defaultModelId: cursorBaseModel.id,
+			defaultThinkingLevel: "medium",
+			modelRegistry: registry,
+		});
+		expect(result.model).toBe(cursorBaseModel);
 		expect(result.thinkingLevel).toBe("medium");
 	});
 	test("restoreModelFromSession restores saved custom Cursor model ids from an authenticated provider template", async () => {
 		const registry = {
 			find: () => undefined,
+			canRestoreUnknownModel: () => true,
 			getAvailable: async () => [cursorBaseModel],
 		} as unknown as Parameters<typeof restoreModelFromSession>[4];
 		const result = await restoreModelFromSession(
@@ -150,10 +168,67 @@ describe("default model selection", () => {
 		expect(result.model?.id).toBe("cursor-compose-2.5");
 		expect(result.model?.api).toBe("cursor-agent");
 	});
+	test("restoreModelFromSession does not synthesize removed catalog-backed OpenAI ids", async () => {
+		const openaiBaseModel = allModels[1]!;
+		const registry = {
+			find: () => undefined,
+			getAvailable: async () => [openaiBaseModel],
+			canRestoreUnknownModel: () => false,
+		} as unknown as Parameters<typeof restoreModelFromSession>[4];
+		const result = await restoreModelFromSession("openai", "gpt-5.6", undefined, false, registry);
+
+		expect(result.model).toBe(openaiBaseModel);
+		expect(result.model?.id).not.toBe("gpt-5.6");
+		expect(result.fallbackMessage).toContain("model no longer exists");
+	});
+	test("restoreModelFromSession restores missing ids for registered OpenAI-compatible providers", async () => {
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		registry.registerProvider("custom-openai", {
+			baseUrl: "https://custom.example/v1",
+			apiKey: "test-key",
+			api: "openai-completions",
+			models: [
+				{
+					id: "catalog-template",
+					name: "Catalog template",
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 128000,
+					maxTokens: 4096,
+				},
+			],
+		});
+
+		const result = await restoreModelFromSession(
+			"custom-openai",
+			"newly-discovered-model",
+			undefined,
+			false,
+			registry,
+		);
+
+		expect(result.fallbackMessage).toBeUndefined();
+		expect(result.model?.provider).toBe("custom-openai");
+		expect(result.model?.id).toBe("newly-discovered-model");
+	});
+	test("restoreModelFromSession rejects an exact unauthenticated model instead of synthesizing it", async () => {
+		const unauthenticatedExact = { ...cursorBaseModel, id: "saved-exact" };
+		const registry = {
+			find: () => unauthenticatedExact,
+			hasConfiguredAuth: () => false,
+			getAvailable: async () => [cursorBaseModel],
+		} as unknown as Parameters<typeof restoreModelFromSession>[4];
+		const result = await restoreModelFromSession("cursor", "saved-exact", undefined, false, registry);
+		expect(result.model).toBe(cursorBaseModel);
+		expect(result.model?.id).not.toBe("saved-exact");
+		expect(result.fallbackMessage).toContain("no auth configured");
+	});
 	test("restoreModelFromSession scrubs inherited context-window options from fallback models", async () => {
 		const registry = {
 			find: () => undefined,
 			getAvailable: async () => [copilotSelectableBaseModel],
+			canRestoreUnknownModel: () => true,
 		} as unknown as Parameters<typeof restoreModelFromSession>[4];
 		const result = await restoreModelFromSession(
 			"github-copilot",
@@ -193,5 +268,24 @@ describe("default model selection", () => {
 		});
 		expect(result.model?.provider).toBe("vercel-ai-gateway");
 		expect(result.model?.id).toBe("anthropic/claude-opus-4-6");
+	});
+	test("skips an unauthenticated saved default in favor of an available model", async () => {
+		const savedModel = allModels[0]!;
+		const availableModel = allModels[1]!;
+		const registry = {
+			find: () => savedModel,
+			hasConfiguredAuth: (model: Model<"anthropic-messages">) => model === availableModel,
+			getAvailable: async () => [availableModel],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: savedModel.provider,
+			defaultModelId: savedModel.id,
+			modelRegistry: registry,
+		});
+
+		expect(result.model).toBe(availableModel);
 	});
 });
