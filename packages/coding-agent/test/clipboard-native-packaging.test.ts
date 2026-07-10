@@ -161,16 +161,19 @@ describe("standalone clipboard native packaging", () => {
 		const buildScript = join(repoRoot, "scripts", "build-binaries.sh");
 		const callerRoot = mkdtempSync(join(tmpdir(), "atomic-clipboard-missing-tmpdir-"));
 		tempDirs.push(callerRoot);
+		const bashEnv = join(callerRoot, "bash-env.sh");
+		writeFileSync(bashEnv, "TMPDIR='missing-relative-tmp'\nexport TMPDIR\n");
 
 		const result = spawnSync("bash", [buildScript, "--platform", "not-a-platform"], {
 			cwd: callerRoot,
-			env: { ...process.env, TMPDIR: "missing-relative-tmp" },
+			env: { ...process.env, BASH_ENV: bashEnv },
 			encoding: "utf-8",
 		});
 		const output = `${result.stdout}${result.stderr}`;
 
 		expect(result.status).toBe(1);
 		expect(output).toMatch(/No such file or directory/i);
+		expect(output).toContain("missing-relative-tmp");
 		expect(output).not.toContain("Invalid platform: not-a-platform");
 	});
 

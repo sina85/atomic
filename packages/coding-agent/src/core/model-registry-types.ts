@@ -51,6 +51,8 @@ export interface ModelRegistryLoadResult {
 	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	providerRequestConfigs: Map<string, ProviderRequestConfig>;
 	modelRequestHeaders: Map<string, Record<string, string>>;
+	builtInProviders: Set<string>;
+	customOpenAICompatibleProviders: Set<string>;
 	loadError: string | undefined;
 }
 

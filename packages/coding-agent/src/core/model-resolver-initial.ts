@@ -8,13 +8,6 @@ import { buildFallbackModel } from "./model-resolver-patterns.ts";
 import { resolveCliModel } from "./model-resolver-cli.ts";
 import type { InitialModelResult, ScopedModel } from "./model-resolver-types.ts";
 
-const RESTORABLE_DYNAMIC_MODEL_PROVIDERS = new Set([
-  "cursor",
-  "github-copilot",
-  "openrouter",
-  "vercel-ai-gateway",
-]);
-
 async function buildConfiguredProviderFallbackModel(
   provider: string,
   modelId: string,
@@ -35,7 +28,7 @@ export async function resolveRestoredModelReference(
 ): Promise<Model<Api> | undefined> {
   const found = modelRegistry.find(provider, modelId);
   if (found) return modelRegistry.hasConfiguredAuth(found) ? found : undefined;
-  if (!RESTORABLE_DYNAMIC_MODEL_PROVIDERS.has(provider)) return undefined;
+  if (!modelRegistry.canRestoreUnknownModel(provider)) return undefined;
   return buildConfiguredProviderFallbackModel(provider, modelId, modelRegistry);
 }
 

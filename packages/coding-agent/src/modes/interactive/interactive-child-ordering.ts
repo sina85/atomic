@@ -22,6 +22,7 @@ export function appendNewChildrenBeforeAttachedChild(
 	const appendedChildren = container.children.filter((child) => !existingChildren.has(child));
 	if (appendedChildren.length === 0) return;
 
+	// Direct splices preserve live child instances; remove/add APIs would detach and remount them.
 	const appendedSet = new Set(appendedChildren);
 	for (let index = container.children.length - 1; index >= 0; index--) {
 		if (appendedSet.has(container.children[index]!)) container.children.splice(index, 1);

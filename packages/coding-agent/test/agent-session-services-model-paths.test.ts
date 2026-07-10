@@ -7,6 +7,9 @@ import { AuthStorage } from "../src/core/auth-storage.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 const originalHome = process.env.HOME;
+const originalUserProfile = process.env.USERPROFILE;
+const originalHomeDrive = process.env.HOMEDRIVE;
+const originalHomePath = process.env.HOMEPATH;
 const originalAtomicAgentDir = process.env.ATOMIC_CODING_AGENT_DIR;
 const originalPiAgentDir = process.env.PI_CODING_AGENT_DIR;
 const tempDirs: string[] = [];
@@ -18,6 +21,9 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 
 function configureTemporaryHome(home: string): void {
 	process.env.HOME = home;
+	process.env.USERPROFILE = home;
+	delete process.env.HOMEDRIVE;
+	delete process.env.HOMEPATH;
 	delete process.env.ATOMIC_CODING_AGENT_DIR;
 	delete process.env.PI_CODING_AGENT_DIR;
 }
@@ -41,6 +47,9 @@ function writeLegacyOverride(home: string): void {
 
 afterEach(() => {
 	restoreEnvironment("HOME", originalHome);
+	restoreEnvironment("USERPROFILE", originalUserProfile);
+	restoreEnvironment("HOMEDRIVE", originalHomeDrive);
+	restoreEnvironment("HOMEPATH", originalHomePath);
 	restoreEnvironment("ATOMIC_CODING_AGENT_DIR", originalAtomicAgentDir);
 	restoreEnvironment("PI_CODING_AGENT_DIR", originalPiAgentDir);
 	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
