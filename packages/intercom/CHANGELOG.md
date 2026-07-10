@@ -8,6 +8,11 @@ All notable changes to the `pi-intercom` extension will be documented in this fi
 
 - Aligned the intercom extension peer dependency with upstream `pi-tui` `^0.80.6` as part of the consolidated Pi sync; no intercom source behavior changed ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 
+### Fixed
+
+- Made lazy Intercom lifecycle replay generation-safe, session-leased, and serialized with live lifecycle forwarding, so matching end events and newer model selections cannot be overtaken by a blocked stale replay. Shutdown waits for retired replay/initializer cleanup before replacement, calls spanning teardown reject, and failed or invalidated attempts cannot leak stale resources.
+- Recover from rejected lazy and delegated-child background initialization and later-generation session replay; later callers retry before executing, and concurrent retries share one initialization or replay attempt while normal sessions remain lazy.
+
 ## [0.9.5-alpha.8] - 2026-07-08
 
 ### Added
