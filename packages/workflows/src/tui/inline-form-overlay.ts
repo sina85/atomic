@@ -143,6 +143,10 @@ export function registerInlineFormRenderer(pi: ExtensionAPI, theme: GraphTheme):
  * Requirements:
  *   - `pi.sendMessage` is available to add the sticky form card
  *   - `ctx.ui.custom` is available to mount the focused inline editor surface
+ *
+ * Atomic suppresses the global Working loader for the non-overlay custom UI
+ * mount while the form is waiting on user input; this overlay intentionally
+ * leaves that global state to the host/runtime layer.
  */
 export async function openInlineInputsForm(
   pi: ExtensionAPI,

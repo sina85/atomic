@@ -86,6 +86,12 @@ export function workflowResumeSelectorItems(
   ];
 }
 
+/**
+ * Mount the workflow resume selector as non-overlay custom UI. Hosts that
+ * implement Atomic's blocking custom UI contract suppress the global Working
+ * loader while this user-input surface is mounted; overlay code intentionally
+ * relies on that host-level behavior instead of toggling loader visibility.
+ */
 export function openWorkflowResumeSelector(
   ui: WorkflowResumeSelectorUiSurface,
   liveRuns: readonly RunSnapshot[],
@@ -102,8 +108,6 @@ export function openWorkflowResumeSelector(
     onProgress?.(sessions.length, sessions.length);
     return [...sessions];
   };
-
-
 
   return new Promise<WorkflowResumeSelectorResult>((resolve) => {
     let settled = false;

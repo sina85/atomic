@@ -227,7 +227,6 @@ export function openKillConfirm(
       return;
     }
 
-
     const state = createKillConfirmState();
     let settled = false;
 
