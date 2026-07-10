@@ -8,7 +8,9 @@
 
 ### Changed
 
+- Aligned the subagents extension peer dependencies with upstream Pi `^0.80.5` runtime packages as part of the consolidated dependency refresh.
 - Aligned the subagents extension peer dependencies with upstream Pi `^0.80.6` runtime packages while preserving Atomic child-session and orchestration behavior ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Increased the top-level parallel subagent task limit from 8 to 50, including repeated tasks expanded through `count`; `parallel.maxTasks` can still configure a lower limit while concurrency remains independently configurable.
 
 ### Removed
 
@@ -17,6 +19,7 @@
 ### Fixed
 
 - Fixed Bun source-checkout subagent launches to reuse the current TypeScript Atomic CLI entrypoint instead of falling back to an unrelated `atomic` executable on `PATH`, while preserving JavaScript, compiled-runtime, and cross-platform spawn behavior.
+- Fixed direct async subagent completions disappearing after an in-process workflow stage loaded or shut down the extension. Runtime cleanup, watchers, event subscriptions, completion notification handlers and dedupe state, slash live snapshots, visible-control deduplication, fanout-child nested-control listeners/timers, and async widget animation state are now owned per `ExtensionAPI`, so concurrent parent/stage sessions cannot tear down, suppress, clear, or replace one another's parent-owned state even when they share a forwarded host UI and session identity. Native result watching also coalesces directory activity into a short rescan, so macOS/Bun atomic writes are consumed even when `fs.watch` reports only a hidden temporary rename rather than the final JSON filename. Same-API reloads remain deduplicated, partial registration failures clean up acquired resources, stale shutdown callbacks cannot stop a newer registration, and duplicate watcher activity still consumes a parent result file with exactly one `subagent-notify`.
 
 ## [0.9.5-alpha.9] - 2026-07-09
 
