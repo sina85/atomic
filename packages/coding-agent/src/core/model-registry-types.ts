@@ -34,19 +34,25 @@ export type ResolvedRequestAuth =
 			error: string;
 	  };
 
+export type ModelRequestHeaderSource = "model" | "modelOverride";
+
 export interface CustomModelsResult {
 	models: Model<Api>[];
 	overrides: Map<string, ProviderOverride>;
 	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	providerRequestConfigs: Map<string, ProviderRequestConfig>;
 	modelRequestHeaders: Map<string, Record<string, string>>;
+	modelRequestHeaderSources: Map<string, ModelRequestHeaderSource>;
 	error: string | undefined;
 }
 
 export interface ModelRegistryLoadResult {
 	models: Model<Api>[];
+	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	providerRequestConfigs: Map<string, ProviderRequestConfig>;
 	modelRequestHeaders: Map<string, Record<string, string>>;
+	builtInProviders: Set<string>;
+	customOpenAICompatibleProviders: Set<string>;
 	loadError: string | undefined;
 }
 
@@ -54,6 +60,7 @@ export interface DynamicProviderApplyInput {
 	providerName: string;
 	config: ProviderConfigInput;
 	models: Model<Api>[];
+	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	authStorage: AuthStorage;
 	storeProviderRequestConfig: (providerName: string, config: ProviderRequestConfig) => void;
 	storeModelHeaders: (providerName: string, modelId: string, headers?: Record<string, string>) => void;
@@ -81,7 +88,7 @@ export interface ProviderConfigInput {
 		reasoning: boolean;
 		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 		input: ("text" | "image")[];
-		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+		cost: Model<Api>["cost"];
 		contextWindow: number;
 		contextWindowOptions?: readonly number[];
 		maxTokens: number;

@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added model-capability-aware `max` thinking support across the CLI, settings, SDK/RPC/extension surfaces, Cursor model mapping, workflow stages, and bundled subagents; models still expose only the levels in their own capability maps ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Added request-wide `cost.tiers` support for custom `models.json` models, partial `modelOverrides`, and extension-registered providers, including complete tier validation, aggregate-input threshold selection, inherited-tier preservation for scalar overrides, and explicit tier-array replacement/clearing ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+
 ### Changed
 
-- Synced the upstream Pi runtime dependencies (`@earendil-works/pi-agent-core`, `pi-ai`, and `pi-tui`) from `^0.80.3` to `^0.80.5` across Atomic and bundled extensions, refreshed the Dependabot-covered runtime dependencies (`lru-cache`, `@dbos-inc/dbos-sdk`, `napi`, `napi-derive`, and `tree-sitter`) to the latest stable versions, and regenerated Bun/Cargo/npm shrinkwrap lock metadata.
+- Synced the upstream Pi runtime dependencies (`@earendil-works/pi-agent-core`, `pi-ai`, and `pi-tui`) through `^0.80.6` across Atomic and bundled extensions, retained the same consolidated refresh's `lru-cache`, optional `@dbos-inc/dbos-sdk`, `napi`, `napi-derive`, and `tree-sitter` updates, regenerated Bun/Cargo/npm shrinkwrap metadata with mutually consistent 0.80.6 registry integrity, and kept versionless `0.0.0` Atomic manifests. This inherits signed empty Anthropic thinking preservation, request-wide GPT-5.4/5.5 long-context pricing, corrected GPT-5.6 catalogs/backend windows, and upstream retry/provider fixes while preserving Atomic's Copilot/Gemini behavior ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 
+- Explicit bash timeouts now fail before execution when non-finite, non-positive, or greater than Atomic's 3600-second ceiling; omitting the field still uses 300 seconds, and valid fractional values retain Atomic's floor behavior instead of being silently clamped into range ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 
 - Changed the bundled `ralph` workflow review fan-out from three reviewers to two (`reviewer-a` and `reviewer-b`), removing `reviewer-c` and its GLM-led model chain while keeping unanimous approval across the remaining reviewers.
 
@@ -14,6 +20,11 @@
 - Fixed CLI resolution of unknown/custom model IDs with a recognized `:<thinking>` suffix so the suffix is applied as the thinking level instead of leaking into the synthesized model ID, while preserving registered and unrecognized colon-bearing model IDs.
 - Fixed bundled MCP readiness so failed background initialization is retryable and single-flight within the active session, stale retries cannot publish after shutdown, replacement startup waits for retired initializer/state/OAuth cleanup, and proxy/direct readiness plus lazy-connection and OAuth waits use caller-local cancellation without stopping shared producers. Direct executors reject old-state work on success and failure paths after replacement and close stale newly opened Apps views, SDK resource/tool requests receive the invocation signal, and UI-backed MCP Apps calls emit one terminal cancellation before teardown while preserving the exact host reason over SDK/notification failures.
 - Fixed bundled web-access and Intercom lazy wrappers to retire session-scoped candidates on shutdown, reject calls spanning teardown, and initialize fresh state after restart; host cancellation after web provider/curator execution now preserves its exact abort reason while explicit curator user cancellation remains a normal result.
+- Fixed stale pre-compaction usage estimates after a newer inserted prefix, normalized lax null or omitted content at extension, custom-message, and restored-session boundaries, and kept Atomic's Verbatim Compaction custom-message budgeting semantics intact ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Fixed `models.json` `modelOverrides` so matching extension-registered provider models receive configured names, thinking maps, compatibility fields, context settings, and merged headers without replacing Atomic's dynamic Copilot/context-window behavior; normal CLI startup now loads layered legacy `.pi` and primary `.atomic` files, disjoint provider/model entries survive, and an exact primary entry replaces the complete legacy override with source-correct header precedence and `{}` restoration of built-in values ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Fixed project context traversal at Windows drive roots, surfaced credential persistence failures without mutating in-memory auth first, skipped unauthenticated saved defaults, preserved missing saved IDs for authenticated custom OpenAI-compatible providers, prevented removed static catalog model IDs from being synthesized during session restore, and cleared cached label timestamps when starting a new session ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Fixed missing exact `--session-id` handling to warn before creating the requested session, ignored rapid duplicate fork-menu selections, and kept visible custom messages emitted during streaming ordered before the live assistant row ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
+- Fixed standalone clipboard image support by falling back to xclip after an empty native result and packaging each matching 0.3.9 native binding beside the wrapper in Atomic's split binary archives; caller-relative `TMPDIR` values are canonicalized before directory changes, and `--skip-deps` tolerates an absent optional clipboard wrapper while strict release builds remain loud ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 
 ## [0.9.5-alpha.9] - 2026-07-09
 

@@ -27,6 +27,12 @@ Research the upstream library behavior online, then compare it with our local im
 
 Atomic decides whether to call the bundled `subagent` tool, which specialist fits each part, and whether the work should run as a single child, parallel group, chain, foreground run, or background run.
 
+## Subagent execution is non-interactive
+
+Supported subagent launches start immediately without opening a preview/editor prompt or waiting for terminal input. This applies to single, parallel, chain, foreground, background, fanout, prompt-template, and human-entered `/run`, `/chain`, `/parallel`, and `/run-chain` execution. Ask any necessary questions in the parent conversation before delegating.
+
+The human slash commands remain registered and continue to use their separate parsing and event-bridge path, including background and fork flags.
+
 Subagents now run and return their results directly. Atomic does not infer acceptance gates from prompt wording, inject `acceptance-report` instructions into child prompts, parse or strip `acceptance-report` blocks, or reject completed child runs because changed-file, test, or review evidence is missing. Put any evidence or validation requirements directly in the task text you give the parent or child agent.
 
 ## Migration from acceptance gates
@@ -120,6 +126,8 @@ For parallel implementation work, `worktree: true` can give each child an isolat
 
 Fresh child processes use normal Atomic package discovery when an agent omits `extensions`, so bundled lightweight MCP, web-access, and Intercom wrappers are available just as they are in the parent. An explicit `extensions` field (including an empty list) intentionally switches the child to extension-allowlist mode and excludes unlisted builtins; it does not inherit the parent's normal discovery set.
 
+Top-level parallel calls support up to 50 subagents after expanding each task's optional `count`. The extension's `parallel.maxTasks` setting defaults to 50 and can enforce a lower task limit; `parallel.concurrency` independently controls how many of those children run at once.
+
 When a subagent call, parallel task, chain step, or background run uses a `cwd`, Atomic validates that working directory before starting the child runtime. Missing or non-directory paths are reported as `cwd` problems instead of lower-level process-spawn errors, so failures point at the requested child workspace rather than at the runtime binary.
 
 ## Nested and fanout boundaries
@@ -193,7 +201,7 @@ Each candidate can also carry its own reasoning effort — see [Reasoning levels
 
 ## Reasoning levels
 
-Set the reasoning (thinking) effort for each model candidate with a `model_name:thinking_effort` suffix on `model` and on every `fallbackModels` entry. Valid efforts are `off`, `minimal`, `low`, `medium`, `high`, and `xhigh` — the same shorthand used by `atomic --model sonnet:high`.
+Set the reasoning (thinking) effort for each model candidate with a `model_name:thinking_effort` suffix on `model` and on every `fallbackModels` entry. Valid efforts are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` — the same shorthand used by `atomic --model sonnet:high`. `xhigh` and `max` are used only when the selected model's capability map supports them.
 
 ```markdown
 ---

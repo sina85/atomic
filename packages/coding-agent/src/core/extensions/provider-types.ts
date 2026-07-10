@@ -58,8 +58,8 @@ export interface ProviderModelConfig {
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	/** Supported input types. */
 	input: ("text" | "image")[];
-	/** Cost per token (for tracking, can be 0). */
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Request pricing, including optional request-wide long-context tiers. */
+	cost: Model<Api>["cost"];
 	/** Default/effective context window size in tokens. */
 	contextWindow: number;
 	/** Selectable context-window sizes in tokens; omit when the model has only one supported window. */

@@ -93,8 +93,6 @@ See [Providers & Models](./packages/coding-agent/README.md#providers--models) fo
 
 > ⚠️ Workflows run with agent permission checks **disabled** so pipelines don't block on prompts. Run autonomous workflows inside a devcontainer, VM, or remote dev machine — not your host machine.
 
-> ⚠️ **Workflow migration note:** The `defineWorkflow(...).compile()` builder API was removed in [#1457](https://github.com/bastani-inc/atomic/pull/1457). Custom workflows must now author with the `workflow({ name?, description, inputs, outputs, run })` object form — import `workflow` from `@bastani/workflows` and `Type` from `typebox` — and compose child workflows with normal TypeScript module imports passed to `ctx.workflow(workflowDefinition, options)` (registry names and path objects are no longer accepted). If an existing workflow no longer loads, ask Atomic to update it using the [workflow migration guide](./packages/coding-agent/docs/workflows.md#migrating-from-the-defineworkflow-builder-api) and the [workflow composition example](./packages/workflows/README.md#example-4--compose-workflows).
-
 <details>
 <summary><b>Prerequisites, devcontainer</b></summary>
 
@@ -199,12 +197,13 @@ Atomic defines what runs, what context each stage receives, what it must produce
 
 Atomic verifiability comes from:
 
-- **Explicit stages** instead of one oversized autonomous prompt.
-- **Scoped instructions and context** for research, implementation, review, and verification.
-- **Tool boundaries and MCP access** for repo edits, shell commands, external systems, and team tools.
-- **Required artifacts** such as research docs, specs, transcripts, logs, diffs, reviewer notes, and check output.
-- **Verification checks, review gates, and approvals** before risky or externally visible steps.
-- **Checkpoints, resumability, and subagents** for long-running or parallel work.
+- **Workflow-shaped execution** through staged, bounded runs with scoped context, tools, handoffs, and done criteria.
+- **Evidence artifacts and receipts** for persistent proof of claims, diffs, commands, outputs, blockers, and remaining risk.
+- **Structured output contracts** for schema-validated handoffs, decisions, and failure states.
+- **Adversarial review** through fresh-context verifier passes that inspect the actual work against the contract.
+- **Reducer-enforced gates** for deterministic approve, retry, block, or human-escalation decisions.
+- **Executable validation before approval** through runtime checks, external tools, and human gates before risky steps.
+- **Checkpoints and resumability** for long-running or parallel work.
 
 The selected model still generates text and code. Confidence comes from runtime-enforced structure, evidence, and review.
 

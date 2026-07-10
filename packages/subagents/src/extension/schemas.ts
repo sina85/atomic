@@ -3,7 +3,7 @@
  */
 
 import { Type } from "typebox";
-import { MAX_SUBAGENT_NESTING_DEPTH, SUBAGENT_ACTIONS } from "../shared/types.ts";
+import { MAX_PARALLEL_TASKS, MAX_SUBAGENT_NESTING_DEPTH, SUBAGENT_ACTIONS } from "../shared/types.ts";
 
 const SkillOverride = Type.Unsafe({
 	anyOf: [
@@ -40,6 +40,11 @@ const JsonSchemaObject = Type.Unsafe({
 	additionalProperties: true,
 	description: "Plain JSON Schema object for structured output.",
 });
+
+const MaxOutputSchema = Type.Object({
+	bytes: Type.Optional(Type.Number()),
+	lines: Type.Optional(Type.Number()),
+}, { additionalProperties: false });
 
 const TaskItem = Type.Object({
 	agent: Type.String(), 
@@ -185,7 +190,10 @@ export const SubagentParams = Type.Object({
 		],
 		description: `Agent or chain config for create/update. Agent: name, package (optional namespace; runtime name becomes package.name), description, scope ('user'|'project', default 'user'), systemPrompt, systemPromptMode, inheritProjectContext, inheritSkills, defaultContext ('fresh'|'fork'), model, tools (comma-separated), extensions (comma-separated), skills (comma-separated), thinking, output, reads, progress, maxSubagentDepth (integer >= 0, clamped to ${MAX_SUBAGENT_NESTING_DEPTH}). Chain: name, package, description, scope, steps (array of {agent, task?, output?, outputMode?, reads?, model?, skill?, progress?}). Presence of 'steps' creates a chain instead of an agent. String values must be valid JSON.`
 	})),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "PARALLEL mode: [{agent, task, count?, output?, outputMode?, reads?, progress?}, ...]" })),
+	tasks: Type.Optional(Type.Array(TaskItem, {
+		maxItems: MAX_PARALLEL_TASKS,
+		description: `PARALLEL mode: [{agent, task, count?, output?, outputMode?, reads?, progress?}, ...]. Maximum ${MAX_PARALLEL_TASKS} tasks after count expansion.`,
+	})),
 	concurrency: Type.Optional(Type.Integer({ minimum: 1, description: "Top-level PARALLEL mode only: max concurrent tasks. Defaults to config.parallel.concurrency or 4." })),
 	worktree: Type.Optional(Type.Boolean({
 		description: "Create isolated git worktrees for each parallel task. " +
@@ -201,14 +209,13 @@ export const SubagentParams = Type.Object({
 	async: Type.Optional(Type.Boolean({ description: "Run in background (default: false, or per config)" })),
 	agentScope: Type.Optional(Type.String({ description: "Agent discovery scope: 'user', 'project', or 'both' (default: 'both'; project wins on name collisions)" })),
 	cwd: Type.Optional(Type.String()),
+	maxOutput: Type.Optional(MaxOutputSchema),
 	artifacts: Type.Optional(Type.Boolean({ description: "Write debug artifacts (default: true)" })),
 	includeProgress: Type.Optional(Type.Boolean({ description: "Include full progress in result (default: false)" })),
 	share: Type.Optional(Type.Boolean({ description: "Upload session to GitHub Gist for sharing (default: false)" })),
 	sessionDir: Type.Optional(
 		Type.String({ description: "Directory to store session logs (default: temp; enables sessions even if share=false)" }),
 	),
-	// Clarification TUI
-	clarify: Type.Optional(Type.Boolean({ description: "Show TUI to preview/edit before execution. Explicit clarify: true keeps the run foreground for the clarify UI; omitted clarify can still run in the background when async: true is set." })),
 	control: Type.Optional(ControlOverrides),
 	// Solo agent overrides
 	output: Type.Optional(Type.Unsafe({
@@ -221,4 +228,4 @@ export const SubagentParams = Type.Object({
 	outputMode: Type.Optional(OutputModeOverride),
 	skill: Type.Optional(SkillOverride),
 	model: Type.Optional(Type.String({ description: "Override model for single agent (e.g. 'anthropic/claude-sonnet-4')" })),
-});
+}, { additionalProperties: false });
