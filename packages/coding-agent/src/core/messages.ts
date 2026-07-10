@@ -62,8 +62,15 @@ declare module "@earendil-works/pi-agent-core" {
 
 /** Normalize lax JavaScript/legacy message input before it reaches history or providers. */
 export function normalizeMessageContent<T extends AgentMessage>(message: T): T {
-	if (!("content" in message) || message.content != null) return message;
-	return { ...message, content: [] } as T;
+	switch (message.role) {
+		case "user":
+		case "assistant":
+		case "toolResult":
+		case "custom":
+			return message.content == null ? ({ ...message, content: [] } as T) : message;
+		default:
+			return message;
+	}
 }
 
 /**

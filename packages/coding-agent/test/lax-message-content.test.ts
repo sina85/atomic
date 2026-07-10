@@ -30,6 +30,28 @@ describe("lax message content normalization", () => {
 		expect(assistant?.content).toEqual([]);
 	});
 
+	it("normalizes omitted content returned by a message_end extension", async () => {
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("message_end", (event) => {
+						if (event.message.role !== "assistant") return;
+						const replacement = { ...event.message } as typeof event.message & { content?: never };
+						delete replacement.content;
+						return { message: replacement };
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("reply")]);
+
+		await harness.session.prompt("hello");
+
+		const assistant = harness.session.messages.find((message) => message.role === "assistant");
+		expect(assistant?.content).toEqual([]);
+	});
+
 	it("normalizes null content injected by before_agent_start", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
@@ -74,6 +96,18 @@ describe("lax message content normalization", () => {
 				content: null as never,
 				timestamp: 1,
 			},
+		};
+
+		expect(buildSessionContext([entry]).messages[0]?.content).toEqual([]);
+	});
+
+	it("normalizes omitted content while rebuilding old session context", () => {
+		const entry: SessionEntry = {
+			type: "message",
+			id: "old-message-without-content",
+			parentId: null,
+			timestamp: "2025-01-01T00:00:00.000Z",
+			message: { role: "user", timestamp: 1 } as never,
 		};
 
 		expect(buildSessionContext([entry]).messages[0]?.content).toEqual([]);

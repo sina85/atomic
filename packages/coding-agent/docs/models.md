@@ -443,12 +443,12 @@ Use `modelOverrides` to customize specific models without replacing the provider
 
 When both `~/.pi/agent/models.json` and `~/.atomic/agent/models.json` define `modelOverrides`, Atomic merges their nested provider/model maps in that order. Different model IDs survive from both files. For the same provider and model ID, the primary `.atomic` entry replaces the entire legacy `.pi` override entry rather than deep-merging individual fields. This complete-entry rule includes `headers`: a primary exact override without headers removes headers that came from the legacy override, but does not erase a surviving custom model definition's own headers. An empty primary override (`{}`) therefore restores the model's built-in values for that entry.
 
-Within a single file, the existing precedence is unchanged: a custom model definition supplies the base model values and its matching `modelOverrides` entry wins configured model fields, while custom-model headers win duplicate header names.
+Within a single file, custom model definitions replace matching built-in entries after built-in overrides are applied. `modelOverrides` composes only with built-in and extension-registered models; it does not modify a same-ID custom model definition.
 
 Behavior notes:
 - Atomic retains the parsed override map even when an extension registers the matching provider/model after `models.json` is loaded.
 - Layered primary/legacy compatibility merges override maps by provider and model ID; disjoint entries survive, while a primary exact entry replaces the complete legacy entry without cross-file field-level merging.
-- For a matching built-in or extension-registered model, the model definition is the base and `modelOverrides` wins for configured fields. Request headers are shallow-merged within that file's effective entry, with custom-model headers winning duplicate names.
+- For matching built-in and extension-registered models, the model definition is the base and `modelOverrides` wins configured fields. Extension-registered model headers are shallow-merged with override headers, with override headers winning duplicate names. A same-ID custom model replaces the built-in override result, including its complete header record.
 - A scalar-only `cost` override preserves inherited tiers. Supplying `cost.tiers` replaces the complete tier array, including `[]` to clear it; omitted scalar cost fields remain inherited.
 - Provider-level request headers remain a separate provider layer and are combined at request time.
 - Unknown model IDs are ignored unless a matching model is subsequently registered by an extension.

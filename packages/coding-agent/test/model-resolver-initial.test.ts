@@ -165,6 +165,18 @@ describe("default model selection", () => {
 		expect(result.model?.id).toBe("cursor-compose-2.5");
 		expect(result.model?.api).toBe("cursor-agent");
 	});
+	test("restoreModelFromSession does not synthesize removed catalog-backed OpenAI ids", async () => {
+		const openaiBaseModel = allModels[1]!;
+		const registry = {
+			find: () => undefined,
+			getAvailable: async () => [openaiBaseModel],
+		} as unknown as Parameters<typeof restoreModelFromSession>[4];
+		const result = await restoreModelFromSession("openai", "gpt-5.6", undefined, false, registry);
+
+		expect(result.model).toBe(openaiBaseModel);
+		expect(result.model?.id).not.toBe("gpt-5.6");
+		expect(result.fallbackMessage).toContain("model no longer exists");
+	});
 	test("restoreModelFromSession rejects an exact unauthenticated model instead of synthesizing it", async () => {
 		const unauthenticatedExact = { ...cursorBaseModel, id: "saved-exact" };
 		const registry = {

@@ -103,6 +103,26 @@ describe("standalone clipboard native packaging", () => {
 		).toBe(`binding:${availableTarget.packageName}`);
 	});
 
+	it("allows an absent optional destination wrapper only in skip mode", () => {
+		const root = mkdtempSync(join(tmpdir(), "atomic-clipboard-wrapper-skip-"));
+		tempDirs.push(root);
+		const sourceNodeModules = join(root, "source");
+		const destinationNodeModules = join(root, "destination");
+		const [platform] = Object.keys(CLIPBOARD_NATIVE_TARGETS);
+
+		expect(() =>
+			copyClipboardNativeBindings({
+				sourceNodeModules,
+				destinationNodeModules,
+				platforms: [platform!],
+				allowMissing: true,
+			}),
+		).not.toThrow();
+		expect(() =>
+			copyClipboardNativeBindings({ sourceNodeModules, destinationNodeModules, platforms: [platform!] }),
+		).toThrow(/metadata not found/i);
+	});
+
 	it("canonicalizes a relative clipboard staging path before changing directories", () => {
 		const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 		const buildScript = readFileSync(join(repoRoot, "scripts", "build-binaries.sh"), "utf-8");

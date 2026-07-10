@@ -59,6 +59,8 @@ function readVersion(packageDir: string): string {
 export function copyClipboardNativeBindings(options: CopyClipboardNativeBindingsOptions): void {
 	const sourceWrapper = packagePath(options.sourceNodeModules, "@mariozechner/clipboard");
 	const destinationWrapper = packagePath(options.destinationNodeModules, "@mariozechner/clipboard");
+	const destinationWrapperPackageJson = join(destinationWrapper, "package.json");
+	if (options.allowMissing && !existsSync(destinationWrapperPackageJson)) return;
 	const wrapperVersion = readVersion(destinationWrapper);
 	const sourceWrapperPackageJson = join(sourceWrapper, "package.json");
 	if (existsSync(sourceWrapperPackageJson)) {
