@@ -1,4 +1,5 @@
 import type { ContextDeletionTarget } from "../session-manager.ts";
+import { messageStartsLlmUserTurn, userLikeContentBlockIsLlmVisible } from "../messages.ts";
 import type {
 	CompactableContentBlock,
 	CompactableTranscript,
@@ -7,6 +8,69 @@ import type {
 } from "./context-compaction-types.ts";
 import { getTranscriptCompactionParameters } from "./context-compaction-strategy.ts";
 import { assistantEntryHasThinkingContentBlock } from "./context-transcript-analysis.ts";
+import { analyzeAssistantToolUseTurns } from "./context-assistant-turns.js";
+
+interface AssistantTurnDeletionViolation {
+	entryId: string;
+	active: boolean;
+}
+
+export function transcriptEntryStartsNewTurn(
+	entry: CompactableTranscriptEntry,
+	deletedContentBlocks: ReadonlySet<number> = new Set<number>(),
+): boolean {
+	if (entry.role === "user" || entry.role === "custom") {
+		const content = (entry.message as { content?: unknown }).content;
+		if (typeof content === "string" || entry.contentBlocks.length === 0) {
+			return messageStartsLlmUserTurn(entry.message, deletedContentBlocks);
+		}
+		return entry.contentBlocks.some(
+			(block) => !deletedContentBlocks.has(block.blockIndex) && userLikeContentBlockIsLlmVisible(block),
+		);
+	}
+	return messageStartsLlmUserTurn(entry.message, deletedContentBlocks);
+}
+
+export function isTranscriptEntryEffectivelyDeleted(
+	entry: CompactableTranscriptEntry,
+	deletedEntryIds: ReadonlySet<string>,
+	deletedContentBlocks: ReadonlyMap<string, ReadonlySet<number>>,
+): boolean {
+	if (deletedEntryIds.has(entry.entryId)) return true;
+	const deletedBlocks = deletedContentBlocks.get(entry.entryId);
+	return (
+		entry.contentBlocks.length > 0 &&
+		deletedBlocks !== undefined &&
+		entry.contentBlocks.every((block) => deletedBlocks.has(block.blockIndex))
+	);
+}
+
+function findAssistantTurnDeletionViolation(
+	transcript: CompactableTranscript,
+	targets: readonly ContextDeletionTarget[],
+): AssistantTurnDeletionViolation | undefined {
+	const deletedEntryIds = getDeletedEntryIds(targets);
+	const deletedContentBlocks = getDeletedContentBlocks(targets);
+	const turns = analyzeAssistantToolUseTurns(
+		transcript.entries.map((entry) => ({
+			entryId: entry.entryId,
+			role: entry.role,
+			hasSignedThinking: assistantEntryHasThinkingContentBlock(entry),
+			startsNewTurn:
+				!isTranscriptEntryEffectivelyDeleted(entry, deletedEntryIds, deletedContentBlocks) &&
+				transcriptEntryStartsNewTurn(entry, deletedContentBlocks.get(entry.entryId)),
+		})),
+	);
+	for (const turn of turns) {
+		if (turn.signedThinkingEntryIds.length === 0) continue;
+		const deleted = turn.signedThinkingEntryIds.filter((entryId) => deletedEntryIds.has(entryId));
+		if (turn.active && deleted.length > 0) return { entryId: deleted[0]!, active: true };
+		if (!turn.active && deleted.length > 0 && deleted.length < turn.signedThinkingEntryIds.length) {
+			return { entryId: deleted[0]!, active: false };
+		}
+	}
+	return undefined;
+}
 
 export function targetKey(target: ContextDeletionTarget): string {
 	return target.kind === "entry" ? `entry:${target.entryId}` : `content_block:${target.entryId}:${target.blockIndex}`;
@@ -133,7 +197,7 @@ export function isProtectedContextDeletionErrorMessage(message: string): boolean
 	return (
 		/\bprotected\b/i.test(message) ||
 		/Cannot delete (?:recent context entry|content block .* because entry .* is one of the last)/u.test(message) ||
-		/latest assistant message|thinking\/redacted_thinking block in (?:the latest|a retained) assistant message/u.test(message)
+		/latest assistant message|active assistant tool-use turn|completed assistant tool-use turn|thinking\/redacted_thinking block in (?:the latest|a retained) assistant message/u.test(message)
 	);
 }
 
@@ -178,28 +242,9 @@ export function findLatestAssistantThinkingDeletionViolation(
 	transcript: CompactableTranscript,
 	targets: readonly ContextDeletionTarget[],
 ): ContextDeletionTarget | undefined {
-	const deletedEntryIds = getDeletedEntryIds(targets);
-	const latestRetainedAssistant = latestAssistantEntry(transcript, deletedEntryIds);
-
-	for (const target of targets) {
-		if (target.kind === "entry") {
-			const entry = findTranscriptEntry(transcript, target.entryId);
-			if (!entry || !assistantEntryHasThinkingContentBlock(entry)) continue;
-			const deletedEntryIdsIfTargetWereKept = new Set(deletedEntryIds);
-			deletedEntryIdsIfTargetWereKept.delete(target.entryId);
-			if (latestAssistantEntry(transcript, deletedEntryIdsIfTargetWereKept)?.entryId === target.entryId) {
-				return target;
-			}
-			continue;
-		}
-		if (
-			latestRetainedAssistant?.entryId === target.entryId &&
-			assistantEntryHasThinkingContentBlock(latestRetainedAssistant)
-		) {
-			return target;
-		}
-	}
-	return undefined;
+	const violation = findAssistantTurnDeletionViolation(transcript, targets);
+	if (!violation) return undefined;
+	return targets.find((target) => target.kind === "entry" && target.entryId === violation.entryId);
 }
 
 export function assertNoAssistantThinkingContentBlockDeletionTargets(
@@ -217,15 +262,15 @@ export function assertNoLatestAssistantThinkingDeletionTargets(
 	transcript: CompactableTranscript,
 	targets: readonly ContextDeletionTarget[],
 ): void {
-	const violation = findLatestAssistantThinkingDeletionViolation(transcript, targets);
+	const violation = findAssistantTurnDeletionViolation(transcript, targets);
 	if (!violation) return;
-	if (violation.kind === "entry") {
+	if (violation.active) {
 		throw new Error(
-			`Cannot delete assistant entry ${violation.entryId} because it is the latest assistant message retained after other deletions and contains thinking/redacted_thinking content blocks`,
+			`Cannot delete assistant entry ${violation.entryId} because the active assistant tool-use turn must retain every thinking/redacted_thinking-bearing assistant entry`,
 		);
 	}
 	throw new Error(
-		`Cannot delete content block ${violation.entryId}:${violation.blockIndex} because a thinking/redacted_thinking block in the latest assistant message must remain unmodified; the latest retained assistant message contains thinking/redacted_thinking content blocks`,
+		`Cannot delete assistant entry ${violation.entryId} because a completed assistant tool-use turn must retain all or omit all thinking/redacted_thinking-bearing assistant entries`,
 	);
 }
 

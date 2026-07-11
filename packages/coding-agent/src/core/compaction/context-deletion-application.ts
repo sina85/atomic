@@ -32,7 +32,7 @@ import {
 
 let warnedReconciliationNonConvergence = false;
 
-function reconcileToolDependencies(
+export function reconcileToolDependencies(
 	transcript: CompactableTranscript,
 	initialTargets: readonly ContextDeletionTarget[],
 ): ContextDeletionTarget[] {

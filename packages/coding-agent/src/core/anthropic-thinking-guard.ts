@@ -25,7 +25,7 @@ function isSameModelAssistant(message: AssistantMessage, model: Model<Api>): boo
 	return message.provider === model.provider && message.api === model.api && message.model === model.id;
 }
 
-function readReplayThinkingBlock(block: unknown): ReplayThinkingBlock | undefined {
+function readReplayThinkingBlock(block: unknown, allowEmptySignature = false): ReplayThinkingBlock | undefined {
 	if (!isObject(block) || typeof block.type !== "string") return undefined;
 
 	if (block.type === "redacted_thinking") {
@@ -40,16 +40,16 @@ function readReplayThinkingBlock(block: unknown): ReplayThinkingBlock | undefine
 			: undefined;
 	}
 
-	return typeof block.thinking === "string" && typeof block.thinkingSignature === "string"
-		? { type: "thinking", thinking: block.thinking, signature: block.thinkingSignature }
-		: undefined;
+	if (typeof block.thinking !== "string" || typeof block.thinkingSignature !== "string") return undefined;
+	if (!allowEmptySignature && block.thinkingSignature.trim().length === 0) return undefined;
+	return { type: "thinking", thinking: block.thinking, signature: block.thinkingSignature };
 }
 
-function hasReplayThinkingBlock(message: AssistantMessage): boolean {
-	return message.content.some((block) => readReplayThinkingBlock(block) !== undefined);
+function hasReplayThinkingBlock(message: AssistantMessage, allowEmptySignature: boolean): boolean {
+	return message.content.some((block) => readReplayThinkingBlock(block, allowEmptySignature) !== undefined);
 }
 
-function legacyProviderWouldEmitAssistantBlock(block: unknown, allowEmptySignature: boolean): boolean {
+function legacyProviderWouldEmitAssistantBlock(block: unknown): boolean {
 	if (!isObject(block) || typeof block.type !== "string") return false;
 
 	if (block.type === "text") {
@@ -69,21 +69,18 @@ function legacyProviderWouldEmitAssistantBlock(block: unknown, allowEmptySignatu
 	}
 
 	if (typeof block.thinking !== "string") return false;
-	if (block.thinking.trim().length === 0) return false;
-
 	const signature = typeof block.thinkingSignature === "string" ? block.thinkingSignature : undefined;
-	if (signature !== undefined && signature.trim().length > 0) return true;
-	return allowEmptySignature;
+	return block.thinking.trim().length > 0 || (signature !== undefined && signature.trim().length > 0);
 }
 
-function legacyProviderWouldEmitAssistant(message: AssistantMessage, model: Model<Api>, allowEmptySignature: boolean): boolean {
+function legacyProviderWouldEmitAssistant(message: AssistantMessage, model: Model<Api>): boolean {
 	if (message.stopReason === "error" || message.stopReason === "aborted") return false;
 
 	// This mirrors the relevant same-model branch in @earendil-works/pi-ai's
 	// transformMessages() + Anthropic convertMessages() pipeline closely enough
 	// to keep assistant ordinal mapping aligned with the provider payload.
 	if (isSameModelAssistant(message, model)) {
-		return message.content.some((block) => legacyProviderWouldEmitAssistantBlock(block, allowEmptySignature));
+		return message.content.some((block) => legacyProviderWouldEmitAssistantBlock(block));
 	}
 
 	return message.content.some((block) => {
@@ -122,12 +119,13 @@ function takeProviderBlock(
 function repairAssistantContent(
 	originalMessage: AssistantMessage,
 	providerBlocks: readonly AnthropicContentBlock[],
+	allowEmptySignature: boolean,
 ): AnthropicContentBlock[] {
 	const repaired: AnthropicContentBlock[] = [];
 	let providerIndex = 0;
 
 	for (const originalBlock of originalMessage.content) {
-		const replayBlock = readReplayThinkingBlock(originalBlock);
+		const replayBlock = readReplayThinkingBlock(originalBlock, allowEmptySignature);
 		if (replayBlock) {
 			if (isThinkingLikeAnthropicBlock(providerBlocks[providerIndex])) {
 				providerIndex += 1;
@@ -187,11 +185,11 @@ function getAnthropicAssistantContent(message: unknown): AnthropicContentBlock[]
  *
  * Anthropic requires thinking/redacted_thinking blocks from replayed assistant
  * messages to remain byte-for-byte identical to the original response. The
- * upstream pi-ai Anthropic converter currently still sanitizes thinking text,
- * drops signed empty thinking, and does not understand raw redacted_thinking
- * blocks. This guard repairs the already-built Anthropic payload from the
- * pre-provider LLM messages while leaving non-Anthropic and cross-model payloads
- * unchanged.
+ * upstream pi-ai Anthropic converter can sanitize thinking text and drop signed
+ * empty thinking. Atomic normalizes raw redacted_thinking blocks to the pi-native
+ * representation on the request-only clone before this hook, then this guard
+ * restores exact same-model payloads while leaving non-Anthropic and cross-model
+ * payloads unchanged.
  */
 export function restoreAnthropicReplayThinkingBlocks(payload: unknown, sourceMessages: readonly Message[], model: Model<Api>): unknown {
 	if (model.api !== "anthropic-messages") return payload;
@@ -214,15 +212,15 @@ export function restoreAnthropicReplayThinkingBlocks(payload: unknown, sourceMes
 
 	for (const sourceMessage of sourceMessages) {
 		if (sourceMessage.role !== "assistant") continue;
-		if (!legacyProviderWouldEmitAssistant(sourceMessage, model, allowEmptySignature)) continue;
+		if (!legacyProviderWouldEmitAssistant(sourceMessage, model)) continue;
 
 		const payloadAssistant = assistantPayloads[assistantPayloadOrdinal];
 		assistantPayloadOrdinal += 1;
 		if (!payloadAssistant) break;
 
-		if (!isSameModelAssistant(sourceMessage, model) || !hasReplayThinkingBlock(sourceMessage)) continue;
+		if (!isSameModelAssistant(sourceMessage, model) || !hasReplayThinkingBlock(sourceMessage, allowEmptySignature)) continue;
 
-		const repairedContent = repairAssistantContent(sourceMessage, payloadAssistant.content);
+		const repairedContent = repairAssistantContent(sourceMessage, payloadAssistant.content, allowEmptySignature);
 		if (JSON.stringify(repairedContent) === JSON.stringify(payloadAssistant.content)) continue;
 
 		nextPayloadMessages ??= [...payloadMessages];

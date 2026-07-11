@@ -3,11 +3,7 @@ import type { Context, StreamOptions } from "@earendil-works/pi-ai/compat";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { buildContextCompactionPrompt, CONTEXT_COMPACTION_TARGET_REDUCTION_PERCENT, contextCompact, createContextDeletionTool, DEFAULT_COMPACTION_SETTINGS, type CompactableTranscript } from "../src/core/compaction/index.ts";
 export function userMessage(text: string): AgentMessage {
-	return {
-		role: "user",
-		content: [{ type: "text", text }],
-		timestamp: Date.now(),
-	};
+	return { role: "user", content: [{ type: "text", text }], timestamp: Date.now() };
 }
 export function assistantMessage(text: string): AgentMessage {
 	return {
@@ -43,6 +39,13 @@ export function recentAssistantEntries(prefix: string, count = 2): CompactableTr
 			toolCallIds: [],
 		};
 	});
+}
+function protectedUserEntry(entryId: string): CompactableTranscript["entries"][number] {
+	const text = "Current task starts a new turn.";
+	return {
+		entryId, entryType: "message", role: "user", text, tokenEstimate: 4, protected: true,
+		contentBlocks: [], message: userMessage(text), toolCallIds: [],
+	};
 }
 export function createTranscript(): CompactableTranscript {
 	const task = userMessage("Keep the user's task protected.");
@@ -424,11 +427,12 @@ export function createAssistantThinkingBlockTranscript(): CompactableTranscript 
 				message: thinkingMessage,
 				toolCallIds: [],
 			},
+		protectedUserEntry("entry-thinking-current-user"),
 		...recentEntries,
 	];
 	return {
 		entries,
-		protectedEntryIds: ["entry-user", ...recentEntries.map((entry) => entry.entryId)],
+		protectedEntryIds: ["entry-user", "entry-thinking-current-user", ...recentEntries.map((entry) => entry.entryId)],
 		tokensBefore: entries.reduce((total, entry) => total + entry.tokenEstimate, 0),
 		settings: DEFAULT_COMPACTION_SETTINGS,
 	};
@@ -483,11 +487,12 @@ export function createAssistantThinkingSiblingTranscript(): CompactableTranscrip
 				message: thinkingMessage,
 				toolCallIds: [],
 			},
+		protectedUserEntry("entry-thinking-sibling-current-user"),
 		...recentEntries,
 	];
 	return {
 		entries,
-		protectedEntryIds: ["entry-user", ...recentEntries.map((entry) => entry.entryId)],
+		protectedEntryIds: ["entry-user", "entry-thinking-sibling-current-user", ...recentEntries.map((entry) => entry.entryId)],
 		tokensBefore: entries.reduce((total, entry) => total + entry.tokenEstimate, 0),
 		settings: DEFAULT_COMPACTION_SETTINGS,
 	};

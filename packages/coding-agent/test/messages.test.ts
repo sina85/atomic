@@ -56,4 +56,18 @@ describe("convertToLlm tool-result repair", () => {
 
 		expect(converted.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
 	});
+
+	test("normalizes null and omitted assistant content without mutating durable messages", () => {
+		const nullContent = { ...assistantWithToolCalls([]), content: null } as unknown as AgentMessage;
+		const omittedContent = { ...assistantWithToolCalls([]) } as unknown as Record<string, unknown>;
+		delete omittedContent.content;
+		const durable = [nullContent, omittedContent as unknown as AgentMessage];
+		const before = JSON.stringify(durable);
+
+		expect(() => convertToLlm(durable)).not.toThrow();
+		const converted = convertToLlm(durable);
+		expect(converted).toHaveLength(2);
+		expect(converted.map((message) => (message as { content?: unknown }).content)).toEqual([[], []]);
+		expect(JSON.stringify(durable)).toBe(before);
+	});
 });
