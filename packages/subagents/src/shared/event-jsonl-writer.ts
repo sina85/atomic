@@ -81,12 +81,7 @@ function existingTelemetryState(filePath: string, seed?: TelemetryState): Teleme
 	const key = keyFor(filePath);
 	try {
 		const stat = fs.statSync(filePath);
-		const cached = hydrationCache.get(key);
-		const unchanged = cached
-			&& cached.dev === Number(stat.dev) && cached.ino === Number(stat.ino)
-			&& cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.ctimeMs === stat.ctimeMs;
-		const telemetryTruncated = Boolean(seed?.telemetryTruncated)
-			|| (unchanged ? cached.telemetryTruncated : scanForTruncationMarker(filePath));
+		const telemetryTruncated = Boolean(seed?.telemetryTruncated) || scanForTruncationMarker(filePath);
 		const telemetryBytes = Math.max(stat.size, seed?.telemetryBytes ?? 0);
 		cacheHydration(key, hydrationFromStat(stat, { telemetryBytes, telemetryTruncated }));
 		return { telemetryBytes, telemetryTruncated };

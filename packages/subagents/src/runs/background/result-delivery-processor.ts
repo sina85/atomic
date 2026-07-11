@@ -158,7 +158,7 @@ export async function processResultEntry(entry: string, context: ResultProcessor
 		if (!modernResultHasTerminalStatus(preliminary, statusFs(fsApi), {
 			allowedRoots: context.allowedStatusRoots,
 			maxBytes: context.maxStatusBytes,
-		})) return { status: "status-pending", entry: claim ? claimScheduleKey(claim.id) : entry };
+		})) return { status: "status-pending", entry };
 		claim = claimPublicResult(context.resultsDir, entry, fsApi);
 	}
 

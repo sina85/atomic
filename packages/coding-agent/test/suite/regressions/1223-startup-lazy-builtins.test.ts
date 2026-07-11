@@ -241,7 +241,7 @@ describe("regression #1223 lazy built-in startup imports", () => {
 		expect(source).toContain('"tool_execution_start"');
 		expect(source).toContain('"model_select"');
 		expect(proxySource).toContain('prop === "registerShortcut"');
-		expect(proxySource).toContain('pi.registerShortcut("alt+m"');
+		expect(source).toContain('pi.registerShortcut("alt+m"');
 		expect(source).toContain('SUBAGENT_CONTROL_INTERCOM_EVENT');
 		expect(source).toContain('dispatchEventHandlers(handle.heavy, eventName, payload)');
 		expect(source).toContain('renderResult: (...args) => renderHeavyToolResult(loadedHeavy?.heavy ?? null, "intercom", args)');

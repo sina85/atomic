@@ -243,6 +243,14 @@ test("hydration detects same-inode rewrites and truncate-then-grow boundary chan
 	await equalRewrite.close();
 	assert.doesNotMatch(fs.readFileSync(eventsPath, "utf-8"), /blocked-equal-rewrite/);
 
+	const markerStat = fs.statSync(eventsPath);
+	fs.writeFileSync(eventsPath, "y".repeat(markerStat.size));
+	fs.utimesSync(eventsPath, markerStat.atime, markerStat.mtime);
+	const markerRemoved = createChildEventJournal(eventsPath, source, { runId: "run", agent: "marker-removed" }, { maxTelemetryBytes: 10_000 });
+	markerRemoved.append({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "accepted-after-same-size-rewrite" } });
+	await markerRemoved.close();
+	assert.match(fs.readFileSync(eventsPath, "utf-8"), /accepted-after-same-size-rewrite/);
+
 	fs.writeFileSync(eventsPath, "a".repeat(600));
 	await createChildEventJournal(eventsPath, source, { runId: "run", agent: "reset" }).close();
 	fs.writeFileSync(eventsPath, `${marker}${"b".repeat(700)}`);

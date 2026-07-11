@@ -8,6 +8,10 @@ interface CompletionAttempt {
 	noProgressFailures: number;
 }
 
+interface CompletionFlight {
+	promise: Promise<CompletionAttempt>;
+}
+
 export interface CompletionClaimSnapshot {
 	intercomDelivered: boolean;
 	localDelivered: boolean;
@@ -18,7 +22,7 @@ export interface CompletionClaimSnapshot {
 
 interface CompletionClaim extends CompletionClaimSnapshot {
 	signature: string;
-	inFlight?: Promise<CompletionAttempt>;
+	inFlight?: CompletionFlight;
 	completedAt?: number;
 	lastTouchedAt: number;
 }
@@ -120,7 +124,7 @@ export async function deliverClaimedCompletion(
 	}
 	claim.lastTouchedAt = now;
 	if (claim.terminalStatus) return { owner: false, status: claim.terminalStatus, noProgressFailures: claim.noProgressFailures };
-	if (claim.inFlight) return { owner: false, ...await claim.inFlight };
+	if (claim.inFlight) return { owner: false, ...await claim.inFlight.promise };
 
 	const ownedClaim = claim;
 	const hasVisibleProgress = () => ownedClaim.intercomDelivered || ownedClaim.localDelivered;
@@ -173,12 +177,13 @@ export async function deliverClaimedCompletion(
 		persist(ownedClaim, phases.onState);
 		return { status: "delivered", noProgressFailures: 0 };
 	})();
-	ownedClaim.inFlight = attempt;
+	const flight: CompletionFlight = { promise: attempt };
+	ownedClaim.inFlight = flight;
 	try {
-		return { owner: true, ...await attempt };
+		return { owner: true, ...await flight.promise };
 	} finally {
-		// Promise identity is the ownership token; comparing the resolved value
-		// would let an older attempt clear a newer in-flight claim.
-		if (ownedClaim.inFlight === attempt) ownedClaim.inFlight = undefined;
+		// The explicit flight handle is the ownership token; comparing resolved
+		// values would let an older attempt clear a newer in-flight claim.
+		if (ownedClaim.inFlight === flight) ownedClaim.inFlight = undefined;
 	}
 }
