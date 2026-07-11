@@ -10,7 +10,6 @@ export function deliverLocalCompletionNotification(
 	events: IntercomEventBus,
 	payload: Record<string, unknown>,
 	notificationId: string,
-	_timeoutMs = 500,
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createResultWatcher } from "../../packages/subagents/src/runs/background/result-watcher.js";
+import { createResultWatcher as createRawResultWatcher } from "../../packages/subagents/src/runs/background/result-watcher.js";
+import { listResultClaims } from "../../packages/subagents/src/runs/background/result-file-claims.js";
 import { reconcileAsyncRun } from "../../packages/subagents/src/runs/background/stale-run-reconciler.js";
 import {
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
@@ -11,6 +12,11 @@ import {
 	SUBAGENT_RESULT_INTERCOM_EVENT,
 	type SubagentState,
 } from "../../packages/subagents/src/shared/types.js";
+
+function createResultWatcher(...args: Parameters<typeof createRawResultWatcher>): ReturnType<typeof createRawResultWatcher> {
+	const [pi, state, resultsDir, ttl, deps = {}] = args;
+	return createRawResultWatcher(pi, state, resultsDir, ttl, { allowedStatusRoots: [path.dirname(resultsDir)], ...deps });
+}
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
@@ -89,24 +95,33 @@ test("watcher revalidates session ownership after delayed intercom acknowledgeme
 	fs.writeFileSync(resultPath, JSON.stringify({ id: "owner-after-wait", sessionId: "session-a", intercomTarget: "parent" }));
 	const listeners = new Map<string, Set<(data: object) => void>>();
 	let completions = 0;
+	let acknowledgeIntercom: (() => void) | undefined;
+	let markIntercomEmitted!: () => void;
+	const intercomEmitted = new Promise<void>((resolve) => { markIntercomEmitted = resolve; });
 	const runState = state("session-a");
 	const events = {
 		on(event: string, listener: (data: object) => void) { const set = listeners.get(event) ?? new Set(); set.add(listener); listeners.set(event, set); return () => set.delete(listener); },
 		emit(event: string, payload: object) {
 			if (event === SUBAGENT_RESULT_INTERCOM_EVENT) {
 				const requestId = (payload as { requestId: string }).requestId;
-				setTimeout(() => { for (const listener of listeners.get(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT) ?? []) listener({ requestId, delivered: true }); }, 40);
+				acknowledgeIntercom = () => { for (const listener of listeners.get(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT) ?? []) listener({ requestId, delivered: true }); };
+				markIntercomEmitted();
 			}
 			if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) { completions += 1; acknowledgeCompletion(payload); }
 		},
 	};
 	const watcher = createResultWatcher({ events }, runState, resultsDir, 60_000);
 	watcher.primeExistingResults();
-	await Bun.sleep(10);
+	await intercomEmitted;
 	runState.currentSessionId = "session-b";
-	await Bun.sleep(80);
+	assert.ok(acknowledgeIntercom);
+	acknowledgeIntercom();
+	for (let index = 0; index < 20; index += 1) await Promise.resolve();
 	assert.equal(completions, 0);
-	assert.equal(fs.existsSync(resultPath), true);
+	assert.equal(fs.existsSync(resultPath), false, "ownership is represented by the durable hidden claim");
+	const claims = listResultClaims(resultsDir);
+	assert.equal(claims.length, 1);
+	assert.equal(fs.existsSync(claims[0]!.payloadPath), true);
 	assert.equal(runState.completionSeen.size, 0);
 	watcher.stopResultWatcher();
 });
@@ -123,7 +138,7 @@ test("stale repair recovers a failed atomic stage rename without replaying an ar
 	assert.throws(() => reconcileAsyncRun(asyncDir, {
 		resultsDir, now: () => 100,
 		kill: () => { const error = new Error("dead") as NodeJS.ErrnoException; error.code = "ESRCH"; throw error; },
-		rename: () => { throw new Error("rename interrupted"); },
+		publish: () => { throw new Error("publication interrupted"); },
 	}));
 	assert.equal(JSON.parse(fs.readFileSync(path.join(asyncDir, "status.json"), "utf-8")).state, "failed");
 	assert.deepEqual(fs.readdirSync(resultsDir), [".rename-retry.json.stale-repair-stage"]);
@@ -152,7 +167,7 @@ test("failed local completion notification remains retryable until acknowledged"
 			acknowledgeCompletion(payload);
 		},
 	};
-	const watcher = createResultWatcher({ events }, runState, resultsDir, 60_000, { deliveryRetryBaseMs: 10, localNotificationTimeoutMs: 20 });
+	const watcher = createResultWatcher({ events }, runState, resultsDir, 60_000, { deliveryRetryBaseMs: 10 });
 	watcher.primeExistingResults();
 	await Bun.sleep(100);
 	assert.equal(attempts, 2);
@@ -195,7 +210,7 @@ test("acknowledged intercom remains idempotent while local notification retries"
 			}
 		},
 	};
-	const firstWatcher = createResultWatcher({ events }, runState, resultsDir, 5, { deliveryRetryBaseMs: 500, localNotificationTimeoutMs: 20 });
+	const firstWatcher = createResultWatcher({ events }, runState, resultsDir, 5, { deliveryRetryBaseMs: 500 });
 	firstWatcher.primeExistingResults();
 	await Bun.sleep(80);
 	assert.equal(intercomAttempts, 1);
@@ -221,6 +236,11 @@ test("a delayed successful Intercom phase is checkpointed after watcher retireme
 	const listeners = new Map<string, Set<(data: object) => void>>();
 	let intercomAttempts = 0;
 	let localAttempts = 0;
+	let acknowledgeIntercom: (() => void) | undefined;
+	let markIntercomEmitted!: () => void;
+	const intercomEmitted = new Promise<void>((resolve) => { markIntercomEmitted = resolve; });
+	let markLocalDelivered!: () => void;
+	const localDelivered = new Promise<void>((resolve) => { markLocalDelivered = resolve; });
 	const events = {
 		on(event: string, listener: (data: object) => void) {
 			const set = listeners.get(event) ?? new Set(); set.add(listener); listeners.set(event, set); return () => set.delete(listener);
@@ -229,21 +249,26 @@ test("a delayed successful Intercom phase is checkpointed after watcher retireme
 			if (event === SUBAGENT_RESULT_INTERCOM_EVENT) {
 				intercomAttempts += 1;
 				const requestId = (payload as { requestId: string }).requestId;
-				setTimeout(() => { for (const listener of listeners.get(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT) ?? []) listener({ requestId, delivered: true }); }, 20);
+				acknowledgeIntercom = () => { for (const listener of listeners.get(SUBAGENT_RESULT_INTERCOM_DELIVERY_EVENT) ?? []) listener({ requestId, delivered: true }); };
+				markIntercomEmitted();
 			}
-			if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) { localAttempts += 1; acknowledgeCompletion(payload); }
+			if (event === SUBAGENT_ASYNC_COMPLETE_EVENT) { localAttempts += 1; acknowledgeCompletion(payload); markLocalDelivered(); }
 		},
 	};
 	const first = createResultWatcher({ events }, state("session"), resultsDir, 5, { intercomTimeoutMs: 100 });
 	first.primeExistingResults();
-	await Bun.sleep(10);
+	await intercomEmitted;
 	first.stopResultWatcher();
-	await Bun.sleep(40);
+	assert.ok(acknowledgeIntercom);
+	acknowledgeIntercom();
+	for (let index = 0; index < 20; index += 1) await Promise.resolve();
 	const replacement = createResultWatcher({ events }, state("session"), resultsDir, 5, { intercomTimeoutMs: 100 });
 	replacement.primeExistingResults();
-	await Bun.sleep(100);
+	await localDelivered;
+	for (let index = 0; index < 20; index += 1) await Promise.resolve();
 	assert.equal(intercomAttempts, 1, "successful remote delivery must not replay after TTL and watcher replacement");
 	assert.equal(localAttempts, 1);
 	assert.equal(fs.existsSync(resultPath), false);
+	assert.equal(listResultClaims(resultsDir).length, 0);
 	replacement.stopResultWatcher();
 });

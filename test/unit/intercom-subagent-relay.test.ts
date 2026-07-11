@@ -72,11 +72,11 @@ function createRelayHarness(options: RelayHarnessOptions) {
 
   return {
     deliveries,
-    emitResult() {
+    emitResult(overrides: { to?: string; message?: string; requestId?: string } = {}) {
       pi.events.emit(SUBAGENT_RESULT_INTERCOM_EVENT, {
-        to: "target",
-        message: "done",
-        requestId: "request-1",
+        to: overrides.to ?? "target",
+        message: overrides.message ?? "done",
+        requestId: overrides.requestId ?? "request-1",
       });
     },
 		counts: () => ({ ensureConnectedCalls, sendCalls, localDeliveries }),
@@ -145,6 +145,25 @@ describe("subagent result relay lifecycle acknowledgements", () => {
 		]);
 	});
 
+
+	test("rejects conflicting local request-id reuse without forwarding the new payload", async () => {
+		const harness = createRelayHarness({ liveChecks: [true, true], local: true });
+		harness.emitResult();
+		harness.emitResult({ message: "different" });
+		await settleRelay();
+		assert.equal(harness.counts().localDeliveries, 1);
+		assert.deepEqual(harness.deliveries.map((entry) => entry.delivered), [true, false]);
+	});
+
+	test("local delivered-id caches are isolated per relay session", async () => {
+		const first = createRelayHarness({ liveChecks: [true], local: true });
+		const second = createRelayHarness({ liveChecks: [true], local: true });
+		first.emitResult();
+		second.emitResult();
+		await settleRelay();
+		assert.equal(first.counts().localDeliveries, 1);
+		assert.equal(second.counts().localDeliveries, 1);
+	});
 	test("negatively acknowledges a local failure without an unhandled rejection and can retry", async () => {
 		const harness = createRelayHarness({ liveChecks: [true, true], local: true, localFailures: 1 });
 		harness.emitResult();

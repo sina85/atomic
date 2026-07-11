@@ -23,22 +23,103 @@ interface SharedEventWriter extends TelemetryState {
 
 const writers = new Map<string, SharedEventWriter>();
 
+interface TelemetryHydration extends TelemetryState {
+	dev: number;
+	ino: number;
+	size: number;
+	mtimeMs: number;
+	ctimeMs: number;
+}
+
+const hydrationCache = new Map<string, TelemetryHydration>();
+const MAX_HYDRATION_ENTRIES = 512;
+const HYDRATION_CHUNK_BYTES = 64 * 1024;
+const TRUNCATION_MARKER = '"type":"subagent.child.telemetry_truncated"';
+let hydrationScanCount = 0;
+let hydrationScannedBytes = 0;
+
 function keyFor(filePath: string): string {
 	return path.resolve(filePath);
 }
 
-function existingTelemetryState(filePath: string, seed?: TelemetryState): TelemetryState {
+function cacheHydration(key: string, hydration: TelemetryHydration): void {
+	hydrationCache.delete(key);
+	hydrationCache.set(key, hydration);
+	while (hydrationCache.size > MAX_HYDRATION_ENTRIES) {
+		const oldest = hydrationCache.keys().next().value as string | undefined;
+		if (oldest === undefined) break;
+		hydrationCache.delete(oldest);
+	}
+}
+
+function scanForTruncationMarker(filePath: string): boolean {
+	hydrationScanCount += 1;
+	const handle = fs.openSync(filePath, "r");
 	try {
-		const text = fs.readFileSync(filePath, "utf-8");
-		return {
-			telemetryBytes: Math.max(seed?.telemetryBytes ?? 0, Buffer.byteLength(text, "utf-8")),
-			telemetryTruncated: Boolean(seed?.telemetryTruncated) || text.includes('\"type\":\"subagent.child.telemetry_truncated\"'),
-		};
+		const buffer = Buffer.allocUnsafe(HYDRATION_CHUNK_BYTES);
+		let offset = 0;
+		let overlap = "";
+		while (true) {
+			const count = fs.readSync(handle, buffer, 0, buffer.length, offset);
+			if (count === 0) return false;
+			hydrationScannedBytes += count;
+			const text = overlap + buffer.subarray(0, count).toString("utf-8");
+			if (text.includes(TRUNCATION_MARKER)) return true;
+			overlap = text.slice(-(TRUNCATION_MARKER.length - 1));
+			offset += count;
+		}
+	} finally {
+		fs.closeSync(handle);
+	}
+}
+
+function hydrationFromStat(stat: fs.Stats, state: TelemetryState): TelemetryHydration {
+	return { dev: Number(stat.dev), ino: Number(stat.ino), size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, ...state };
+}
+
+function existingTelemetryState(filePath: string, seed?: TelemetryState): TelemetryState {
+	const key = keyFor(filePath);
+	try {
+		const stat = fs.statSync(filePath);
+		const cached = hydrationCache.get(key);
+		const unchanged = cached
+			&& cached.dev === Number(stat.dev) && cached.ino === Number(stat.ino)
+			&& cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.ctimeMs === stat.ctimeMs;
+		const telemetryTruncated = Boolean(seed?.telemetryTruncated)
+			|| (unchanged ? cached.telemetryTruncated : scanForTruncationMarker(filePath));
+		const telemetryBytes = Math.max(stat.size, seed?.telemetryBytes ?? 0);
+		cacheHydration(key, hydrationFromStat(stat, { telemetryBytes, telemetryTruncated }));
+		return { telemetryBytes, telemetryTruncated };
 	} catch {
+		hydrationCache.delete(key);
 		return seed
 			? { telemetryBytes: seed.telemetryBytes, telemetryTruncated: seed.telemetryTruncated }
 			: { telemetryBytes: 0, telemetryTruncated: false };
 	}
+}
+
+function cacheSettledWriter(writer: SharedEventWriter): void {
+	try {
+		const stat = fs.statSync(writer.filePath);
+		cacheHydration(writer.key, hydrationFromStat(stat, {
+			telemetryBytes: Math.max(stat.size, writer.telemetryBytes),
+			telemetryTruncated: writer.telemetryTruncated,
+		}));
+	} catch { hydrationCache.delete(writer.key); }
+}
+
+export function resetEventWriterHydrationCacheForTests(): void {
+	hydrationCache.clear();
+	hydrationScanCount = 0;
+	hydrationScannedBytes = 0;
+}
+
+export function eventWriterHydrationCacheSizeForTests(): number {
+	return hydrationCache.size;
+}
+
+export function eventWriterHydrationScanStatsForTests(): { scans: number; bytes: number } {
+	return { scans: hydrationScanCount, bytes: hydrationScannedBytes };
 }
 
 function resumeSources(writer: SharedEventWriter): void {
@@ -48,6 +129,7 @@ function resumeSources(writer: SharedEventWriter): void {
 }
 
 function settleWriter(writer: SharedEventWriter): void {
+	if (!writer.failed) cacheSettledWriter(writer);
 	if (writers.get(writer.key) === writer) writers.delete(writer.key);
 	resumeSources(writer);
 	writer.resolveSettled();

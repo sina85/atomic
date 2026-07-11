@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeAtomicJson } from "../../shared/atomic-json.ts";
+import { publishFileExclusive, unlinkIfPresent } from "../../shared/exclusive-file-publication.js";
 import { RESULTS_DIR, type AsyncParallelGroupStatus, type AsyncStatus, type NestedRunSummary, type SubagentRunMode } from "../../shared/types.ts";
 import { normalizeParallelGroups } from "./parallel-groups.ts";
 import { nestedSummaryFromAsyncStatus, projectNestedEvents, resolveNestedAsyncDir, writeNestedEvent, type NestedRoute } from "../shared/nested-events.ts";
@@ -28,7 +29,7 @@ interface ReconcileAsyncRunOptions {
 	startedRun?: StartedRunMetadata;
 	missingStatusGraceMs?: number;
 	staleAlivePidMs?: number;
-	rename?: typeof fs.renameSync;
+	publish?: (source: string, destination: string) => "published" | "exists";
 }
 
 interface ReconcileAsyncRunResult {
@@ -87,10 +88,17 @@ function publishStagedRepair(
 	resultPath: string,
 	status: AsyncStatus,
 	staged: object,
-	rename: typeof fs.renameSync = fs.renameSync,
+	publish: (source: string, destination: string) => "published" | "exists" = publishFileExclusive,
 ): ReconcileAsyncRunResult {
-	rename(repairStagePath(resultPath), resultPath);
-	return { status, repaired: true, resultPath, message: stagedRepairMessage(staged) };
+	const stagePath = repairStagePath(resultPath);
+	const outcome = publish(stagePath, resultPath);
+	unlinkIfPresent(stagePath);
+	return {
+		status,
+		repaired: outcome === "published",
+		resultPath,
+		message: outcome === "published" ? stagedRepairMessage(staged) : "A concurrently published result was preserved.",
+	};
 }
 
 function readStatusFile(asyncDir: string): AsyncStatus | null {
@@ -262,7 +270,7 @@ function buildFailedRepair(status: AsyncStatus, asyncDir: string, now: number, r
 	};
 }
 
-function writeFailedRepair(asyncDir: string, status: AsyncStatus, resultPath: string, now: number, reason?: string, rename?: typeof fs.renameSync): ReconcileAsyncRunResult {
+function writeFailedRepair(asyncDir: string, status: AsyncStatus, resultPath: string, now: number, reason?: string, publish?: ReconcileAsyncRunOptions["publish"]): ReconcileAsyncRunResult {
 	const repair = buildFailedRepair(status, asyncDir, now, reason);
 	// Stage the exact public payload beside its destination. Publication consumes
 	// the hidden stage with one atomic rename after terminal status is durable.
@@ -280,7 +288,7 @@ function writeFailedRepair(asyncDir: string, status: AsyncStatus, resultPath: st
 	} catch (error) {
 		console.error(`Failed to append stale-repair event for '${asyncDir}'; publishing the recoverable result:`, error);
 	}
-	return publishStagedRepair(resultPath, repair.status, repair.result, rename);
+	return publishStagedRepair(resultPath, repair.status, repair.result, publish);
 }
 
 function terminal(state: AsyncStatus["state"]): boolean {
@@ -364,7 +372,7 @@ export function reconcileAsyncRun(asyncDir: string, options: ReconcileAsyncRunOp
 
 	const stagedRepair = readStagedRepair(resultPath);
 	if (stagedRepair && terminal(effectiveStatus.state)) {
-		return publishStagedRepair(resultPath, effectiveStatus, stagedRepair, options.rename);
+		return publishStagedRepair(resultPath, effectiveStatus, stagedRepair, options.publish);
 	}
 
 	if (effectiveStatus.state !== "running" || typeof effectiveStatus.pid !== "number") {
@@ -384,7 +392,7 @@ export function reconcileAsyncRun(asyncDir: string, options: ReconcileAsyncRunOp
 		const lastUpdate = effectiveStatus.lastUpdate ?? effectiveStatus.startedAt;
 		if (now - lastUpdate <= staleAfterMs) return { status: status ?? null, repaired: false, resultPath };
 		const message = `Async runner process ${effectiveStatus.pid} still has a live PID, but status has not updated for ${now - lastUpdate}ms. Marked run failed by stale-run reconciliation because PID ownership cannot be verified.`;
-		return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now, message, options.rename);
+		return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now, message, options.publish);
 	}
-	return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now, undefined, options.rename);
+	return writeFailedRepair(asyncDir, effectiveStatus, resultPath, now, undefined, options.publish);
 }

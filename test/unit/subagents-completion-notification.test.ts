@@ -25,9 +25,9 @@ test("local completion acknowledgement retries failures and dedupes successful r
   const harness = createHarness();
   const unregister = registerSubagentNotify(harness.pi as never);
   const payload = { id: "notify-run", agent: "worker", success: true, summary: "done" };
-  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify", 20), false);
-  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify", 20), true);
-  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify", 20), true);
+  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify"), false);
+  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify"), true);
+  assert.equal(await deliverLocalCompletionNotification(harness.pi.events, payload, "stable-notify"), true);
   assert.equal(harness.sends(), 2, "the duplicate request is acknowledged without another message");
   unregister();
 });

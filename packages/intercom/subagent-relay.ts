@@ -10,6 +10,7 @@ import {
   parseSubagentIntercomPayload,
 } from "./intercom-utils.js";
 import { DeliveredMessageCache } from "./broker/delivered-message-cache.js";
+import { buildSendSignature } from "./broker/send-signature.js";
 
 interface SubagentRelayDeps {
   runtimeGeneration(): number;
@@ -70,9 +71,14 @@ export function registerSubagentRelay(pi: ExtensionAPI, deps: SubagentRelayDeps)
     options: { sender: "subagent-control" | "subagent-result"; status: string; errorEntryType: string; acknowledge?: boolean },
   ): void {
     try {
-      if (!parsed.requestId || !localDeliveries.has(parsed.requestId)) {
+      const signature = buildSendSignature(parsed.to, { text: parsed.message });
+      const match = parsed.requestId ? localDeliveries.lookup(parsed.requestId, signature) : "miss";
+      if (match === "conflict") {
+        throw new Error(`Intercom message ID '${parsed.requestId}' was already delivered with a different target or payload`);
+      }
+      if (match === "miss") {
         deliverLocalSubagentRelayMessage(options.sender, options.status, parsed.message);
-        if (parsed.requestId) localDeliveries.record(parsed.requestId);
+        if (parsed.requestId) localDeliveries.record(parsed.requestId, signature);
       }
       acknowledgeResult(options, parsed.requestId, true);
     } catch (error) {

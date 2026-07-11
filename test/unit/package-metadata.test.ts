@@ -265,6 +265,8 @@ describe("package metadata", () => {
             "result-renderers.ts",
             "lifecycle-lease.ts",
             "lazy-tool-execution.ts",
+            "lazy-subagent-ack.ts",
+            "lazy-heavy-proxy.ts",
         ]) {
             assert.ok(
                 matchedTopLevelModules.has(runtimeModule),

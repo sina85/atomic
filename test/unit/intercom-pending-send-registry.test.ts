@@ -74,6 +74,7 @@ describe("PendingSendRegistry", () => {
 
     const current = registry.acquire("message-1", signature(), 1_000);
     await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(registry.resolveLegacy("message-1", { id: "message-1", delivered: true }), false, "a late legacy timeout response is ambiguous");
     assert.equal(registry.resolve("message-1", expired.attempt.attemptId, {
       id: "message-1",
       delivered: true,
@@ -93,6 +94,7 @@ describe("PendingSendRegistry", () => {
 
     const replacement = registry.acquire("message-1", signature(), 1_000);
     assert.equal(registry.reject(disconnected.attempt, new Error("late disconnect")), false);
+    assert.equal(registry.resolveLegacy("message-1", { id: "message-1", delivered: false, reason: "late disconnect response" }), false);
     registry.resolve("message-1", replacement.attempt.attemptId, {
       id: "message-1",
       delivered: true,
@@ -108,12 +110,68 @@ describe("PendingSendRegistry", () => {
     assert.deepEqual(await active.attempt.promise, { id: "message-1", delivered: true });
   });
 
+  test("ignores late legacy delivered and delivery_failed responses after ID replacement", async () => {
+    for (const delivered of [true, false]) {
+      const registry = new PendingSendRegistry();
+      const original = registry.acquire(`reused-${delivered}`, signature(), 1_000);
+      registry.reject(original.attempt, new Error("replace"));
+      await assert.rejects(original.attempt.promise, /replace/);
+      const replacement = registry.acquire(`reused-${delivered}`, signature(), 1_000);
+      assert.equal(registry.resolveLegacy(replacement.attempt.messageId, {
+        id: replacement.attempt.messageId,
+        delivered,
+        ...(delivered ? {} : { reason: "late failure" }),
+      }), false);
+      assert.equal(registry.resolve(replacement.attempt.messageId, replacement.attempt.attemptId, {
+        id: replacement.attempt.messageId,
+        delivered: true,
+      }), true);
+      assert.equal((await replacement.attempt.promise).delivered, true);
+    }
+  });
+
+  test("legacy eligibility expires and generation history remains bounded", async () => {
+    let now = 0;
+    const registry = new PendingSendRegistry(100, 2, () => now);
+    const retire = async (id: string) => {
+      const acquired = registry.acquire(id, signature(), 1_000);
+      registry.reject(acquired.attempt, new Error("retire"));
+      await assert.rejects(acquired.attempt.promise, /retire/);
+    };
+    await retire("oldest");
+    await retire("middle");
+    await retire("newest");
+    const evicted = registry.acquire("oldest", signature(), 1_000);
+    assert.equal(registry.resolveLegacy("oldest", { id: "oldest", delivered: true }), true, "evicted history may safely start a new compatibility window");
+    await evicted.attempt.promise;
+
+    await retire("expires");
+    now = 101;
+    const expired = registry.acquire("expires", signature(), 1_000);
+    assert.equal(registry.resolveLegacy("expires", { id: "expires", delivered: false, reason: "legacy failure" }), true);
+    assert.deepEqual(await expired.attempt.promise, { id: "expires", delivered: false, reason: "legacy failure" });
+  });
+
+  test("generation retention starts at settlement for long-running original attempts", async () => {
+    let now = 0;
+    const registry = new PendingSendRegistry(100, 10, () => now);
+    const original = registry.acquire("long-running", signature(), 1_000);
+    now = 1_000;
+    registry.reject(original.attempt, new Error("settled late"));
+    await assert.rejects(original.attempt.promise, /settled late/);
+    const replacement = registry.acquire("long-running", signature(), 1_000);
+    assert.equal(registry.resolveLegacy("long-running", { id: "long-running", delivered: true }), false);
+    assert.equal(registry.resolve("long-running", replacement.attempt.attemptId, { id: "long-running", delivered: true }), true);
+    await replacement.attempt.promise;
+  });
+
 });
 function makeConnectedClient(): {
   client: IntercomClient;
   writes: Buffer[];
   setWriteFailure(fail: boolean): void;
   deliver(index?: number, legacy?: boolean): void;
+  fail(index?: number, legacy?: boolean): void;
 } {
   const writes: Buffer[] = [];
   let failWrites = false;
@@ -150,6 +208,17 @@ function makeConnectedClient(): {
       internals.handleBrokerMessage({
         type: "delivered",
         messageId: payload.message.id,
+        ...(legacy ? {} : { attemptId: payload.attemptId }),
+      });
+    },
+    fail(index = 0, legacy = false) {
+      const frame = writes[index];
+      assert.ok(frame);
+      const payload = JSON.parse(frame.subarray(4).toString("utf-8")) as { message: { id: string }; attemptId: string };
+      internals.handleBrokerMessage({
+        type: "delivery_failed",
+        messageId: payload.message.id,
+        reason: "legacy failure",
         ...(legacy ? {} : { attemptId: payload.attemptId }),
       });
     },
@@ -198,5 +267,12 @@ describe("IntercomClient.send", () => {
     assert.equal(writes.length, 1);
     deliver(0, true);
     assert.deepEqual(await pending, { id: "stable-id", delivered: true });
+  });
+
+  test("accepts a delivery_failed response from an already-running legacy broker", async () => {
+    const { client, fail } = makeConnectedClient();
+    const pending = client.send("recipient", { text: "hello", messageId: "stable-failure" });
+    fail(0, true);
+    assert.deepEqual(await pending, { id: "stable-failure", delivered: false, reason: "legacy failure" });
   });
 });

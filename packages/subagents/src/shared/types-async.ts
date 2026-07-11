@@ -256,7 +256,7 @@ export interface SubagentState {
 	cleanupTimers: Map<string, ReturnType<typeof setTimeout>>;
 	lastUiContext: ExtensionContext | null;
 	poller: NodeJS.Timeout | null;
-	completionSeen: Map<string, number>;
+	completionSeen: Map<string, number | { seenAt: number; signature?: string }>;
 	watcher: FSWatcher | null;
 	watcherRestartTimer: ReturnType<typeof setTimeout> | null;
 	resultFileCoalescer: {

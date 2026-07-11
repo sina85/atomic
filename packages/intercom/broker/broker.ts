@@ -3,71 +3,15 @@ import { writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { randomUUID } from "crypto";
 import { writeMessage, createMessageReader } from "./framing.js";
 import { getBrokerPidPath, getBrokerSocketPath, getIntercomDirPath } from "./paths.js";
-import type { SessionInfo, Message, Attachment, BrokerMessage } from "../types.js";
+import type { SessionInfo, BrokerMessage } from "../types.js";
 import { DeliveredMessageCache } from "./delivered-message-cache.js";
+import { handleBrokerSend, type BrokerConnectedSession } from "./send-handler.js";
 
 const INTERCOM_DIR = getIntercomDirPath();
 const SOCKET_PATH = getBrokerSocketPath();
 const PID_PATH = getBrokerPidPath();
 
-interface ConnectedSession {
-  socket: net.Socket;
-  info: SessionInfo;
-}
-
-function isAttachment(value: unknown): value is Attachment {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const attachment = value as Record<string, unknown>;
-
-  if (
-    attachment.type !== "file"
-    && attachment.type !== "snippet"
-    && attachment.type !== "context"
-  ) {
-    return false;
-  }
-
-  if (typeof attachment.name !== "string" || typeof attachment.content !== "string") {
-    return false;
-  }
-
-  return attachment.language === undefined || typeof attachment.language === "string";
-}
-
-function isMessage(value: unknown): value is Message {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const message = value as Record<string, unknown>;
-
-  if (typeof message.id !== "string" || typeof message.timestamp !== "number") {
-    return false;
-  }
-
-  if (message.replyTo !== undefined && typeof message.replyTo !== "string") {
-    return false;
-  }
-
-  if (message.expectsReply !== undefined && typeof message.expectsReply !== "boolean") {
-    return false;
-  }
-
-  if (typeof message.content !== "object" || message.content === null) {
-    return false;
-  }
-
-  const content = message.content as Record<string, unknown>;
-  if (typeof content.text !== "string") {
-    return false;
-  }
-
-  return content.attachments === undefined
-    || (Array.isArray(content.attachments) && content.attachments.every(isAttachment));
-}
+type ConnectedSession = BrokerConnectedSession;
 
 function isSessionRegistration(value: unknown): value is Omit<SessionInfo, "id"> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -219,63 +163,7 @@ class IntercomBroker {
       }
 
       case "send": {
-        const message = clientMessage.message;
-        const messageId = isMessage(message) ? message.id : "unknown";
-        const attemptId = typeof clientMessage.attemptId === "string" ? clientMessage.attemptId : undefined;
-
-        if (typeof clientMessage.to !== "string" || !isMessage(message)) {
-          writeMessage(socket, {
-            type: "delivery_failed",
-            messageId,
-            attemptId,
-            reason: "Invalid message format",
-          });
-          break;
-        }
-
-        if (this.deliveredMessages.has(message.id)) {
-          writeMessage(socket, { type: "delivered", messageId: message.id, attemptId });
-          break;
-        }
-
-        const targets = this.findSessions(clientMessage.to);
-        if (targets.length === 1) {
-          const fromSession = this.sessions.get(currentId);
-          if (!fromSession) {
-            writeMessage(socket, {
-              type: "delivery_failed",
-              messageId: message.id,
-              attemptId,
-              reason: "Sender session not found",
-            });
-            break;
-          }
-          writeMessage(targets[0].socket, {
-            type: "message",
-            from: fromSession.info,
-            message,
-          });
-          this.deliveredMessages.record(message.id);
-          writeMessage(socket, { type: "delivered", messageId: message.id, attemptId });
-          break;
-        }
-
-        if (targets.length > 1) {
-          writeMessage(socket, {
-            type: "delivery_failed",
-            messageId: message.id,
-            attemptId,
-            reason: `Multiple sessions named \"${clientMessage.to}\" are connected. Use the session ID instead.`,
-          });
-          break;
-        }
-
-        writeMessage(socket, {
-          type: "delivery_failed",
-          messageId: message.id,
-          attemptId,
-          reason: "Session not found",
-        });
+        handleBrokerSend(socket, clientMessage, currentId, this.sessions, this.deliveredMessages, writeMessage);
         break;
       }
 
@@ -311,15 +199,6 @@ class IntercomBroker {
     }
   }
 
-  private findSessions(nameOrId: string): ConnectedSession[] {
-    const byId = this.sessions.get(nameOrId);
-    if (byId) {
-      return [byId];
-    }
-
-    const lowerName = nameOrId.toLowerCase();
-    return Array.from(this.sessions.values()).filter(session => session.info.name?.toLowerCase() === lowerName);
-  }
 
   private broadcast(msg: BrokerMessage, exclude?: string): void {
     for (const [id, session] of this.sessions) {

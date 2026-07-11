@@ -1,12 +1,11 @@
 import { randomUUID } from "crypto";
-import type { Attachment } from "../types.js";
+import type { LogicalSendOptions } from "./send-signature.js";
+export { buildSendSignature } from "./send-signature.js";
 
-export interface SendOptionsLike {
-  text: string;
-  attachments?: Attachment[];
-  replyTo?: string;
-  expectsReply?: boolean;
-}
+const DEFAULT_GENERATION_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_MAX_GENERATIONS = 10_000;
+
+export interface SendOptionsLike extends LogicalSendOptions {}
 
 export interface SendResultLike {
   id: string;
@@ -22,6 +21,8 @@ export interface PendingSendAttempt {
 }
 
 interface OwnedPendingSend extends PendingSendAttempt {
+  legacyEligible: boolean;
+  generation: number;
   resolve(result: SendResultLike): void;
   reject(error: Error): void;
   timer?: ReturnType<typeof setTimeout>;
@@ -32,29 +33,49 @@ export interface PendingSendAcquisition {
   owner: boolean;
 }
 
-function normalizeAttachments(attachments: Attachment[] | undefined): Array<Record<string, string>> | undefined {
-  return attachments?.map((attachment) => ({
-    type: attachment.type,
-    name: attachment.name,
-    content: attachment.content,
-    ...(attachment.language === undefined ? {} : { language: attachment.language }),
-  }));
+interface SendGeneration {
+  generation: number;
+  touchedAt: number;
 }
 
-/** Stable identity for deciding whether an explicit message ID represents the same logical send. */
-export function buildSendSignature(to: string, options: SendOptionsLike): string {
-  return JSON.stringify({
-    to,
-    text: options.text,
-    attachments: normalizeAttachments(options.attachments),
-    replyTo: options.replyTo ?? null,
-    expectsReply: options.expectsReply ?? null,
-  });
-}
 
 export class PendingSendRegistry {
   private readonly attempts = new Map<string, OwnedPendingSend>();
+  private readonly generations = new Map<string, SendGeneration>();
 
+  constructor(
+    private readonly generationTtlMs = DEFAULT_GENERATION_TTL_MS,
+    private readonly maxGenerations = DEFAULT_MAX_GENERATIONS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  private nextGeneration(messageId: string): number {
+    const now = this.now();
+    for (const [id, record] of this.generations) {
+      if (now - record.touchedAt <= this.generationTtlMs) break;
+      this.generations.delete(id);
+    }
+    const previous = this.generations.get(messageId);
+    const generation = previous && now - previous.touchedAt <= this.generationTtlMs ? previous.generation + 1 : 1;
+    this.generations.delete(messageId);
+    this.generations.set(messageId, { generation, touchedAt: now });
+    while (this.generations.size > Math.max(1, this.maxGenerations)) {
+      const oldest = this.generations.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.generations.delete(oldest);
+    }
+    return generation;
+  }
+
+  private touchGeneration(attempt: OwnedPendingSend): void {
+    this.generations.delete(attempt.messageId);
+    this.generations.set(attempt.messageId, { generation: attempt.generation, touchedAt: this.now() });
+    while (this.generations.size > Math.max(1, this.maxGenerations)) {
+      const oldest = this.generations.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.generations.delete(oldest);
+    }
+  }
   acquire(messageId: string, signature: string, timeoutMs: number): PendingSendAcquisition {
     const existing = this.attempts.get(messageId);
     if (existing) {
@@ -70,6 +91,7 @@ export class PendingSendRegistry {
       resolvePromise = resolve;
       rejectPromise = reject;
     });
+    const generation = this.nextGeneration(messageId);
     const attempt: OwnedPendingSend = {
       messageId,
       attemptId: randomUUID(),
@@ -77,6 +99,8 @@ export class PendingSendRegistry {
       promise,
       resolve: resolvePromise,
       reject: rejectPromise,
+      legacyEligible: generation === 1,
+      generation,
     };
     attempt.timer = setTimeout(() => {
       this.reject(attempt, new Error("Send timeout"));
@@ -90,14 +114,15 @@ export class PendingSendRegistry {
     if (!attempt || attempt.attemptId !== attemptId) return false;
     this.attempts.delete(messageId);
     if (attempt.timer) clearTimeout(attempt.timer);
+    this.touchGeneration(attempt);
     attempt.resolve(result);
     return true;
   }
 
-  /** Resolve a response from a pre-attemptId broker only when this exact message is active. */
+  /** Resolve a pre-attemptId response only for an ID's first active generation. */
   resolveLegacy(messageId: string, result: SendResultLike): boolean {
     const attempt = this.attempts.get(messageId);
-    if (!attempt) return false;
+    if (!attempt?.legacyEligible) return false;
     return this.resolve(messageId, attempt.attemptId, result);
   }
 
@@ -106,6 +131,7 @@ export class PendingSendRegistry {
     if (current !== attempt) return false;
     this.attempts.delete(attempt.messageId);
     if (current.timer) clearTimeout(current.timer);
+    this.touchGeneration(current);
     current.reject(error);
     return true;
   }

@@ -70,6 +70,8 @@ export function runIntercomFixture<T>(heavySource: string, scriptBody: string, e
 		writeFileSync(join(tempDir, "index.ts"), readFileSync(resolve(repoRoot, "packages/intercom/index.ts"), "utf-8"));
 		writeFileSync(join(tempDir, "lifecycle-lease.ts"), readFileSync(resolve(repoRoot, "packages/intercom/lifecycle-lease.ts"), "utf-8"));
 		writeFileSync(join(tempDir, "lazy-tool-execution.ts"), readFileSync(resolve(repoRoot, "packages/intercom/lazy-tool-execution.ts"), "utf-8"));
+		writeFileSync(join(tempDir, "lazy-subagent-ack.ts"), readFileSync(resolve(repoRoot, "packages/intercom/lazy-subagent-ack.ts"), "utf-8"));
+		writeFileSync(join(tempDir, "lazy-heavy-proxy.ts"), readFileSync(resolve(repoRoot, "packages/intercom/lazy-heavy-proxy.ts"), "utf-8"));
 		writeFileSync(join(tempDir, "result-renderers.ts"), "export function renderIntercomToolResult() { return undefined; }\n");
 		writeFileSync(join(tempDir, "index-heavy.ts"), heavySource);
 		const extensionUrl = pathToFileURL(join(tempDir, "index.ts")).href;

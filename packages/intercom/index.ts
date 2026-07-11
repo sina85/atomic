@@ -1,168 +1,48 @@
-import type { AgentEndEvent, AgentStartEvent, ExtensionAPI, ExtensionContext, ExtensionHandler, MessageRenderer, ModelSelectEvent, RegisteredCommand, SessionShutdownEvent, SessionStartEvent, ToolDefinition, ToolExecutionEndEvent, ToolExecutionStartEvent, TurnEndEvent, TurnStartEvent } from "@bastani/atomic";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "@bastani/atomic";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { renderIntercomToolResult } from "./result-renderers.js";
 import { executeHeavyTool, runHeavyCommand, type HeavyHandle } from "./lazy-tool-execution.js";
 import { assertCurrentLifecycleLease, createLifecycleLease, retainSettledLifecycleCleanup, retireLifecycleLease, SerializedLifecycleForwarder, type LifecycleLease } from "./lifecycle-lease.js";
 import { rejectLazyResultRelay } from "./lazy-subagent-ack.js";
-type CapturedCommand = Omit<RegisteredCommand, "name" | "sourceInfo">;
-type CapturedShortcut = Parameters<ExtensionAPI["registerShortcut"]>[1];
-type EventHandler = Parameters<ExtensionAPI["events"]["on"]>[1];
-type EventPayload = Parameters<EventHandler>[0];
-type ToolRenderResultArgs = Parameters<NonNullable<ToolDefinition["renderResult"]>>;
-type ForwardedEventMap = {
-	session_start: SessionStartEvent;
-	session_shutdown: SessionShutdownEvent;
-	turn_start: TurnStartEvent;
-	turn_end: TurnEndEvent;
-	agent_start: AgentStartEvent;
-	agent_end: AgentEndEvent;
-	tool_execution_start: ToolExecutionStartEvent;
-	tool_execution_end: ToolExecutionEndEvent;
-	model_select: ModelSelectEvent;
-};
-type LazyLifecycleEvent = keyof ForwardedEventMap;
-type ForwardedHandler<K extends LazyLifecycleEvent> = ExtensionHandler<ForwardedEventMap[K]>;
-type ForwardedHandlerMap = { [K in LazyLifecycleEvent]: ForwardedHandler<K>[] };
-type AnyForwardedHandler = { [K in LazyLifecycleEvent]: ForwardedHandler<K> }[LazyLifecycleEvent];
-type CapturedHeavy = {
-	tools: Map<string, ToolDefinition>;
-	commands: Map<string, CapturedCommand>;
-	handlers: ForwardedHandlerMap;
-	shortcuts: Map<string, CapturedShortcut>;
-	eventHandlers: Map<string, EventHandler[]>;
-};
-type LifecycleSnapshot<K extends LazyLifecycleEvent> = {
+import {
+	createForwardedHandlerMap,
+	createHeavyProxy,
+	dispatchEventHandlers,
+	dispatchHandlers,
+	type CapturedHeavy,
+	type ForwardedEventMap,
+	type ToolRenderResultArgs,
+} from "./lazy-heavy-proxy.js";
+
+type LifecycleSnapshot<K extends keyof ForwardedEventMap> = {
 	event: ForwardedEventMap[K];
 	ctx: ExtensionContext;
 };
 type ShutdownSnapshot = LifecycleSnapshot<"session_shutdown"> & { generation: number };
 type IntercomLease = LifecycleLease<ShutdownSnapshot>;
-type SessionSnapshot = LifecycleSnapshot<"session_start"> & {
-	generation: number;
-	lease: IntercomLease;
-};
+type SessionSnapshot = LifecycleSnapshot<"session_start"> & { generation: number; lease: IntercomLease };
 type IntercomHeavyHandle = HeavyHandle<CapturedHeavy>;
 type HeavyAttempt = { lease: IntercomLease; promise: Promise<IntercomHeavyHandle> };
 type ReplayAttempt = { lease: IntercomLease; heavy: CapturedHeavy; promise: Promise<void> };
 type ActiveLifecycleState = {
-	turnStart: LifecycleSnapshot<"turn_start"> | null; agentStart: LifecycleSnapshot<"agent_start"> | null;
-	activeTools: Map<string, LifecycleSnapshot<"tool_execution_start">>; modelSelect: LifecycleSnapshot<"model_select"> | null;
+	turnStart: LifecycleSnapshot<"turn_start"> | null;
+	agentStart: LifecycleSnapshot<"agent_start"> | null;
+	activeTools: Map<string, LifecycleSnapshot<"tool_execution_start">>;
+	modelSelect: LifecycleSnapshot<"model_select"> | null;
 };
+
 const SUBAGENT_CONTROL_INTERCOM_EVENT = "subagent:control-intercom";
 const SUBAGENT_RESULT_INTERCOM_EVENT = "subagent:result-intercom";
+
 function hasSubagentIntercomEnv(): boolean {
 	return Object.keys(process.env).some((key) => key.endsWith("_SUBAGENT_ORCHESTRATOR_TARGET"));
 }
+
 function createSyntheticSessionStartEvent(): SessionStartEvent {
 	return { type: "session_start", reason: "startup" };
 }
-function createForwardedHandlerMap(): ForwardedHandlerMap {
-	return {
-		session_start: [], session_shutdown: [], turn_start: [], turn_end: [], agent_start: [],
-		agent_end: [], tool_execution_start: [], tool_execution_end: [], model_select: [],
-	};
-}
-function addHandler<K extends LazyLifecycleEvent>(captured: CapturedHeavy, event: K, handler: ForwardedHandler<K>): void {
-	captured.handlers[event].push(handler);
-}
-function captureForwardedHandler(captured: CapturedHeavy, event: "session_start", handler: ForwardedHandler<"session_start">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "session_shutdown", handler: ForwardedHandler<"session_shutdown">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "turn_start", handler: ForwardedHandler<"turn_start">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "turn_end", handler: ForwardedHandler<"turn_end">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "agent_start", handler: ForwardedHandler<"agent_start">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "agent_end", handler: ForwardedHandler<"agent_end">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "tool_execution_start", handler: ForwardedHandler<"tool_execution_start">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "tool_execution_end", handler: ForwardedHandler<"tool_execution_end">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: "model_select", handler: ForwardedHandler<"model_select">): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: LazyLifecycleEvent, handler: AnyForwardedHandler): void;
-function captureForwardedHandler(captured: CapturedHeavy, event: LazyLifecycleEvent, handler: AnyForwardedHandler): void {
-	switch (event) {
-		case "session_start":
-			addHandler(captured, event, handler as ForwardedHandler<"session_start">);
-			return;
-		case "session_shutdown":
-			addHandler(captured, event, handler as ForwardedHandler<"session_shutdown">);
-			return;
-		case "turn_start":
-			addHandler(captured, event, handler as ForwardedHandler<"turn_start">);
-			return;
-		case "turn_end":
-			addHandler(captured, event, handler as ForwardedHandler<"turn_end">);
-			return;
-		case "agent_start":
-			addHandler(captured, event, handler as ForwardedHandler<"agent_start">);
-			return;
-		case "agent_end":
-			addHandler(captured, event, handler as ForwardedHandler<"agent_end">);
-			return;
-		case "tool_execution_start":
-			addHandler(captured, event, handler as ForwardedHandler<"tool_execution_start">);
-			return;
-		case "tool_execution_end":
-			addHandler(captured, event, handler as ForwardedHandler<"tool_execution_end">);
-			return;
-		case "model_select":
-			addHandler(captured, event, handler as ForwardedHandler<"model_select">);
-	}
-}
-function addEventHandler(captured: CapturedHeavy, event: string, handler: EventHandler): void {
-	const handlers = captured.eventHandlers.get(event) ?? [];
-	handlers.push(handler);
-	captured.eventHandlers.set(event, handlers);
-}
-async function dispatchHandlers<K extends LazyLifecycleEvent>(captured: CapturedHeavy, eventName: K, event: ForwardedEventMap[K], ctx: ExtensionContext): Promise<void> {
-	for (const handler of captured.handlers[eventName]) {
-		await handler(event, ctx);
-	}
-}
-async function dispatchEventHandlers(captured: CapturedHeavy, eventName: string, payload: EventPayload): Promise<void> {
-	for (const handler of captured.eventHandlers.get(eventName) ?? []) {
-		await handler(payload);
-	}
-}
-function createHeavyProxy(pi: ExtensionAPI, captured: CapturedHeavy): ExtensionAPI {
-	return new Proxy(pi, {
-		get(target, prop, receiver) {
-			if (prop === "registerTool") {
-				return (tool: ToolDefinition) => captured.tools.set(tool.name, tool);
-			}
-			if (prop === "registerCommand") {
-				return (name: string, options: CapturedCommand) => captured.commands.set(name, options);
-			}
-			if (prop === "on") {
-				return (event: LazyLifecycleEvent, handler: AnyForwardedHandler) => {
-					captureForwardedHandler(captured, event, handler);
-				};
-			}
-			if (prop === "registerShortcut") {
-				return (shortcut: string, options: CapturedShortcut) => {
-					captured.shortcuts.set(shortcut, options);
-				};
-			}
-			if (prop === "registerMessageRenderer") {
-				return (customType: string, renderer: MessageRenderer) => pi.registerMessageRenderer(customType, renderer);
-			}
-			if (prop === "events") {
-				return new Proxy(pi.events, {
-					get(eventTarget, eventProp, eventReceiver) {
-						if (eventProp === "on") {
-							return (event: string, handler: EventHandler) => {
-								addEventHandler(captured, event, handler);
-								return () => {
-									const handlers = captured.eventHandlers.get(event) ?? [];
-									captured.eventHandlers.set(event, handlers.filter((candidate) => candidate !== handler));
-								};
-							};
-						}
-						return Reflect.get(eventTarget, eventProp, eventReceiver);
-					},
-				});
-			}
-			return Reflect.get(target, prop, receiver);
-		},
-	}) as ExtensionAPI;
-}
+
 function renderHeavyToolResult(loadedHeavy: CapturedHeavy | null, name: string, args: ToolRenderResultArgs): ReturnType<NonNullable<ToolDefinition["renderResult"]>> {
 	const renderer = loadedHeavy?.tools.get(name)?.renderResult;
 	if (renderer) return renderer(...args);

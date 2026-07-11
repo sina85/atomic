@@ -31,7 +31,7 @@ export type ClientMessage =
   | { type: "register"; session: Omit<SessionInfo, "id"> }
   | { type: "unregister" }
   | { type: "list"; requestId: string }
-  | { type: "send"; to: string; message: Message }
+  | { type: "send"; to: string; message: Message; attemptId?: string }
   | { type: "presence"; name?: string; status?: string; model?: string };
 
 export type BrokerMessage =
@@ -42,5 +42,5 @@ export type BrokerMessage =
   | { type: "session_joined"; session: SessionInfo }
   | { type: "session_left"; sessionId: string }
   | { type: "error"; error: string }
-  | { type: "delivered"; messageId: string }
-  | { type: "delivery_failed"; messageId: string; reason: string };
+  | { type: "delivered"; messageId: string; attemptId?: string }
+  | { type: "delivery_failed"; messageId: string; reason: string; attemptId?: string };

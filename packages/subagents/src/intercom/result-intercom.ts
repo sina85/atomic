@@ -167,7 +167,7 @@ function formatNestedResultLines(children: PublicNestedRunSummary[] | undefined)
 	return lines;
 }
 
-interface GroupedResultIntercomMessageInput {
+export interface GroupedResultIntercomMessageInput {
 	to: string;
 	runId: string;
 	mode: SubagentRunMode;
