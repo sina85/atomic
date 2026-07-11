@@ -12,6 +12,7 @@ All notable changes to the `pi-intercom` extension will be documented in this fi
 
 - Made lazy Intercom lifecycle replay generation-safe, session-leased, and serialized with live lifecycle forwarding, so matching end events and newer model selections cannot be overtaken by a blocked stale replay. Shutdown waits for retired replay/initializer cleanup before replacement, calls spanning teardown reject, and failed or invalidated attempts cannot leak stale resources.
 - Recover from rejected lazy and delegated-child background initialization and later-generation session replay; later callers retry before executing, and concurrent retries share one initialization or replay attempt while normal sessions remain lazy.
+- Made acknowledged subagent result delivery idempotent end to end: lazy initialization failure and retired relay generations emit definitive negative acknowledgements, stable completion request IDs become broker message IDs, concurrent identical client sends coalesce onto one attempt, and a bounded TTL cache confirms identical successful retries without forwarding twice. Canonical target/payload/options signatures reject conflicting ID reuse even after success and across sender sessions, while transport attempt IDs and timestamps remain retry-insensitive. Brokers reject malformed present attempt IDs instead of unsafely downgrading them, and clients accept attempt-less legacy responses only for an ID's original active generation so a delayed legacy acknowledgement cannot settle a timeout/disconnect replacement.
 
 ## [0.9.5-alpha.8] - 2026-07-08
 

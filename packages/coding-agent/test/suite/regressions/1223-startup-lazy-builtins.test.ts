@@ -227,6 +227,7 @@ describe("regression #1223 lazy built-in startup imports", () => {
 
 	it("does not statically import heavy intercom broker or overlay modules from the registration surface", () => {
 		const source = readRepoFile("packages/intercom/index.ts");
+		const proxySource = readRepoFile("packages/intercom/lazy-heavy-proxy.ts");
 		const imports = staticImportSpecifiers(source);
 
 		expect(imports).not.toContain("./broker/client.ts");
@@ -234,16 +235,17 @@ describe("regression #1223 lazy built-in startup imports", () => {
 		expect(imports).not.toContain("./ui/session-list.ts");
 		expect(imports).not.toContain("./ui/compose.ts");
 		expect(imports).not.toContain("./ui/inline-message.ts");
+		expect(imports).toContain("./lazy-heavy-proxy.js");
 		expect(source).toContain('import("./index-heavy.js")');
 		expect(source).toContain('"session_shutdown"');
 		expect(source).toContain('"tool_execution_start"');
 		expect(source).toContain('"model_select"');
-		expect(source).toContain('prop === "registerShortcut"');
+		expect(proxySource).toContain('prop === "registerShortcut"');
 		expect(source).toContain('pi.registerShortcut("alt+m"');
 		expect(source).toContain('SUBAGENT_CONTROL_INTERCOM_EVENT');
 		expect(source).toContain('dispatchEventHandlers(handle.heavy, eventName, payload)');
 		expect(source).toContain('renderResult: (...args) => renderHeavyToolResult(loadedHeavy?.heavy ?? null, "intercom", args)');
-		expect(source).not.toContain('return () => undefined');
+		expect(proxySource).not.toContain('return () => undefined');
 	});
 
 	it("executes cold registration without importing heavy provider modules", () => {
