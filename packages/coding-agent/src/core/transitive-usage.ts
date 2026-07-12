@@ -33,6 +33,8 @@ export interface TransitiveUsage {
 export interface TransitiveUsageReconcileOptions {
 	/** Revision captured before an async persisted-session walk began. */
 	startedAtRevision?: number;
+	/** Monotonic id captured before an async persisted-session walk began. */
+	reconciliationId?: number;
 }
 
 export function emptyUsage(): Usage {
@@ -168,19 +170,32 @@ function coversAllSessionFileAliases(covering: DescendantUsageReport, covered: D
 export class TransitiveUsageAggregator {
 	private readonly descendants = new Map<string, DescendantUsageContribution>();
 	private readonly descendantRevisions = new Map<string, number>();
+	private readonly rootSessionId: string;
+	private readonly getSelfUsage: () => Usage;
+	private readonly onMutation: (() => void) | undefined;
+	private reconciliationSequence = 0;
+	private latestAppliedReconciliation = 0;
 	private revision = 0;
 	private walkComplete: boolean;
 	constructor(
-		private readonly rootSessionId: string,
-		private readonly getSelfUsage: () => Usage,
-		private readonly onMutation?: () => void,
+		rootSessionId: string,
+		getSelfUsage: () => Usage,
+		onMutation?: () => void,
 		options: { initialComplete?: boolean } = {},
 	) {
+		this.rootSessionId = rootSessionId;
+		this.getSelfUsage = getSelfUsage;
+		this.onMutation = onMutation;
 		this.walkComplete = options.initialComplete ?? true;
 	}
 
 	getRevision(): number {
 		return this.revision;
+	}
+
+	beginReconciliation(): number {
+		this.reconciliationSequence += 1;
+		return this.reconciliationSequence;
 	}
 
 	getTransitiveUsage(): TransitiveUsage {
@@ -197,12 +212,13 @@ export class TransitiveUsageAggregator {
 
 	attributeDescendantUsage(report: DescendantUsageReport): boolean {
 		if (report.rootSessionId !== this.rootSessionId) return false;
+		const previous = this.descendants.get(report.childRunId);
+		if (!report.settled && previous?.settled) return false;
 		const aliasKeysToDelete: string[] = [];
 		for (const [key, contribution] of this.descendants) {
 			if (key === report.childRunId || !sharesSessionFileAlias(contribution, report)) continue;
 			aliasKeysToDelete.push(key);
 		}
-		const previous = this.descendants.get(report.childRunId);
 		const nextReport = previous && !report.settled
 			? { ...report, usage: maxUsage(previous.usage, report.usage), sessionFiles: mergeStringArrays(previous.sessionFiles, report.sessionFiles) }
 			: report;
@@ -222,6 +238,10 @@ export class TransitiveUsageAggregator {
 		return true;
 	}
 	reconcile(reports: DescendantUsageReport[], complete: boolean, options: TransitiveUsageReconcileOptions = {}): void {
+		if (options.reconciliationId !== undefined) {
+			if (options.reconciliationId < this.latestAppliedReconciliation) return;
+			this.latestAppliedReconciliation = options.reconciliationId;
+		}
 		let metadataChanged = this.walkComplete !== complete;
 		this.walkComplete = complete;
 		const nextKeys = new Set(reports.map((report) => report.childRunId));

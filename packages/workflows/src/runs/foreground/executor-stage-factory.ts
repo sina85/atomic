@@ -288,6 +288,11 @@ export function createWorkflowStageFactory(input: {
       stageSnapshot.endedAt = Date.now();
       stageSnapshot.durationMs = elapsedStageMs(stageSnapshot, stageSnapshot.endedAt);
       applyModelFallbackMeta(innerCtx.__modelFallbackMeta());
+      try {
+        await innerCtx.__agentSession()?.walkDescendantUsage?.();
+      } catch {
+        // Preserve the current incomplete lower bound if durable reconciliation fails.
+      }
       recordStageUsage();
       input.activeStore.recordStageEnd(input.runId, stageSnapshot);
       stageUiBroker.cancelStagePrompt(input.runId, stageId, new Error(`atomic-workflows: stage ${stageId} completed with pending custom UI`));

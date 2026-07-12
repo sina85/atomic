@@ -95,4 +95,60 @@ describe("workflow stage usage rollups", () => {
 		assert.ok(emitted.length >= 2, "agent_end/finalization may emit additional keyed-upsert rollups");
 		assert.equal(emitted[0]?.settled, false);
 	});
+
+	test("stage finalization reconciles descendant usage before emitting the terminal rollup", async () => {
+		const emitted: Array<{ usage: Usage; settled?: boolean }> = [];
+		let complete = false;
+		let walkCalls = 0;
+		const transitiveUsage = () => ({
+			self: usage(10, 1),
+			descendants: usage(20, 2),
+			total: usage(30, 3),
+			complete,
+			breakdown: [],
+		});
+		const session = {
+			...mockSession(),
+			state: { model: { contextWindow: 1000 } },
+			sessionManager: {},
+			modelRegistry: {},
+			getContextUsage: () => ({ tokens: 0, contextWindow: 1000, percent: 0 }),
+			getTransitiveUsage: transitiveUsage,
+			async walkDescendantUsage() {
+				walkCalls += 1;
+				complete = true;
+				return transitiveUsage();
+			},
+		} satisfies StageSessionRuntime & {
+			readonly state: object;
+			readonly sessionManager: object;
+			readonly modelRegistry: object;
+			getContextUsage(): { tokens: number; contextWindow: number; percent: number };
+			getTransitiveUsage(): ReturnType<typeof transitiveUsage>;
+			walkDescendantUsage(): Promise<ReturnType<typeof transitiveUsage>>;
+		};
+		const def = workflow({
+			name: "reconciled-stage-usage",
+			description: "",
+			inputs: {},
+			outputs: { ok: Type.Boolean() },
+			run: async (ctx) => {
+				await ctx.task("stage", { task: "reconcile descendants" });
+				return { ok: true };
+			},
+		});
+		const result = await run(def, {}, {
+			store: createStore(),
+			adapters: { agentSession: { create: async () => session } },
+			usageRollup: {
+				emitStageRollup(_stageId, nextUsage, meta) {
+					emitted.push({ usage: nextUsage, settled: meta.settled });
+				},
+			},
+		});
+		assert.equal(result.status, "completed");
+		assert.equal(walkCalls, 1);
+		assert.equal(emitted.at(-1)?.usage.cost.total, 3);
+		assert.equal(emitted.at(-1)?.settled, true);
+	});
 });

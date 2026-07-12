@@ -31,12 +31,13 @@ export async function walkDescendantUsage(this: AgentSession, root?: SessionInfo
 		return [...new Map([...local, ...all].map((session) => [session.path, session])).values()];
 	};
 	const startedAtRevision = this._transitiveUsageAggregator.getRevision();
+	const reconciliationId = this._transitiveUsageAggregator.beginReconciliation();
 	const result = await collectDescendantUsageReports({
 		root: rootInfo,
 		rootSessionId: this.sessionManager.getSessionId(),
 		listSessions,
 	});
-	this._transitiveUsageAggregator.reconcile(result.reports, result.complete, { startedAtRevision });
+	this._transitiveUsageAggregator.reconcile(result.reports, result.complete, { startedAtRevision, reconciliationId });
 	return this.getTransitiveUsage();
 }
 
