@@ -38,6 +38,45 @@ describe("GraphView keyboard navigation", () => {
     view.dispose();
   });
 
+  it("pans a wide graph horizontally without moving focus or vertical scroll", () => {
+    const stages = [
+      makeStage("root"),
+      makeStage("child-0", ["root"]),
+      makeStage("child-1", ["root"]),
+      makeStage("child-2", ["root"]),
+      makeStage("child-3", ["root"]),
+      makeStage("child-4", ["root"]),
+      makeStage("child-5", ["root"]),
+    ];
+    const view = new GraphView({
+      mode: "overlay",
+      runId: "run-1",
+      store: makeStore(makeSnap(stages)),
+      graphTheme: defaultTheme,
+      getViewportRows: () => 32,
+    });
+
+    view.render(48);
+    while (view._graphScrollColOffset > 0) {
+      assert.equal(view.handleInput("\x1b[<66;10;10M"), true);
+    }
+    const verticalOffset = view._graphScrollOffset;
+
+    assert.equal(view.handleInput("\x1b[<67;10;10M"), true);
+    assert.ok(view._graphScrollColOffset > 0);
+    assert.equal(view._graphScrollOffset, verticalOffset);
+    assert.equal(view._focusedIndex, 0);
+
+    assert.equal(view.handleInput("\x1b[<66;10;10M"), true);
+    assert.equal(view._graphScrollColOffset, 0);
+
+    const legacyWheelRight = `\x1b[M${String.fromCharCode(67 + 32)}**`;
+    assert.equal(view.handleInput(legacyWheelRight), true);
+    assert.ok(view._graphScrollColOffset > 0);
+    assert.equal(view._graphScrollOffset, verticalOffset);
+    view.dispose();
+  });
+
   it("Ctrl+D variants detach in overlay graph mode", () => {
     const ctrlDVariants = [
       "\x04",
