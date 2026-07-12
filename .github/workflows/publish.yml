@@ -10,6 +10,14 @@ on:
                 description: "Tag to publish (e.g., 0.8.0 or 0.8.0-alpha.1)"
                 required: true
                 type: string
+            windows_runner:
+                description: "Windows smoke runner (use github-hosted only if Blacksmith is blocked)"
+                required: true
+                default: blacksmith
+                type: choice
+                options:
+                    - blacksmith
+                    - github-hosted
 
 permissions:
     contents: write
@@ -108,10 +116,10 @@ jobs:
 
     windows-binary-smoke:
         name: Smoke test Windows binary
-        runs-on: blacksmith-4vcpu-windows-2025
+        runs-on: ${{ inputs.windows_runner == 'github-hosted' && 'windows-2025' || 'blacksmith-4vcpu-windows-2025' }}
 
         steps:
-            - uses: useblacksmith/checkout@v1
+            - uses: actions/checkout@v7.0.0
               with:
                   ref: ${{ github.event.inputs.tag || github.ref_name }}
                   persist-credentials: false

@@ -116,8 +116,10 @@ Steps:
 
 The publish pipeline (`publish.yml`) runs when:
 
-- a `<version>` tag is pushed (no leading `v`, for example `0.8.0` or `0.8.0-alpha.1`)
-- `workflow_dispatch` is run with an explicit tag input such as `0.8.0`
+- a `<version>` tag is pushed (no leading `v`, for example `0.8.0` or `0.8.0-alpha.1`); the Windows smoke job always uses the default Blacksmith runner
+- `workflow_dispatch` is run with an explicit `tag` input such as `0.8.0` and a `windows_runner` choice (`blacksmith` by default, or `github-hosted` for the capacity fallback)
+
+Both runner choices check out the exact `tag` input before building. The Windows job uses `actions/checkout`, which is supported on both providers; changing `windows_runner` does not change the release ref or any publish validation.
 
 ### Tag Naming
 
@@ -127,6 +129,22 @@ The publish pipeline (`publish.yml`) runs when:
 | `<major>.<minor>.<patch>-<prerelease>` (e.g. `0.8.0-alpha.1`) | `next`   | prerelease, not marked latest |
 
 `main` is **versionless**: every `packages/*/package.json` on `main` sits at the `0.0.0` placeholder. The real version exists only on the tagged, off-`main` `Release <version>` commit produced by `scripts/cut-release.ts`, where the tag matches `packages/coding-agent/package.json` exactly (no leading `v`) and all `packages/*` versions are stamped in sync. publish.yml checks out that tagged commit, so its `validate tag matches package.json` gate sees the real version, not the placeholder. The pipeline also refuses to publish the `0.0.0` placeholder if it is ever tagged directly.
+
+### Windows runner fallback
+
+Normal tag pushes require no runner input: `windows-binary-smoke` runs on `blacksmith-4vcpu-windows-2025`. A normal manual retry uses the same provider:
+
+```sh
+gh workflow run publish.yml --ref main -f tag=0.9.7-alpha.1 -f windows_runner=blacksmith
+```
+
+Use the fallback only when the Blacksmith Windows job is stuck waiting for capacity. A tag-push run and a manual dispatch use different concurrency keys, so the fallback dispatch can start concurrently with the stuck run. To prevent two live publish attempts for one tag, first cancel the stuck run in the GitHub Actions UI and wait until it is terminal. Then open **Actions → Publish → Run workflow**, select `main`, set **Tag to publish** to `0.9.7-alpha.1`, set **Windows smoke runner** (`windows_runner`) to **GitHub-hosted** (`github-hosted`), and run the workflow. The equivalent command is:
+
+```sh
+gh workflow run publish.yml --ref main -f tag=0.9.7-alpha.1 -f windows_runner=github-hosted
+```
+
+The fallback changes only `windows-binary-smoke` to GitHub's `windows-2025` image. Linux smoke, native-artifact builds, the GitHub-hosted provenance publish job, checkout of `0.9.7-alpha.1`, and all tag/package validation remain unchanged. Do not use a branch name for `tag`; manual dispatch is a release/publish operation, not a smoke-only run.
 
 ### Cutting a release (versionless main)
 
@@ -199,7 +217,7 @@ Create GitHub Release with softprops/action-gh-release@v3
 
 npm versions are immutable. The workflow publishes to npm first so the GitHub Release is only created after the npm package is available.
 
-npm provenance currently supports GitHub-hosted runners only, so the final publish job runs on `ubuntu-latest` even though the binary smoke-test and most native-artifact jobs can use Blacksmith runners. The native-artifact matrix follows Blacksmith's architecture-aware runner pattern: Linux x64 uses `blacksmith-4vcpu-ubuntu-2404`, Linux arm64 uses `blacksmith-4vcpu-ubuntu-2404-arm`, Darwin arm64 uses `blacksmith-6vcpu-macos-26`, and Darwin x64 uses GitHub's Intel macOS runner (`macos-26-intel`) because Blacksmith does not provide Intel macOS runners.
+npm provenance currently supports GitHub-hosted runners only, so the final publish job runs on `ubuntu-latest` even though the binary smoke-test and most native-artifact jobs can use Blacksmith runners. The Windows smoke job normally uses `blacksmith-4vcpu-windows-2025`; a manual dispatch may set `windows_runner=github-hosted` to use GitHub's `windows-2025` image after a stuck same-tag attempt has been canceled. The native-artifact matrix follows Blacksmith's architecture-aware runner pattern: Linux x64 uses `blacksmith-4vcpu-ubuntu-2404`, Linux arm64 uses `blacksmith-4vcpu-ubuntu-2404-arm`, Darwin arm64 uses `blacksmith-6vcpu-macos-26`, and Darwin x64 uses GitHub's Intel macOS runner (`macos-26-intel`) because Blacksmith does not provide Intel macOS runners.
 
 ### GitHub Release Creation
 
@@ -272,7 +290,7 @@ The meaningful pre-publish checks are:
 | File                 | Trigger                                       | Purpose                                                                                                                                                                                                       |
 | -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test.yml`           | Push to `main`, PR to `main`                  | Install, typecheck, enforce the tracked TS/JS/Rust file-length gate, validate docs links plus Mintlify MDX/page syntax and broken links, build `@bastani/atomic`, unit/integration tests (including the installed-package Node-runtime extension smoke on Linux and Windows), build native Linux/Windows binaries, verify archive contents, and run `atomic --version` / `atomic --no-session` archive smoke tests |
-| `publish.yml`        | `<version>` tag push, manual dispatch with tag input | Smoke test Linux/Windows binaries in parallel on Blacksmith runners, build native NAPI artifacts on Blacksmith Linux/Windows/ARM/macOS runners plus GitHub `macos-26-intel` for Darwin x64, validate deterministic shrinkwrap/docs links plus Mintlify MDX/page syntax and broken links before publish metadata checks, build binaries on a GitHub-hosted runner for npm provenance, publish `@bastani/atomic-natives` and `@bastani/atomic`, create GitHub Release with binaries |
+| `publish.yml`        | `<version>` tag push, manual dispatch with `tag` and `windows_runner` inputs | Smoke test Linux/Windows binaries in parallel (Windows uses Blacksmith by default, with a manual `github-hosted` capacity fallback), build native NAPI artifacts on Blacksmith Linux/Windows/ARM/macOS runners plus GitHub `macos-26-intel` for Darwin x64, validate deterministic shrinkwrap/docs links plus Mintlify MDX/page syntax and broken links before publish metadata checks, build binaries on a GitHub-hosted runner for npm provenance, publish `@bastani/atomic-natives` and `@bastani/atomic`, create GitHub Release with binaries |
 
 ---
 

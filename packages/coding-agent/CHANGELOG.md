@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a manual `publish.yml` Windows-runner fallback: tag pushes and ordinary dispatches keep Blacksmith by default, while operators can select GitHub's hosted Windows image when Blacksmith capacity is blocked without changing the requested release tag.
+
 ## [0.9.7-alpha.1] - 2026-07-12
 
 ### Added
