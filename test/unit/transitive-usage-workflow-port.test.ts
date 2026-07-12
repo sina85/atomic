@@ -4,7 +4,8 @@ import { WORKFLOW_STAGE_SUBAGENT_GUARD_ENV } from "@bastani/atomic";
 import type { Usage } from "@earendil-works/pi-ai/compat";
 import { makeUsageRollupPort } from "../../packages/workflows/src/extension/workflow-ports.ts";
 import { makeExecuteWorkflowTool } from "../../packages/workflows/src/extension/workflow-tool.ts";
-import { bindUsageRollupRoot } from "../../packages/workflows/src/extension/runtime-usage.ts";
+import { bindUsageRollupRoot, runtimeDispatchOptions } from "../../packages/workflows/src/extension/runtime-usage.ts";
+import { registerWorkflowSlashCommand } from "../../packages/workflows/src/extension/workflow-command-registration.ts";
 
 function usage(input: number, cost: number): Usage {
 	return {
@@ -60,6 +61,41 @@ describe("workflow usage rollup port", () => {
 		}, "launch-session");
 		bound?.emitStageRollup("stage-id", usage(1, 0.1), { sessionId: "stage-session" });
 		assert.equal(emittedRoot, "launch-session");
+	});
+
+	test("captures slash-command workflow launch ownership before dispatch", async () => {
+		let capturedRoot: string | undefined;
+		const runtime = {
+			registry: { all: () => [], names: () => [] },
+			dispatch: async (_args: never, options?: { rootSessionId?: string }) => {
+				capturedRoot = options?.rootSessionId;
+				return { action: "run", runId: "run-1", status: "completed", stages: [] };
+			},
+		};
+		const commands = new Map<string, (args: string, ctx: never) => Promise<void>>();
+		registerWorkflowSlashCommand({} as never, commands as never, {
+			runtimeProxy: runtime as never,
+			runtimeForContext: () => runtime as never,
+			overlay: { open: () => undefined, close: () => undefined, toggle: () => undefined },
+			reloadWorkflowResources: () => undefined,
+			ensureWorkflowResourcesLoaded: () => undefined,
+			runWithLifecycleSuppressedForPolicy: async (_policy, fn) => await fn(),
+			runControl: {} as never,
+		});
+		await commands.get("workflow")?.("example", {
+			hasUI: true,
+			ui: { notify: () => undefined },
+			sessionManager: { getSessionId: () => "slash-launch-session" },
+		} as never);
+		assert.equal(capturedRoot, "slash-launch-session");
+	});
+
+	test("builds launch-root options consistently for command and tool contexts", () => {
+		const options = runtimeDispatchOptions({ mode: "interactive" } as never, {
+			sessionId: "explicit-session",
+			sessionManager: { getSessionId: () => "manager-session" },
+		});
+		assert.equal(options.rootSessionId, "explicit-session");
 	});
 
 	test.serial("captures the launch root from the execute context session manager", async () => {

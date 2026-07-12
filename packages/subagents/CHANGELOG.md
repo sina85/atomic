@@ -45,7 +45,7 @@
 
 ### Fixed
 
-- Fixed transitive usage rollups to mark malformed session JSONL as incomplete lower bounds, prevent case/separator-sensitive Windows subtree double-counting, and charge async completion reports to the root session that launched the async run after session switches ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+- Fixed transitive usage rollups to mark malformed session JSONL as incomplete lower bounds, conservatively omit fork-session usage when the inherited parent transcript is missing or malformed, prevent case/separator-sensitive Windows subtree double-counting, and charge async completion reports to the root session that launched the async run after session switches ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 

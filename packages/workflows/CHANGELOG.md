@@ -89,7 +89,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Fixed live workflow-stage usage reporting for slash-command/background launches by capturing the launching root session before asynchronous execution, subscribing for interim stage turn-end usage before the first model turn can emit events, forwarding stage-session `descendant_usage_changed` events from nested subagents/workflows while the stage turn is still running, and emitting the final settled stage rollup only after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+- Fixed live workflow-stage usage reporting for tool, slash-command, background, and resumed launches by capturing the launching root session before asynchronous execution, subscribing for interim stage turn-end usage before the first model turn can emit events, forwarding stage-session `descendant_usage_changed` events from nested subagents/workflows while the stage turn is still running, and emitting the final settled stage rollup only after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 

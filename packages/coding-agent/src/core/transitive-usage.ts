@@ -2,7 +2,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, posix, win32 } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { FileEntry, SessionInfo } from "./session-manager-types.ts";
-import { loadEntriesFromFile, loadEntriesFromFileWithParseStatus } from "./session-manager-storage.ts";
+import { loadEntriesFromFileWithParseStatus } from "./session-manager-storage.ts";
 
 export const USAGE_DESCENDANT_ROLLUP_CHANNEL = "usage:descendant-rollup";
 
@@ -309,7 +309,11 @@ export async function collectDescendantUsageReports(input: {
 				complete = false;
 				continue;
 			}
-			const ownEntries = sessionPath === rootPath ? entries : entriesExcludingInheritedParent(entries);
+			const filtered = sessionPath === rootPath
+				? { entries, complete: true }
+				: entriesExcludingInheritedParent(entries);
+			if (!filtered.complete) complete = false;
+			const ownEntries = filtered.entries;
 			if (!isCovered(sessionPath, coveredFiles, coveredSubtrees)) {
 				for (const report of workflowStageReportsFromEntries(ownEntries, input.rootSessionId)) {
 					if (report.sessionFile && isCovered(report.sessionFile, coveredFiles, coveredSubtrees)) continue;
@@ -358,15 +362,23 @@ function workflowStageReportsFromEntries(entries: readonly FileEntry[], rootSess
 	return reports;
 }
 
-function entriesExcludingInheritedParent(entries: readonly FileEntry[]): FileEntry[] {
+interface InheritedEntryFilterResult {
+	entries: FileEntry[];
+	complete: boolean;
+}
+
+function entriesExcludingInheritedParent(entries: readonly FileEntry[]): InheritedEntryFilterResult {
 	const header = entries.find((entry) => entry.type === "session") as ({ parentSession?: unknown } | undefined);
 	const parentSession = typeof header?.parentSession === "string" ? header.parentSession : undefined;
-	if (!parentSession || !existsSync(parentSession)) return [...entries];
+	if (!parentSession) return { entries: [...entries], complete: true };
+	if (!existsSync(parentSession)) return { entries: [], complete: false };
 	try {
-		const parentIds = new Set(loadEntriesFromFile(parentSession).map((entry) => entry.id));
-		return entries.filter((entry) => !parentIds.has(entry.id));
+		const parent = loadEntriesFromFileWithParseStatus(parentSession);
+		if (parent.hadMalformedLines || parent.entries.length === 0) return { entries: [], complete: false };
+		const parentIds = new Set(parent.entries.map((entry) => entry.id));
+		return { entries: entries.filter((entry) => !parentIds.has(entry.id)), complete: true };
 	} catch {
-		return [...entries];
+		return { entries: [], complete: false };
 	}
 }
 

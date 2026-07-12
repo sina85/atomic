@@ -83,6 +83,9 @@ export interface PiCommandContext extends PiModelContext {
     notify: (message: string, type?: "info" | "warning" | "error") => void;
   } & PiUISurface;
   hasUI?: boolean;
+  sessionManager?: SessionManager & {
+    getSessionId?: () => string;
+  };
 }
 
 export interface PiFlagNamedOpts {

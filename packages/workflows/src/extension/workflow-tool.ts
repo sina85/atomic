@@ -4,6 +4,7 @@ import type { ExtensionRuntime } from "./runtime.js";
 import type { WorkflowToolResult } from "./render-result.js";
 import type { PiExecuteContext, WorkflowToolArgs } from "./public-types.js";
 import { workflowPolicyFromContext } from "./workflow-policy.js";
+import { runtimeDispatchOptions } from "./runtime-usage.js";
 import { workflowGetResult } from "./workflow-tool-content.js";
 import {
   directModeCount,
@@ -50,8 +51,7 @@ export function makeExecuteWorkflowTool(
       };
     }
     const policy: WorkflowExecutionPolicy = workflowPolicyFromContext(ctx);
-    const rootSessionId = ctx.sessionId ?? ctx.sessionManager?.getSessionId?.();
-    const runtimeOptions = { policy, ...(rootSessionId ? { rootSessionId } : {}) };
+    const runtimeOptions = runtimeDispatchOptions(policy, ctx);
     const getRuntime = (): ExtensionRuntime => typeof runtime === "function" ? runtime(ctx) : runtime;
     const ensureWorkflowResources = ensureWorkflowResourcesLoaded ?? reloadWorkflowResources;
     const ensureWorkflowResourcesVisible = async (): Promise<void> => {
@@ -114,7 +114,7 @@ export function makeExecuteWorkflowTool(
         return workflowResumeAction(args, {
           getRuntime,
           policy,
-          rootSessionId,
+          rootSessionId: runtimeOptions.rootSessionId,
           ensureWorkflowResourcesLoaded: ensureWorkflowResources,
         });
       default: {

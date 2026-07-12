@@ -298,13 +298,15 @@ function readJsonlEntries(file: string): ParsedJsonlEntries {
 function entriesExcludingInheritedParent(entries: readonly Record<string, unknown>[]): ParsedJsonlEntries {
 	const header = entries.find((entry) => entry["type"] === "session") as { parentSession?: unknown } | undefined;
 	const parentSession = typeof header?.parentSession === "string" ? header.parentSession : undefined;
-	if (!parentSession || !existsSync(parentSession)) return { entries: [...entries], complete: true };
+	if (!parentSession) return { entries: [...entries], complete: true };
+	if (!existsSync(parentSession)) return { entries: [], complete: false };
 	try {
 		const parent = readJsonlEntries(parentSession);
+		if (!parent.complete || parent.entries.length === 0) return { entries: [], complete: false };
 		const parentIds = new Set(parent.entries.map((entry) => entry["id"]));
-		return { entries: entries.filter((entry) => !parentIds.has(entry["id"])), complete: parent.complete };
+		return { entries: entries.filter((entry) => !parentIds.has(entry["id"])), complete: true };
 	} catch {
-		return { entries: [...entries], complete: false };
+		return { entries: [], complete: false };
 	}
 }
 function usageFromEntries(entries: readonly Record<string, unknown>[]): AtomicUsage {

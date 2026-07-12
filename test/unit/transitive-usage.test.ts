@@ -247,6 +247,29 @@ describe("collectDescendantUsageReports", () => {
 		}
 	});
 
+	test("malformed fork parents cannot turn reconciled lower bounds into overcounts", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "atomic-transitive-malformed-parent-"));
+		try {
+			const rootPath = join(dir, "root.jsonl");
+			const parentPath = join(dir, "parent.jsonl");
+			const childDir = join(dir, basename(rootPath, ".jsonl"), "run-fork");
+			mkdirSync(childDir, { recursive: true });
+			const inherited = assistantEntry(usage(100, 10));
+			writeSession(parentPath, "parent-id", [inherited], undefined, "{malformed\n");
+			writeSession(rootPath, "root-id", []);
+			writeSession(join(childDir, "session.jsonl"), "child-id", [inherited, assistantEntry(usage(20, 2))], parentPath);
+			const result = await collectDescendantUsageReports({
+				root: { path: rootPath, id: "root-id", cwd: dir, created: new Date(), modified: new Date(), messageCount: 0, firstMessage: "", allMessagesText: "" },
+				rootSessionId: "root-id",
+				listSessions: async () => [],
+			});
+			assert.equal(result.complete, false);
+			assert.equal(result.reports.find((report) => report.childRunId === "child-id")?.usage.cost.total, 0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("workflow stage-end transitive usage suppresses covered nested session files", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "atomic-transitive-stage-cover-"));
 		try {
@@ -317,6 +340,22 @@ describe("subagent transitive usage rollup", () => {
 			const total = usageFromResults([{ agent: "worker", task: "task", exitCode: 0, usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.1, turns: 1 }, sessionFile: rootPath }]);
 			assert.equal(total.cost.total, 3);
 			assert.equal(total.input, 30);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("malformed fork parents produce conservative incomplete subagent rollups", () => {
+		const dir = mkdtempSync(join(tmpdir(), "atomic-subagent-malformed-parent-"));
+		try {
+			const parentPath = join(dir, "parent.jsonl");
+			const rootPath = join(dir, "session.jsonl");
+			const inherited = assistantEntry(usage(100, 10));
+			writeSession(parentPath, "parent-id", [inherited], undefined, "{malformed\n");
+			writeSession(rootPath, "subagent-root", [inherited, assistantEntry(usage(10, 1))], parentPath);
+			const rollup = usageRollupFromResults([{ agent: "worker", task: "task", exitCode: 0, usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.1, turns: 1 }, sessionFile: rootPath }]);
+			assert.equal(rollup.complete, false);
+			assert.equal(rollup.usage.cost.total, 0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
