@@ -132,6 +132,7 @@ export interface PiExecuteContext extends PiModelContext {
   hasUI?: boolean;
   orchestrationContext?: CreateAgentSessionOptions["orchestrationContext"];
   sessionManager?: SessionManager & {
+    getSessionId?: () => string;
     getSessionFile?: () => string | undefined;
   };
   [key: string]: unknown;

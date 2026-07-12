@@ -85,6 +85,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Restored workflow-first model routing for non-trivial, structured, and verifiable work while retaining the newer ability to author task-specific TypeScript workflows inline. Prompt guidance now explicitly combines the documented classify/branch, fan-out/synthesis, adversarial verification, generate/filter, tournament, and bounded loop patterns instead of forcing every workflow-fit task into an installed workflow, direct shape, or builtin.
 - Restored Ralph's builtin implementation-stage prompts to require subagent-led investigation, editing, and validation, reversing the selective direct-implementation wording introduced with intent-first routing.
 - Expanded model-facing workflow guidance to treat composition as a first-class design option: custom parents can import reusable project/package workflows or bundled builtin definitions, invoke them through `ctx.workflow(...)`, and nest further child workflows within `maxDepth` while preserving expanded graph visibility, HIL, durability, controls, and declared output contracts.
+- Changed workflow stages to persist usage snapshots and emit stage rollups so Atomic's status-bar cost and token badges reflect full transitive workflow-stage spend, including internal stage sessions hidden from normal resume lists. Stages emit interim (unsettled) usage rollups while running, forward nested descendant updates from subagents/workflows, and emit the final settled rollup after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+
+### Fixed
+
+- Fixed live workflow-stage usage reporting for slash-command/background launches by capturing the launching root session before asynchronous execution, subscribing for interim stage turn-end usage before the first model turn can emit events, forwarding stage-session `descendant_usage_changed` events from nested subagents/workflows while the stage turn is still running, and emitting the final settled stage rollup only after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 
@@ -142,8 +147,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Changed workflow stages to persist usage snapshots and emit stage rollups so Atomic's status-bar cost and token badges reflect full transitive workflow-stage spend, including internal stage sessions hidden from normal resume lists. Stages emit interim (unsettled) usage rollups while running, forward nested descendant updates from subagents/workflows, and emit the final settled rollup after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
-
 - Aligned the workflows extension peer dependency with upstream `pi-tui` `^0.80.6` as part of the consolidated Pi sync ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).
 - Replaced workflow-default routing with intent-first least orchestration: interactive exploration stays inline, bounded specialist delegation uses subagents, and workflows are reserved for clearly delegated autonomous jobs that benefit from long-running/background execution or durable stages, artifacts, resumability, HIL, gates, retries, or loops. Explicit loop and stop-condition requests remain key workflow signals when the user delegates execution, so convergence and evidence are tracked. Guidance now documents builtin/project/user/package workflows, direct one-off shapes, and the option to author a custom TypeScript workflow inline whenever that shape best achieves a workflow-fit task.
 
@@ -152,8 +155,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Aligned durable mid-chat workflow resumes with the standard pause/resume continuation prompt so resumed stages continue only when their scoped work remains unfinished.
 
 ### Fixed
-
-- Fixed live workflow-stage usage reporting for slash-command/background launches by subscribing for interim stage turn-end usage before the first model turn can emit events, forwarding stage-session `descendant_usage_changed` events from nested subagents/workflows while the stage turn is still running, and emitting the final settled stage rollup only after the durable `workflow.stage.end` entry is persisted. This prevents the launching session's footer from staying self-only while a workflow stage or its descendants are actively spending tokens/cost ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 - Fixed archived/read-only workflow transcript views to use the standard responsive footer and Ctrl+T copy-mode toggle/status, enabling normal terminal or tmux text selection while preserving Escape and Ctrl+D navigation ([#1706](https://github.com/bastani-inc/atomic/issues/1706)).
 - Fixed workflow tool validation coercing `output: false` into the literal file path `false`, so disabled output remains disabled across direct task, parallel task, and chain execution.

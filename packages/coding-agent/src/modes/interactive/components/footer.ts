@@ -102,9 +102,10 @@ export function getUsageLine(
     ? session.modelRegistry.isUsingOAuth(state.model)
     : false;
   const hasAnyTransitiveUsage = totalInput > 0 || totalOutput > 0 || totalCacheRead > 0 || totalCacheWrite > 0;
-  if (totalCost > 0 || usingSubscription || hasAnyTransitiveUsage) {
+  if (totalCost > 0 || usingSubscription || hasAnyTransitiveUsage || !transitiveUsage.complete) {
+    const prefix = transitiveUsage.complete ? "" : theme.fg("dim", "~");
     usageParts.push(
-      `${theme.fg("muted", `$${totalCost.toFixed(3)}`)}${usingSubscription ? ` ${theme.fg("dim", "(sub)")}` : ""}`,
+      `${prefix}${theme.fg("muted", `$${totalCost.toFixed(3)}`)}${usingSubscription ? ` ${theme.fg("dim", "(sub)")}` : ""}`,
     );
   }
 

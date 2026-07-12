@@ -7,8 +7,8 @@ description: "What's new in Atomic"
 ## Transitive session spend
 
 - **Delegated work appears in the footer.** The interactive status-bar dollar amount and token/cache badges (`↑`, `↓`, `R`, `W`) now include the current session plus subagents, nested subagents, and workflow-stage descendants.
-- **Live workflows update the launcher.** Background `/workflow` runs and subagent-heavy workflows such as `deep-research-codebase` stream unsettled usage rollups back to the launching chat while child agents are still running.
-- **Context remains current-session only.** The context-window percentage still describes the active session; use `/cost` for the self/descendant/total breakdown and durable reconciliation.
+- **Live workflows update the launcher.** Background `/workflow` runs and subagent-heavy workflows such as `deep-research-codebase` stream unsettled usage rollups back to the launching chat while child agents are still running; async completions stay attributed to the session that launched them after session switches.
+- **Incomplete totals are explicit.** The footer, `/context`, and `/cost` use a `~` lower-bound marker while descendant spend is unsettled or session-file reconciliation encounters malformed lines. The context-window percentage still describes the active session; use `/cost` for the self/descendant/total breakdown and durable reconciliation.
 
 </Update>
 <Update label="July 10, 2026">

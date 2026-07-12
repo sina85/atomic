@@ -26,7 +26,7 @@ import { DEFAULT_PROMPT_GUIDANCE } from "./prompt-guidance.ts";
 import { SUBAGENT_TOOL_DESCRIPTION } from "./tool-description.ts";
 export { SUBAGENT_TOOL_DESCRIPTION } from "./tool-description.ts";
 import { type Details, type SubagentState, ASYNC_DIR, DEFAULT_ARTIFACT_CONFIG, RESULTS_DIR, SLASH_RESULT_TYPE, SUBAGENT_ASYNC_COMPLETE_EVENT, SUBAGENT_ASYNC_STARTED_EVENT, SUBAGENT_CONTROL_EVENT } from "../shared/types.ts";
-import { liveSubagentDetails, reportSubagentStarted, reportSubagentUsage, reportSubagentUsageForRoot } from "../shared/usage-rollup.ts";
+import { consumeAsyncRootSession, liveSubagentDetails, rememberAsyncRootSession, reportSubagentStarted, reportSubagentUsage, reportSubagentUsageForRoot } from "../shared/usage-rollup.ts";
 import { clearPendingForegroundControlNotices, formatSubagentControlNotice, handleSubagentControlNotice, SUBAGENT_CONTROL_MESSAGE_TYPE, type SubagentControlMessageDetails } from "./control-notices.ts";
 import { createSubagentStartupMaintenance } from "./startup-maintenance.ts";
 import { beginApiLifecycle, getApiScopedSet } from "./api-lifecycle.ts";
@@ -173,6 +173,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 			baseCwd: "",
 			currentSessionId: null,
 			currentRootSessionId: null,
+			asyncRootSessions: new Map(),
 			asyncJobs: new Map(),
 			subagentInProgress: false,
 			foregroundRuns: new Map(),
@@ -364,12 +365,13 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 		const startedEventHandler = (payload: unknown) => {
 			if (!lifecycle.isCurrent()) return;
 			handleStarted(payload);
+			rememberAsyncRootSession(state.asyncRootSessions, state.currentRootSessionId, payload as { id?: unknown });
 			reportSubagentStarted(pi, state.currentRootSessionId, payload as { id?: unknown; asyncDir?: unknown });
 		};
 		const completeEventHandler = (payload: unknown) => {
 			if (!lifecycle.isCurrent()) return;
 			handleComplete(payload);
-			reportSubagentUsageForRoot(pi, state.currentRootSessionId, payload as Details);
+			reportSubagentUsageForRoot(pi, consumeAsyncRootSession(state.asyncRootSessions, state.currentRootSessionId, payload as Details), payload as Details);
 		};
 		const controlEventHandler = (payload: unknown) => {
 			if (!lifecycle.isCurrent()) return;

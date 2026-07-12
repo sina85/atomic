@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, posix, win32 } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@bastani/atomic";
 import type { Details, ModelAttempt, SingleResult, Usage } from "./types-results.ts";
 
@@ -172,6 +172,17 @@ export function reportSubagentStarted(pi: ExtensionAPI, rootSessionId: string | 
 	} satisfies DescendantUsageReport);
 }
 
+export function rememberAsyncRootSession(roots: Map<string, string> | undefined, rootSessionId: string | null | undefined, payload: { id?: unknown }): void {
+	if (roots && rootSessionId && typeof payload.id === "string") roots.set(payload.id, rootSessionId);
+}
+
+export function consumeAsyncRootSession(roots: Map<string, string> | undefined, currentRootSessionId: string | null | undefined, details: { runId?: unknown }): string | null | undefined {
+	if (!roots || typeof details.runId !== "string") return currentRootSessionId;
+	const rootSessionId = roots.get(details.runId) ?? currentRootSessionId;
+	roots.delete(details.runId);
+	return rootSessionId;
+}
+
 function usageRollupFromResult(result: SingleResult, options: UsageRollupOptions): RollupUsage {
 	const fileUsage = usageFromSessionTree(result.sessionFile);
 	if (options.live) {
@@ -222,7 +233,10 @@ function usageFromSessionTree(sessionFile: string | undefined): RollupUsage | un
 		const entriesByFile = new Map<string, Record<string, unknown>[]>();
 		for (const file of [sessionFile, ...discoverNestedSessionFiles(sessionFile)]) {
 			if (entriesByFile.has(file)) continue;
-			entriesByFile.set(file, entriesExcludingInheritedParent(readJsonlEntries(file)));
+			const parsed = readJsonlEntries(file);
+			const filtered = entriesExcludingInheritedParent(parsed.entries);
+			if (!parsed.complete || !filtered.complete) complete = false;
+			entriesByFile.set(file, filtered.entries);
 		}
 		const coveredFiles = new Set<string>();
 		const coveredSubtrees: string[] = [];
@@ -260,28 +274,37 @@ function discoverNestedSessionFiles(sessionFile: string): string[] {
 	return files;
 }
 
-function readJsonlEntries(file: string): Record<string, unknown>[] {
-	return readFileSync(file, "utf8")
+interface ParsedJsonlEntries {
+	entries: Record<string, unknown>[];
+	complete: boolean;
+}
+
+function readJsonlEntries(file: string): ParsedJsonlEntries {
+	let complete = true;
+	const entries = readFileSync(file, "utf8")
 		.split(/\r?\n/)
 		.flatMap((line) => {
 			if (!line.trim()) return [];
 			try {
 				return [JSON.parse(line) as Record<string, unknown>];
 			} catch {
+				complete = false;
 				return [];
 			}
 		});
+	return { entries, complete };
 }
 
-function entriesExcludingInheritedParent(entries: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+function entriesExcludingInheritedParent(entries: readonly Record<string, unknown>[]): ParsedJsonlEntries {
 	const header = entries.find((entry) => entry["type"] === "session") as { parentSession?: unknown } | undefined;
 	const parentSession = typeof header?.parentSession === "string" ? header.parentSession : undefined;
-	if (!parentSession || !existsSync(parentSession)) return [...entries];
+	if (!parentSession || !existsSync(parentSession)) return { entries: [...entries], complete: true };
 	try {
-		const parentIds = new Set(readJsonlEntries(parentSession).map((entry) => entry["id"]));
-		return entries.filter((entry) => !parentIds.has(entry["id"]));
+		const parent = readJsonlEntries(parentSession);
+		const parentIds = new Set(parent.entries.map((entry) => entry["id"]));
+		return { entries: entries.filter((entry) => !parentIds.has(entry["id"])), complete: parent.complete };
 	} catch {
-		return [...entries];
+		return { entries: [...entries], complete: false };
 	}
 }
 function usageFromEntries(entries: readonly Record<string, unknown>[]): AtomicUsage {
@@ -312,13 +335,35 @@ function workflowStageUsagesFromEntries(entries: readonly Record<string, unknown
 }
 
 function addCoverage(sessionFile: string, coveredFiles: Set<string>, coveredSubtrees: string[]): void {
-	coveredFiles.add(sessionFile);
-	coveredSubtrees.push(join(dirname(sessionFile), basename(sessionFile, extname(sessionFile))));
+	coveredFiles.add(normalizedPathKey(sessionFile));
+	coveredSubtrees.push(sessionSubtreeRoot(sessionFile));
 }
 
 function isCovered(path: string, coveredFiles: Set<string>, coveredSubtrees: readonly string[]): boolean {
-	if (coveredFiles.has(path)) return true;
-	return coveredSubtrees.some((root) => path === root || path.startsWith(`${root}/`));
+	const candidate = normalizedPathKey(path);
+	if (coveredFiles.has(candidate)) return true;
+	return coveredSubtrees.some((root) => isSameOrDescendant(root, candidate));
+}
+
+function pathApi(value: string): typeof posix | typeof win32 {
+	return /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") ? win32 : posix;
+}
+
+function normalizedPathKey(path: string): string {
+	const api = pathApi(path);
+	const normalized = api.normalize(path);
+	return api === win32 ? normalized.toLowerCase() : normalized;
+}
+
+function sessionSubtreeRoot(sessionFile: string): string {
+	const api = pathApi(sessionFile);
+	return normalizedPathKey(api.join(api.dirname(sessionFile), api.basename(sessionFile, api.extname(sessionFile))));
+}
+
+function isSameOrDescendant(root: string, candidate: string): boolean {
+	const api = pathApi(root);
+	const relativePath = api.relative(root, candidate);
+	return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${api.sep}`) && !api.isAbsolute(relativePath));
 }
 
 function usageCompleteFromData(data: { usageComplete?: unknown; usageSettled?: unknown }): boolean {

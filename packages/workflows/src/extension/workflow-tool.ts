@@ -50,6 +50,8 @@ export function makeExecuteWorkflowTool(
       };
     }
     const policy: WorkflowExecutionPolicy = workflowPolicyFromContext(ctx);
+    const rootSessionId = ctx.sessionId ?? ctx.sessionManager?.getSessionId?.();
+    const runtimeOptions = { policy, ...(rootSessionId ? { rootSessionId } : {}) };
     const getRuntime = (): ExtensionRuntime => typeof runtime === "function" ? runtime(ctx) : runtime;
     const ensureWorkflowResources = ensureWorkflowResourcesLoaded ?? reloadWorkflowResources;
     const ensureWorkflowResourcesVisible = async (): Promise<void> => {
@@ -67,7 +69,7 @@ export function makeExecuteWorkflowTool(
       case "list":
       case "inputs": {
         await ensureWorkflowResourcesVisible();
-        return getRuntime().dispatch(args, { policy });
+        return getRuntime().dispatch(args, runtimeOptions);
       }
       case "run": {
         if (hasDirectExecutionMode(args)) {
@@ -76,11 +78,11 @@ export function makeExecuteWorkflowTool(
           if (normalModeCount !== 1) {
             throw new Error("Workflow extension: specify exactly one normal execution mode: workflow, task, tasks, or chain");
           }
-          const details = await activeRuntime.runDirect(withForkParentSession(args, ctx), { policy });
+          const details = await activeRuntime.runDirect(withForkParentSession(args, ctx), runtimeOptions);
           return workflowRunResultFromDetails(details);
         }
         await ensureWorkflowResourcesVisible();
-        return getRuntime().dispatch(args, { policy });
+        return getRuntime().dispatch(args, runtimeOptions);
       }
       case "status": {
         const target = args.runId;
@@ -109,7 +111,12 @@ export function makeExecuteWorkflowTool(
       case "interrupt":
         return workflowInterruptAction(args);
       case "resume":
-        return workflowResumeAction(args, { getRuntime, policy, ensureWorkflowResourcesLoaded: ensureWorkflowResources });
+        return workflowResumeAction(args, {
+          getRuntime,
+          policy,
+          rootSessionId,
+          ensureWorkflowResourcesLoaded: ensureWorkflowResources,
+        });
       default: {
         const _exhaustive: never = action;
         throw new Error(`Workflow extension: unknown action "${_exhaustive}"`);

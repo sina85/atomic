@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, posix, win32 } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { FileEntry, SessionInfo } from "./session-manager-types.ts";
-import { loadEntriesFromFile } from "./session-manager-storage.ts";
+import { loadEntriesFromFile, loadEntriesFromFileWithParseStatus } from "./session-manager-storage.ts";
 
 export const USAGE_DESCENDANT_ROLLUP_CHANNEL = "usage:descendant-rollup";
 
@@ -147,7 +147,7 @@ function sameStringArray(left: readonly string[] | undefined, right: readonly st
 
 function sessionFileAliases(report: DescendantUsageReport): Set<string> {
 	const aliases = [report.sessionFile, ...(report.sessionFiles ?? [])];
-	return new Set(aliases.filter((value): value is string => typeof value === "string" && value.length > 0));
+	return new Set(aliases.filter((value): value is string => typeof value === "string" && value.length > 0).map(normalizedPathKey));
 }
 
 function sharesSessionFileAlias(left: DescendantUsageContribution, right: DescendantUsageReport): boolean {
@@ -157,6 +157,12 @@ function sharesSessionFileAlias(left: DescendantUsageContribution, right: Descen
 		if (aliases.has(alias)) return true;
 	}
 	return false;
+}
+
+function coversAllSessionFileAliases(covering: DescendantUsageReport, covered: DescendantUsageReport): boolean {
+	const coveringAliases = sessionFileAliases(covering);
+	const coveredAliases = sessionFileAliases(covered);
+	return coveredAliases.size > 0 && [...coveredAliases].every((alias) => coveringAliases.has(alias));
 }
 
 export class TransitiveUsageAggregator {
@@ -232,9 +238,24 @@ export class TransitiveUsageAggregator {
 		}
 		for (const report of reports) {
 			if (this.isStaleWalkReport(report, options.startedAtRevision)) continue;
+			if (!complete && this.wouldDiscardKnownAliasCoverage(report)) continue;
 			this.attributeDescendantUsage(report);
 		}
 		if (metadataChanged) this.onMutation?.();
+	}
+
+	private wouldDiscardKnownAliasCoverage(report: DescendantUsageReport): boolean {
+		for (const [key, contribution] of this.descendants) {
+			if (key === report.childRunId) {
+				const losesAliases = sessionFileAliases(contribution).size > 0 && !coversAllSessionFileAliases(report, contribution);
+				const reducesUsage = !sameUsage(maxUsage(contribution.usage, report.usage), report.usage);
+				if (losesAliases || reducesUsage) return true;
+				continue;
+			}
+			if (!sharesSessionFileAlias(contribution, report)) continue;
+			if (!coversAllSessionFileAliases(report, contribution)) return true;
+		}
+		return false;
 	}
 
 	private isStaleWalkReport(report: DescendantUsageReport, startedAtRevision: number | undefined): boolean {
@@ -281,7 +302,9 @@ export async function collectDescendantUsageReports(input: {
 	const coveredFiles = new Set<string>();
 	for (const sessionPath of [rootPath, ...discoveredPaths]) {
 		try {
-			const entries = loadEntriesFromFile(sessionPath);
+			const parsed = loadEntriesFromFileWithParseStatus(sessionPath);
+			const entries = parsed.entries;
+			if (parsed.hadMalformedLines) complete = false;
 			if (entries.length === 0) {
 				complete = false;
 				continue;
@@ -375,13 +398,35 @@ function discoverSubagentSessionFiles(rootPath: string): string[] {
 }
 
 function addCoverage(sessionFile: string, coveredFiles: Set<string>, coveredSubtrees: string[]): void {
-	coveredFiles.add(sessionFile);
-	coveredSubtrees.push(join(dirname(sessionFile), basename(sessionFile, extname(sessionFile))));
+	coveredFiles.add(normalizedPathKey(sessionFile));
+	coveredSubtrees.push(sessionSubtreeRoot(sessionFile));
 }
 
 function isCovered(path: string, coveredFiles: Set<string>, coveredSubtrees: readonly string[]): boolean {
-	if (coveredFiles.has(path)) return true;
-	return coveredSubtrees.some((root) => path === root || path.startsWith(`${root}/`));
+	const candidate = normalizedPathKey(path);
+	if (coveredFiles.has(candidate)) return true;
+	return coveredSubtrees.some((root) => isSameOrDescendant(root, candidate));
+}
+
+function pathApi(value: string): typeof posix | typeof win32 {
+	return /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") ? win32 : posix;
+}
+
+function normalizedPathKey(path: string): string {
+	const api = pathApi(path);
+	const normalized = api.normalize(path);
+	return api === win32 ? normalized.toLowerCase() : normalized;
+}
+
+function sessionSubtreeRoot(sessionFile: string): string {
+	const api = pathApi(sessionFile);
+	return normalizedPathKey(api.join(api.dirname(sessionFile), api.basename(sessionFile, api.extname(sessionFile))));
+}
+
+function isSameOrDescendant(root: string, candidate: string): boolean {
+	const api = pathApi(root);
+	const relativePath = api.relative(root, candidate);
+	return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${api.sep}`) && !api.isAbsolute(relativePath));
 }
 
 function usageSettledFromData(data: { usageComplete?: unknown; usageSettled?: unknown }): boolean {
@@ -400,4 +445,3 @@ function isDescendantOf(session: SessionInfo, rootPath: string, byPath: Map<stri
 	}
 	return false;
 }
-

@@ -41,6 +41,11 @@
 
 - Aligned model-facing subagent guidance with workflow-first routing: subagents remain focused specialists inside workflow stages or bounded direct delegation, rather than becoming an ad hoc implementation/review/retry pipeline for workflow-fit work.
 - Changed bundled Intercom coordination back to model-driven connection: launching foreground or background children no longer connects the parent or child session automatically; an Intercom tool or UI action must establish each session's broker connection.
+- Changed foreground, async, and live foreground-update subagent reports to send transitive usage rollups back to the parent session so Atomic's status-bar cost and token badges reflect delegated subagent spend without double-counting while subagents are still running, not only after their final tool result ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+
+### Fixed
+
+- Fixed transitive usage rollups to mark malformed session JSONL as incomplete lower bounds, prevent case/separator-sensitive Windows subtree double-counting, and charge async completion reports to the root session that launched the async run after session switches ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 
@@ -50,8 +55,6 @@
 - Added root single-agent `progress` calls so `progress: true` maintains a run-scoped `progress.md` under isolated artifact storage for foreground, background, and revived runs without overwriting a child-working-directory file; inherited defaults are suppressed for read-only tasks, and artifacts-disabled foreground storage is removed after the child exits.
 
 ### Changed
-
-- Changed foreground, async, and live foreground-update subagent reports to send transitive usage rollups back to the parent session so Atomic's status-bar cost and token badges reflect delegated subagent spend without double-counting while subagents are still running, not only after their final tool result ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 - Aligned the subagents extension peer dependencies with upstream Pi `^0.80.5` runtime packages as part of the consolidated dependency refresh.
 - Aligned the subagents extension peer dependencies with upstream Pi `^0.80.6` runtime packages while preserving Atomic child-session and orchestration behavior ([#1703](https://github.com/bastani-inc/atomic/issues/1703)).

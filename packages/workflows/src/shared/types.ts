@@ -238,7 +238,7 @@ export interface WorkflowMcpPort {
 }
 
 export interface WorkflowUsageRollupPort {
-  emitStageRollup(stageId: string, usage: Usage, meta: { label?: string; sessionId: string; sessionFile?: string; settled?: boolean }): void;
+  emitStageRollup(stageId: string, usage: Usage, meta: { label?: string; sessionId: string; sessionFile?: string; settled?: boolean; rootSessionId?: string }): void;
 }
 
 /**

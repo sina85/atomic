@@ -232,6 +232,7 @@ export interface SubagentState {
 	baseCwd: string;
 	currentSessionId: string | null;
 	currentRootSessionId?: string | null;
+	asyncRootSessions?: Map<string, string>;
 	asyncJobs: Map<string, AsyncJobState>;
 	subagentInProgress?: boolean;
 	foregroundRuns?: Map<string, ForegroundResumeRun>;

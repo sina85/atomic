@@ -49,6 +49,8 @@ import { getDurableBackend, initializeDbosDurableBackendFromEnv } from "../durab
 import { scanResumableWorkflows } from "../durable/resume-catalog.js";
 import type { ResumableWorkflowEntry } from "../durable/types.js";
 import { directMode, directModelRequests, directOptions, directProgressTotal } from "./runtime-direct.js";
+import { bindUsageRollupRoot, type RuntimeDispatchOptions } from "./runtime-usage.js";
+export type { RuntimeDispatchOptions } from "./runtime-usage.js";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -126,9 +128,6 @@ export interface ExtensionRuntime {
   listDurableResumable(sessionDir?: string): readonly import("../durable/types.js").ResumableWorkflowEntry[];
   prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly import("../durable/types.js").ResumableWorkflowEntry[]>;
 }
-export interface RuntimeDispatchOptions {
-  readonly policy?: WorkflowExecutionPolicy;
-}
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -164,7 +163,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
   const ensureDbosReady = async (): Promise<void> => { await dbosReady; };
   let preparedDurableCatalog: readonly ResumableWorkflowEntry[] = [];
 
-  function runOptions(args: WorkflowToolArgs, policy?: WorkflowExecutionPolicy): RunOpts {
+  function runOptions(args: WorkflowToolArgs, policy?: WorkflowExecutionPolicy, rootSessionId?: string): RunOpts {
     const argConcurrency =
       typeof args.concurrency === "number" && Number.isFinite(args.concurrency)
         ? Math.max(1, Math.floor(args.concurrency))
@@ -187,7 +186,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
       cancellation,
       persistence,
       mcp,
-      usageRollup,
+      usageRollup: bindUsageRollupRoot(usageRollup, rootSessionId),
       config: effectiveConfig,
       models,
       ...(defaultSessionDir !== undefined ? { defaultSessionDir } : {}),
@@ -255,9 +254,10 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
     args: WorkflowToolArgs,
     runId?: string,
     policy?: WorkflowExecutionPolicy,
+    rootSessionId?: string,
   ): Promise<WorkflowDetails> {
     const directRunOptions = directOptions(args);
-    const baseRunOptions = runOptions(args, policy);
+    const baseRunOptions = runOptions(args, policy, rootSessionId);
     const effectiveRunOptions = runId === undefined
       ? baseRunOptions
       : { ...baseRunOptions, runId };
@@ -364,7 +364,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
       return { ok: false, reason: "insufficient_state", message: `insufficient_state: ${err instanceof Error ? err.message : String(err)}` };
     }
     const accepted = runDetached(def, sourceInputs, {
-      ...runOptions({ workflow: def.name, inputs: sourceInputs }, options?.policy),
+      ...runOptions({ workflow: def.name, inputs: sourceInputs }, options?.policy, options?.rootSessionId),
       continuation: { source, resumeFromStageId: resolvedStage.stageId },
     });
     if (isActiveBlockedResumable) {
@@ -381,7 +381,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
     };
   }
 
-  async function runDirectAsync(args: WorkflowToolArgs, policy?: WorkflowExecutionPolicy): Promise<WorkflowDetails> {
+  async function runDirectAsync(args: WorkflowToolArgs, policy?: WorkflowExecutionPolicy, rootSessionId?: string): Promise<WorkflowDetails> {
     await ensureDbosReady();
     const runId = crypto.randomUUID();
     const mode = directMode(args);
@@ -403,7 +403,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
         error: classifyWorkflowFailure(error).userMessage,
       }, delivery, parentSession);
     }
-    const background = runDirectForeground(args, runId, policy);
+    const background = runDirectForeground(args, runId, policy, rootSessionId);
     void background.then(
       (details) => {
         emitDirectIntercom(details, delivery, parentSession);
@@ -445,7 +445,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
         jobs,
         persistence,
         mcp,
-        usageRollup,
+        usageRollup: bindUsageRollupRoot(usageRollup, options?.rootSessionId),
         config,
         models,
         policy: options?.policy,
@@ -458,12 +458,12 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
       await ensureDbosReady();
       const policy = options?.policy ?? INTERACTIVE_WORKFLOW_POLICY;
       if (args.async === true && policy.awaitTerminalRun !== true) {
-        return runDirectAsync(args, policy);
+        return runDirectAsync(args, policy, options?.rootSessionId);
       }
       const mode = directMode(args);
       const delivery = effectiveIntercomDelivery(args, mode);
       const parentSession = intercomParentSession(args);
-      return runDirectForeground(args, undefined, policy).then((details) => {
+      return runDirectForeground(args, undefined, policy, options?.rootSessionId).then((details) => {
         const summarized = withIntercomSummary(details, delivery, parentSession);
         emitDirectIntercom(summarized, delivery, parentSession);
         return summarized;
@@ -475,7 +475,7 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
     resumeDurableWorkflow(workflowIdOrPrefix: string, options?: RuntimeDispatchOptions): ResumeDurableResult {
       const adapterDeps: ResumeDurableDeps = {
         registry,
-        baseRunOpts: runOptions({ workflow: "", inputs: {} }, options?.policy),
+        baseRunOpts: runOptions({ workflow: "", inputs: {} }, options?.policy, options?.rootSessionId),
         durableBackend: getDurableBackend(),
       };
       return resumeDurableWorkflowAdapter(workflowIdOrPrefix, adapterDeps, preparedDurableCatalog);

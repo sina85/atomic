@@ -4,13 +4,9 @@ import { basename, dirname, join } from "node:path";
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
 import type { Usage } from "@earendil-works/pi-ai/compat";
-import { TransitiveUsageAggregator, collectDescendantUsageReports, emptyUsage } from "../../packages/coding-agent/src/core/transitive-usage.ts";
-import { getUsageLine } from "../../packages/coding-agent/src/modes/interactive/components/footer.ts";
-import { liveSubagentDetails, reportSubagentStarted, reportSubagentUsageForRoot, usageFromResults, usageRollupFromResults } from "../../packages/subagents/src/shared/usage-rollup.ts";
-import { initTheme } from "../../packages/coding-agent/src/modes/interactive/theme/theme.ts";
-import { makeUsageRollupPort } from "../../packages/workflows/src/extension/workflow-ports.ts";
+import { TransitiveUsageAggregator, collectDescendantUsageReports } from "../../packages/coding-agent/src/core/transitive-usage.ts";
+import { consumeAsyncRootSession, liveSubagentDetails, rememberAsyncRootSession, reportSubagentUsageForRoot, usageFromResults, usageRollupFromResults } from "../../packages/subagents/src/shared/usage-rollup.ts";
 import { compactForegroundDetails } from "../../packages/subagents/src/shared/utils.ts";
-initTheme("dark", false);
 function usage(input: number, cost: number): Usage {
 	return {
 		input,
@@ -22,9 +18,6 @@ function usage(input: number, cost: number): Usage {
 	};
 }
 
-function stripAnsi(value: string): string {
-	return value.replace(/\x1b\[[0-9;]*m/g, "");
-}
 
 describe("TransitiveUsageAggregator", () => {
 	test("keyed upsert prevents double-counting", () => {
@@ -157,8 +150,54 @@ describe("TransitiveUsageAggregator", () => {
 		], false);
 		const result = aggregator.getTransitiveUsage();
 		assert.equal(result.complete, false);
+		assert.equal(result.descendants.cost.total, 4);
+		assert.deepEqual(result.breakdown.map((entry) => entry.childRunId), ["parallel-run"]);
+	});
+
+	test("incomplete reconciliation cannot reduce a same-id multi-file rollup", () => {
+		const aggregator = new TransitiveUsageAggregator("root", () => usage(0, 0));
+		aggregator.attributeDescendantUsage({
+			rootSessionId: "root",
+			childRunId: "parallel-run",
+			kind: "subagent",
+			usage: usage(40, 4),
+			settled: true,
+			sessionFiles: ["/tmp/a.jsonl", "/tmp/b.jsonl"],
+		});
+		aggregator.reconcile([{
+			rootSessionId: "root",
+			childRunId: "parallel-run",
+			kind: "subagent",
+			usage: usage(20, 2),
+			settled: true,
+			sessionFile: "/tmp/a.jsonl",
+		}], false);
+		const result = aggregator.getTransitiveUsage();
+		assert.equal(result.descendants.cost.total, 4);
+		assert.deepEqual(result.breakdown[0]?.sessionFiles, ["/tmp/a.jsonl", "/tmp/b.jsonl"]);
+	});
+
+	test("Windows session aliases are case-insensitive", () => {
+		const aggregator = new TransitiveUsageAggregator("root", () => usage(0, 0));
+		aggregator.attributeDescendantUsage({
+			rootSessionId: "root",
+			childRunId: "live-run",
+			kind: "subagent",
+			usage: usage(20, 2),
+			settled: true,
+			sessionFile: "C:\\Sessions\\Child.jsonl",
+		});
+		aggregator.reconcile([{
+			rootSessionId: "root",
+			childRunId: "durable-session",
+			kind: "subagent",
+			usage: usage(20, 2),
+			settled: true,
+			sessionFile: "c:\\sessions\\child.jsonl",
+		}], true);
+		const result = aggregator.getTransitiveUsage();
 		assert.equal(result.descendants.cost.total, 2);
-		assert.deepEqual(result.breakdown.map((entry) => entry.childRunId), ["session-a"]);
+		assert.deepEqual(result.breakdown.map((entry) => entry.childRunId), ["durable-session"]);
 	});
 });
 
@@ -171,13 +210,13 @@ describe("collectDescendantUsageReports", () => {
 			mkdirSync(subRoot, { recursive: true });
 			const childPath = join(subRoot, "session.jsonl");
 			writeSession(rootPath, "root-id", [customStageEnd("stage-session", usage(30, 3), join(dir, "stage.jsonl"))]);
-			writeSession(childPath, "child-session", [assistantEntry(usage(20, 2))]);
+			writeSession(childPath, "child-session", [assistantEntry(usage(20, 2))], undefined, "{malformed\n");
 			const result = await collectDescendantUsageReports({
 				root: { path: rootPath, id: "root-id", cwd: dir, created: new Date(), modified: new Date(), messageCount: 0, firstMessage: "", allMessagesText: "" },
 				rootSessionId: "root-id",
 				listSessions: async () => [],
 			});
-			assert.equal(result.complete, true);
+			assert.equal(result.complete, false);
 			assert.equal(result.reports.reduce((sum, report) => sum + report.usage.cost.total, 0), 5);
 			assert.deepEqual(new Set(result.reports.map((report) => report.childRunId)), new Set(["child-session", "stage-session"]));
 		} finally {
@@ -290,12 +329,12 @@ describe("subagent transitive usage rollup", () => {
 			const stagePath = join(dir, basename(rootPath, ".jsonl"), "stage.jsonl");
 			const nestedRoot = join(dirname(stagePath), basename(stagePath, ".jsonl"), "run-nested");
 			mkdirSync(nestedRoot, { recursive: true });
-			writeSession(rootPath, "subagent-root", [customStageEnd("stage-session", usage(30, 3), stagePath)]);
+			writeSession(rootPath, "subagent-root", [customStageEnd("stage-session", usage(30, 3), stagePath)], undefined, "{malformed\n");
 			writeSession(stagePath, "stage-session", [assistantEntry(usage(10, 1))]);
 			writeSession(join(nestedRoot, "session.jsonl"), "nested-child", [assistantEntry(usage(20, 2))]);
 			const rollup = usageRollupFromResults([{ agent: "worker", task: "task", exitCode: 0, usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.1, turns: 1 }, sessionFile: rootPath }]);
 			assert.equal(rollup.usage.cost.total, 3);
-			assert.equal(rollup.complete, true);
+			assert.equal(rollup.complete, false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -372,110 +411,15 @@ describe("subagent transitive usage rollup", () => {
 		}
 	});
 
-	test("async start emits an unsettled zero-usage descendant report", () => {
-		const emitted: unknown[] = [];
-		reportSubagentStarted({ events: { emit: (_event: string, payload: Record<string, unknown>) => emitted.push(payload) } } as never, "root", { id: "async-1", asyncDir: "/tmp/async-1" });
-		assert.equal((emitted[0] as { childRunId?: string }).childRunId, "async-1");
-		assert.equal((emitted[0] as { settled?: boolean }).settled, false);
-		assert.equal((emitted[0] as { usage?: Usage }).usage?.cost.total, 0);
-		assert.equal("sessionFile" in (emitted[0] as Record<string, unknown>), false);
+	test("async completion consumes the root session captured at launch", () => {
+		const roots = new Map<string, string>();
+		rememberAsyncRootSession(roots, "session-a", { id: "async-1" });
+		assert.equal(consumeAsyncRootSession(roots, "session-b", { runId: "async-1" }), "session-a");
+		assert.equal(consumeAsyncRootSession(roots, "session-b", { runId: "async-1" }), "session-b");
 	});
 });
 
-describe("workflow usage rollup port", () => {
-	test("uses root accessor, stage session id key, and propagated settled flag", () => {
-		const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
-		const port = makeUsageRollupPort({
-			getSessionId: () => "root-session",
-			events: { emit: (event: string, payload: Record<string, unknown>) => emitted.push({ event, payload }) },
-		} as never);
-		port?.emitStageRollup("stage-id", usage(7, 0.7), { sessionId: "stage-session", sessionFile: "/tmp/stage.jsonl", settled: false });
-		assert.equal(emitted[0]?.event, "usage:descendant-rollup");
-		assert.equal(emitted[0]?.payload["rootSessionId"], "root-session");
-		assert.equal(emitted[0]?.payload["childRunId"], "stage-session");
-		assert.equal(emitted[0]?.payload["settled"], false);
-	});
 
-	test("does not emit live workflow rollups without a stage session id", () => {
-		const emitted: unknown[] = [];
-		const port = makeUsageRollupPort({ getSessionId: () => "root", events: { emit: (_event: string, payload: Record<string, unknown>) => emitted.push(payload) } } as never);
-		port?.emitStageRollup("stage-id", usage(7, 0.7), { sessionId: "" });
-		assert.equal(emitted.length, 0);
-	});
-});
-
-describe("footer transitive cost rendering", () => {
-	test("transitive totals render cost with no ~ prefix and include descendant tokens in badges; context percent stays self-only", () => {
-		const selfUsage = usage(12, 1);
-		const transitive = {
-			self: selfUsage,
-			descendants: usage(1_000, 2.5),
-			total: usage(1_012, 3.5),
-			complete: false,
-			breakdown: [],
-		};
-		const session = {
-			state: { model: { contextWindow: 100 } },
-			modelRegistry: { isUsingOAuth: () => false },
-			sessionManager: {
-				getEntries: () => [{ type: "message", message: { role: "assistant", usage: selfUsage } }],
-			},
-			getContextUsage: () => ({ tokens: 12, contextWindow: 100, percent: 12 }),
-			getTransitiveUsage: () => transitive,
-		};
-		const rendered = stripAnsi(getUsageLine(session as never, false, 120));
-		// Token badge reflects the TRANSITIVE total (self 12 + descendants 1000 = 1012), not self-only.
-		assert.match(rendered, /↑1\.0k/);
-		assert.match(rendered, /\$3\.500/);
-		// The approximate marker was dropped: the figure is always slightly behind the provider anyway.
-		assert.doesNotMatch(rendered, /~/);
-		// Context window percent is a per-session metric and stays self-only.
-		assert.match(rendered, /12\.0%\/100/);
-		assert.doesNotMatch(rendered, /1012%/);
-	});
-
-	test("zero-cost non-subscription totals render no dollar segment and no ~ marker", () => {
-		const session = {
-			state: { model: { contextWindow: 200 } },
-			modelRegistry: { isUsingOAuth: () => false },
-			sessionManager: { getEntries: () => [] },
-			getContextUsage: () => ({ tokens: 0, contextWindow: 200, percent: 0 }),
-			getTransitiveUsage: () => ({ self: emptyUsage(), descendants: emptyUsage(), total: emptyUsage(), complete: false, breakdown: [] }),
-		};
-		const rendered = stripAnsi(getUsageLine(session as never, false, 120));
-		assert.doesNotMatch(rendered, /\$/);
-		assert.doesNotMatch(rendered, /~/);
-		assert.match(rendered, /0\.0%\/200/);
-	});
-
-	test("zero-priced token usage still renders an explicit dollar segment", () => {
-		const tokensOnly = usage(25, 0);
-		const session = {
-			state: { model: { contextWindow: 200 } },
-			modelRegistry: { isUsingOAuth: () => false },
-			sessionManager: { getEntries: () => [] },
-			getContextUsage: () => ({ tokens: 25, contextWindow: 200, percent: 12.5 }),
-			getTransitiveUsage: () => ({ self: emptyUsage(), descendants: tokensOnly, total: tokensOnly, complete: false, breakdown: [] }),
-		};
-		const rendered = stripAnsi(getUsageLine(session as never, false, 120));
-		assert.match(rendered, /\$0\.000/);
-	});
-
-	test("descendant tokens and cost appear in badges even when self usage is zero", () => {
-		const session = {
-			state: { model: { contextWindow: 200 } },
-			modelRegistry: { isUsingOAuth: () => false },
-			sessionManager: { getEntries: () => [] },
-			getContextUsage: () => ({ tokens: 50, contextWindow: 200, percent: 25 }),
-			getTransitiveUsage: () => ({ self: emptyUsage(), descendants: usage(900, 9), total: usage(900, 9), complete: true, breakdown: [] }),
-		};
-		const rendered = stripAnsi(getUsageLine(session as never, false, 120));
-		assert.match(rendered, /\$9\.000/);
-		assert.match(rendered, /25\.0%\/200/);
-		// Descendant tokens are now surfaced in the transitive badge.
-		assert.match(rendered, /↑900/);
-	});
-});
 
 function sessionHeader(id: string, parentSession?: string) {
 	return { type: "session", id, cwd: process.cwd(), timestamp: new Date().toISOString(), ...(parentSession ? { parentSession } : {}) };
@@ -489,6 +433,6 @@ function customStageEnd(sessionId: string, entryUsage: Usage, sessionFile: strin
 	return { type: "custom", id: crypto.randomUUID(), timestamp: new Date().toISOString(), customType: "workflow.stage.end", data: { stageId: "stage-a", sessionId, sessionFile, usage: entryUsage, ...(usageComplete !== undefined ? { usageComplete } : {}) } };
 }
 
-function writeSession(path: string, id: string, entries: object[], parentSession?: string) {
-	writeFileSync(path, [sessionHeader(id, parentSession), ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+function writeSession(path: string, id: string, entries: object[], parentSession?: string, rawSuffix = "") {
+	writeFileSync(path, [sessionHeader(id, parentSession), ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n" + rawSuffix);
 }

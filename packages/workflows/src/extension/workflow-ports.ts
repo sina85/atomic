@@ -45,7 +45,7 @@ export function makeUsageRollupPort(pi: ExtensionAPI): WorkflowUsageRollupPort |
   return {
     emitStageRollup(_stageId, usage, meta): void {
       const sessionManager = pi.sessionManager as ({ getSessionId?: () => string } | undefined);
-      const rootSessionId = pi.getSessionId?.() ?? sessionManager?.getSessionId?.();
+      const rootSessionId = meta.rootSessionId ?? pi.getSessionId?.() ?? sessionManager?.getSessionId?.();
       if (!rootSessionId || !meta.sessionId) return;
       pi.events!.emit!("usage:descendant-rollup", {
         rootSessionId,
