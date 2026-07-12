@@ -390,18 +390,30 @@ for (const line of lines) {
 Key methods for working with sessions programmatically.
 
 ### Static Creation Methods
-- `SessionManager.create(cwd, sessionDir?)` - New session
-- `SessionManager.open(path, sessionDir?)` - Open existing session file
-- `SessionManager.continueRecent(cwd, sessionDir?)` - Continue most recent or create new
-- `SessionManager.inMemory(cwd?)` - No file persistence
-- `SessionManager.forkFrom(sourcePath, targetCwd, sessionDir?)` - Fork session from another project
+
+- `SessionManager.create(cwd, sessionDir?, options?)` - New session. `options` may include `internal: true` and `workflow: { runId, stageId, stageName }` for workflow-owned sessions.
+- `SessionManager.open(path, sessionDir?)` - Open a specific session file directly, including an internal session.
+- `SessionManager.continueRecent(cwd, sessionDir?, options?)` - Continue the most recent regular session or create a new one. Pass `{ includeInternal: true }` only for workflow-specific recovery or diagnostics.
+- `SessionManager.inMemory(cwd?, options?)` - No file persistence
+- `SessionManager.forkFrom(sourcePath, targetCwd, sessionDir?, options?)` - Fork session from another project
 
 ### Static Listing Methods
-- `SessionManager.list(cwd, sessionDir?, onProgress?)` - List sessions for a directory
-- `SessionManager.listAll(onProgress?)` - List all sessions across all projects
+
+- `SessionManager.list(cwd, sessionDir?, onProgress?, options?)` - List project sessions. Internal workflow sessions are excluded by default; pass `{ includeInternal: true }` to include them and expose their `SessionInfo.workflow` linkage.
+- `SessionManager.listAll(sessionDir?, onProgress?, options?)` - List sessions across projects, or from a custom session directory. The same `includeInternal` default and opt-in apply.
+
+Normal `/resume`, `atomic -r`, and `--continue` callers use the default filtering. Workflow-specific code can opt in without changing user-facing history:
+
+```typescript
+const stages = await SessionManager.list(cwd, sessionDir, undefined, { includeInternal: true });
+for (const stage of stages.filter((session) => session.internal)) {
+  console.log(stage.workflow?.runId, stage.workflow?.stageId, stage.path);
+}
+```
 
 ### Instance Methods - Session Management
-- `newSession(options?)` - Start a new session (options: `{ parentSession?: string }`)
+
+- `newSession(options?)` - Start a new session. Options include `parentSession`, `internal`, and workflow run/stage linkage.
 - `setSessionFile(path)` - Switch to a different session file
 - `createBranchedSession(leafId)` - Extract branch to new session file
 
