@@ -31,6 +31,7 @@ import { resolveAndValidateInputs } from "../runs/foreground/executor-inputs.js"
 import { getDurableBackend } from "./factory.js";
 import type { DurableWorkflowBackend } from "./backend.js";
 import type { ResumableWorkflowEntry } from "./types.js";
+import { isDurableWorkflowResumable } from "./resume-eligibility.js";
 import { workflowDefinitionRequirementMessage } from "../runs/foreground/executor-child-helpers.js";
 import { isWorkflowDefinition } from "../runs/foreground/executor-child-helpers.js";
 import type { RunSnapshot } from "../shared/store-types.js";
@@ -142,7 +143,7 @@ export function resumeDurableWorkflow(
   if (handle.status === "running" && hasActiveLiveRun(deps.baseRunOpts.store, resolved.workflowId)) {
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
-  if (!isResumableEntry(resolved)) {
+  if (!isDurableWorkflowResumable(resolved)) {
     return { ok: false, reason: "not_resumable", message: `Workflow ${resolved.workflowId.slice(0, 8)} is ${resolved.status}, not resumable.` };
   }
 
@@ -207,20 +208,6 @@ function alreadyRunningResult(name: string, workflowId: string, store: RunOpts["
       here ? " in this session" : " in another session"
     }. Attach with \`/workflow connect ${workflowId.slice(0, 8)}\`, or if that session has ended, clear it with \`/workflow kill ${workflowId.slice(0, 8)}\` and re-run.`,
   };
-}
-
-function hasResumeProgress(entry: ResumableWorkflowEntry): boolean {
-  return entry.completedCheckpoints > 0 || entry.pendingPrompts > 0;
-}
-
-function isResumableEntry(entry: ResumableWorkflowEntry): boolean {
-  const isRoot = entry.rootWorkflowId === undefined || entry.rootWorkflowId === entry.workflowId;
-  if (!isRoot) return false;
-  if (entry.status === "failed" || entry.status === "blocked") return entry.resumable !== false;
-  // `running` is resumable at this layer: a `running` durable handle may be a
-  // crashed process. Same-session double-resume is blocked separately via
-  // `hasActiveLiveRun` before dispatch.
-  return (entry.status === "running" || entry.status === "paused") && hasResumeProgress(entry);
 }
 
 /**

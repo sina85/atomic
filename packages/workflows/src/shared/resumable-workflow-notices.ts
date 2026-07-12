@@ -1,4 +1,6 @@
 import type { WorkflowSerializableValue } from "./types.js";
+import { isDurableWorkflowResumable } from "../durable/resume-eligibility.js";
+import type { DurableWorkflowStatus } from "../durable/types.js";
 
 export interface ResumableWorkflowNotice {
   readonly workflowId: string;
@@ -20,7 +22,7 @@ export function findResumableWorkflowNotices(entries: readonly unknown[]): Resum
     const payload = entry["type"] === "custom" && entry["customType"] === "workflow.durable.checkpoint"
       ? recordOrUndefined(entry["data"])
       : entry["type"] === "workflow.durable.checkpoint"
-        ? recordOrUndefined(entry["payload"])
+        ? recordOrUndefined(entry["payload"]) ?? entry
         : undefined;
     const workflowId = payload?.["workflowId"];
     if (typeof workflowId === "string" && payload !== undefined) latestByWorkflow.set(workflowId, payload);
@@ -31,10 +33,18 @@ export function findResumableWorkflowNotices(entries: readonly unknown[]): Resum
     const workflowId = payload["workflowId"];
     const name = payload["name"];
     const status = payload["status"];
+    if (typeof workflowId !== "string" || typeof name !== "string" || typeof status !== "string") continue;
     const resumable = payload["resumable"];
-    const canResume = status === "running" || status === "paused" || status === "blocked"
-      || (status === "failed" && resumable === true);
-    if (typeof workflowId === "string" && typeof name === "string" && canResume && resumable !== false) {
+    const rootWorkflowId = payload["rootWorkflowId"];
+    const candidate = {
+      workflowId,
+      status: status as DurableWorkflowStatus,
+      completedCheckpoints: typeof payload["completedCheckpoints"] === "number" ? payload["completedCheckpoints"] : 0,
+      pendingPrompts: typeof payload["pendingPrompts"] === "number" ? payload["pendingPrompts"] : 0,
+      ...(typeof rootWorkflowId === "string" ? { rootWorkflowId } : {}),
+      ...(typeof resumable === "boolean" ? { resumable } : {}),
+    };
+    if (isDurableWorkflowResumable(candidate)) {
       notices.push({ workflowId, name });
     }
   }
