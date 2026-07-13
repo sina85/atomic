@@ -1,2 +1,2 @@
-$ ps ax -o pid=,command= | grep dist-dev/cli.js | grep qa-artifacts/workflow-resume-fix/final
-RESULT: no matching QA CLI processes
+command=ps -axo pid,ppid,command | rg final QA CLI/socket patterns
+matching_processes=0

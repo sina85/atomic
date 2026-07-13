@@ -1,0 +1,1 @@
+52184 51957 Ss+  bun /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions

@@ -1,0 +1,45 @@
+
+   ██████▙                  ▟██████    Atomic v0.0.0
+    ██████▙                ▟██████░░   (unknown) unknown
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+      ██████▙            ▟██████░░
+       ████████████████████████░░
+        ██████▛░░░░░░░░▜██████░░
+         ██████▛      ▜██████░░
+          ██████▛    ▜██████░░
+           ██████▛  ▜██████░░
+            ░████████████░░░
+              ░░░░░░░░░░░░
+
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
+RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+
+
+ Error: Workflow definition for workflow-resume-e2e-fixture (204b7be5) changed since its durable checkpoint was created; refusing resume before stage execution. Restore the
+ original definition or kill and re-run the workflow.
+
+ Resumable workflows:
+   1. 204b7be5  running   workflow-resume-e2e-fixture  (1 checkpoint)
+
+
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /workflow resume 204b7be5-b6d7-4317-b11c-dd4598aef41c
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,10 @@
+{"type":"session","id":"019f5d31-4126-7250-8f71-4a8b2e1841f3","timestamp":"2026-07-13T20:35:36.870Z","cwd":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e"}
+{"type":"thinking_level_change","id":"d7875ddb","parentId":null,"timestamp":"2026-07-13T20:35:36.875Z"}
+{"type":"session_info","id":"1fb515c6","parentId":"d7875ddb","timestamp":"2026-07-13T20:35:39.055Z"}
+{"type":"custom","id":"14658c34","parentId":"1fb515c6","timestamp":"2026-07-13T20:35:39.768Z","customType":"workflow.run.start"}
+{"type":"custom","id":"be3958ac","parentId":"14658c34","timestamp":"2026-07-13T20:35:39.770Z","customType":"workflow.stage.start"}
+{"type":"custom_message","id":"807ef7fa","parentId":"be3958ac","timestamp":"2026-07-13T20:35:41.830Z","customType":"workflows:hil-answer-notice"}
+{"type":"custom","id":"d8fa7307","parentId":"807ef7fa","timestamp":"2026-07-13T20:35:41.831Z","customType":"workflow.stage.end"}
+{"type":"custom","id":"f4917e7f","parentId":"d8fa7307","timestamp":"2026-07-13T20:35:41.836Z","customType":"workflow.run.end"}
+{"type":"custom_message","id":"a7d87527","parentId":"f4917e7f","timestamp":"2026-07-13T20:35:41.840Z","customType":"workflows:lifecycle-notice"}
+{"type":"message","id":"ef844634","parentId":"a7d87527","timestamp":"2026-07-13T20:35:41.840Z"}

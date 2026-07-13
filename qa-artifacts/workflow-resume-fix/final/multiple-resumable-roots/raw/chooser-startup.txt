@@ -1,0 +1,22 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+
+   ██████▙                  ▟██████    Atomic v0.0.0
+    ██████▙                ▟██████░░   (unknown) unknown
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+      ██████▙            ▟██████░░
+       ████████████████████████░░
+        ██████▛░░░░░░░░▜██████░░
+         ██████▛      ▜██████░░
+          ██████▛    ▜██████░░
+           ██████▛  ▜██████░░
+            ░████████████░░░
+              ░░░░░░░░░░░░
+
+
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

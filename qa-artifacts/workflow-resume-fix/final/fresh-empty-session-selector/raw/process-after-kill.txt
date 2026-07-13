@@ -1,0 +1,2 @@
+COMMAND: kill -0 89985 (polled after kill -9)
+RESULT: ESRCH

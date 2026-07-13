@@ -1,0 +1,42 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/active-duplicate-resume-refused/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/active-duplicate-resume-refused/launch.sh
+
+   ██████▙                  ▟██████    Atomic v0.0.0
+    ██████▙                ▟██████░░   (unknown) unknown
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+      ██████▙            ▟██████░░
+       ████████████████████████░░
+        ██████▛░░░░░░░░▜██████░░
+         ██████▛      ▜██████░░
+          ██████▛    ▜██████░░
+           ██████▛  ▜██████░░
+            ░████████████░░░
+              ░░░░░░░░░░░░
+
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
+RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Atomic is a verifiable coding agent runtime for building and running
+ agent workflows you can feel confident in.
+ Use it to implement tickets, research a codebase, design a UI,
+ or build and run your own loops.
+ Run dynamic workflows and save the ones you like for future use.
+ Start building a verifiable software factory.
+
+ Type a message or slash command below to continue normally.
+ If you have not connected a provider yet, run `/login` first.
+ Run `/atomic` for guides or `/workflow list` to see built-in workflows.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

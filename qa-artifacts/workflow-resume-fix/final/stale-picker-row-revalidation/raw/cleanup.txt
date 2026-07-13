@@ -1,1 +1,33 @@
-socket_absent=false
+BEFORE CLEANUP
+36183 35956 bun /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/sessions
+36183
+stale: 1 windows (created Mon Jul 13 13:49:16 2026)
+AFTER CLEANUP
+error connecting to /tmp/atomic-b452fin-stale-picker-row-revalidation.sock (No such file or directory)
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/harness-commands.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/launch.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/markers/final-stale.events.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/01-stale-row-open.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/02-helper-prompt.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/03-helper-completed-tui.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/04-stale-selection-refused.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/cleanup.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/durable-before-helper.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/durable-checkpoint-workflow-cddb94fd-7aa5-4c8b-95e3-b3ca52d1b3a7.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/durable-path-after-stale-selection.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/durable-path-before-stale-selection.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/final.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/helper-process-after-exit.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/helper-process-before-exit.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/markers.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/process-after-seed.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/process-before-seed.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/scenario-fixture-hash.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/raw/status-reconciliation.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/sessions-evidence/2026-07-13T20-49-21-321Z_019f5d3d-d5a9-7906-805b-33bb8ee5aa9f.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/tmux-socket.txt
+
+FINAL POST-MATRIX CLEANUP
+matching_qa_cli_processes=0
+tmux_socket_present=false
+private_home_agent_sessions_present=false

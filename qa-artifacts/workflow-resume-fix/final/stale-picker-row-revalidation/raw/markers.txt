@@ -1,0 +1,4 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/markers/final-stale.events.jsonl
+{"event":"checkpoint-before","timestamp":1783975753473}
+{"event":"first-answer:final-stale-helper","timestamp":1783975768244}
+{"event":"final:final-stale-helper","timestamp":1783975768246}

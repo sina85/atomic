@@ -1,1 +1,1 @@
-/tmp/atomic-final-resume-picker-then-50122.sock
+/tmp/atomic-final-b452-resume-picker-then-workflow-resume.sock

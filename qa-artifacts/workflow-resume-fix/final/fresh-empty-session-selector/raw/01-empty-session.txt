@@ -1,44 +1,26 @@
 
-   ██████▙                  ▟██████    Atomic v0.0.0
-    ██████▙                ▟██████░░   (openai-codex) gpt-5.6-sol high fast
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
-      ██████▙            ▟██████░░
-       ████████████████████████░░
-        ██████▛░░░░░░░░▜██████░░
-         ██████▛      ▜██████░░
-          ██████▛    ▜██████░░
-           ██████▛  ▜██████░░
-            ░████████████░░░
-              ░░░░░░░░░░░░
-
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
 RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
 
 
- Session Info
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Atomic is a verifiable coding agent runtime for building and running
+ agent workflows you can feel confident in.
+ Use it to implement tickets, research a codebase, design a UI,
+ or build and run your own loops.
+ Run dynamic workflows and save the ones you like for future use.
+ Start building a verifiable software factory.
 
- Name: subagent-worker-0f39ced4-1
- File:
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifact
- s/workflow-resume-fix/final/fresh-empty-session-selector/sessions/2026-07-13T1
- 2-43-04-252Z_019f5b80-a0bc-7094-a354-8916a0e08072.jsonl
- ID: 019f5b80-a0bc-7094-a354-8916a0e08072
-
- Messages
- User: 0
- Assistant: 0
- Tool Calls: 0
- Tool Results: 0
- Total: 0
-
- Tokens
- Input: 0
- Output: 0
- Total: 0
+ Type a message or slash command below to continue normally.
+ If you have not connected a provider yet, run `/login` first.
+ Run `/atomic` for guides or `/workflow list` to see built-in workflows.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-                                                 $0.000 (sub) • 0.0%/372k (auto)
-────────────────────────────────────────────────────────────────────────────────
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯
-────────────────────────────────────────────────────────────────────────────────
-(openai-codex) gpt-5.6-sol high fast • /Users/tonystark/Documents/projects/at...
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

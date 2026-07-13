@@ -1,0 +1,1 @@
+tmux -S '/tmp/atomic-final-b452-rapid.sock' send-keys -t first -l -- '/workflow resume 224faebb-6d87-4e3e-a57a-80a1d92f69c8' \; send-keys -t first Enter \; send-keys -t second -l -- '/workflow resume 224faebb-6d87-4e3e-a57a-80a1d92f69c8' \; send-keys -t second Enter

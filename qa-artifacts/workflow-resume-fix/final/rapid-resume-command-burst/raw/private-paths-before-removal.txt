@@ -1,0 +1,2 @@
+private_files_observed_before_removal=472
+private_home_agent_session_dirs_removed=true

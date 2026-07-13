@@ -1,1 +1,37 @@
-socket_absent=false
+BEFORE CLEANUP
+22799 22565 bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/selector-cancel-reopen/sessions
+23045 22818 bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/sessions
+23326 23096 bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/stale-picker-row-revalidation/sessions
+25207 24980 bun /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/sessions --session 11111111-1111-4111-8111-111111111111
+22799
+23045
+23326
+25207
+recovered: 1 windows (created Mon Jul 13 13:42:55 2026)
+AFTER CLEANUP
+error connecting to /tmp/atomic-b452fin-exact-session-after-ctrl-c.sock (No such file or directory)
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/harness-commands.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/launch.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/markers/final-exact.events.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/01-awaiting-input.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/02-resumed.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/cleanup.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/durable-after-ctrl-c.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/durable-after-kill.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/durable-checkpoint-workflow-100e7747-ea89-4a89-841c-3c486aea9c9b.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/final.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/fresh-checkpoint-after-resume.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/markers.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/process-after-ctrl-c.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/process-after-kill.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/process-before-ctrl-c.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/process-before-kill.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/scenario-fixture-hash.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/raw/status-reconciliation.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/sessions-evidence/2026-07-13T00-00-00-000Z_11111111-1111-4111-8111-111111111111.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/tmux-socket.txt
+
+FINAL POST-MATRIX CLEANUP
+matching_qa_cli_processes=0
+tmux_socket_present=false
+private_home_agent_sessions_present=false

@@ -1,16 +1,16 @@
 === first command TUI ===
 
  ╭──────────────╮
- │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                             ↵ 1
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ↵ 1
  ╰──────────────╯
 
 
 
-                                                                  ╭─────── input ────────╮
-                                                                  │  ？ awaiting input   │
-                                                                  │ waiting for response │
-                                                                  │  ↵ enter to respond  │
-                                                                  ╰──────────────────────╯
+                                                                            ╭─────── input ────────╮
+                                                                            │  ？ awaiting input   │
+                                                                            │ waiting for response │
+                                                                            │  ↵ enter to respond  │
+                                                                            ╰──────────────────────╯
 
 
 
@@ -41,13 +41,13 @@
 
 
  ╭───────╮
- │ GRAPH │                                                           MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
  ╰───────╯
 
 === second command TUI ===
 
    ██████▙                  ▟██████    Atomic v0.0.0
-    ██████▙                ▟██████░░   (openai-codex) gpt-5.6-sol high fast
+    ██████▙                ▟██████░░   (unknown) unknown
      ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
       ██████▙            ▟██████░░
        ████████████████████████░░
@@ -58,15 +58,19 @@
             ░████████████░░░
               ░░░░░░░░░░░░
 
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
 RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
 
 
- Error: Workflow "workflow-resume-e2e-fixture" (cc5a2fe3) is already running in another session. Attach with `/workflow connect cc5a2fe3`, or if that session
- has ended, clear it with `/workflow kill cc5a2fe3` and re-run.
+ Error: Workflow "workflow-resume-e2e-fixture" (224faebb) is already running in another session. Attach with `/workflow connect 224faebb`, or if that session has ended, clear it
+ with `/workflow kill 224faebb` and re-run.
 
 
-                                                                                                                                 $0.000 (sub) • 0.0%/372k (auto)
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-(openai-codex) gpt-5.6-sol high fast • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

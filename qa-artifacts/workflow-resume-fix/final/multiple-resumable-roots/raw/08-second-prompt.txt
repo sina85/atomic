@@ -1,0 +1,16 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+   STAGE  workflow-resume-e2e-fixture / input
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ AWAITING INPUT ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                                                  │
+│  E2E first answer for final-multi-A                                                                                                                                              │
+│                                                                                                                                                                                  │
+│  response                                                                                                                                                                        │
+│  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
+│                                                                                                                                                                                  │
+│  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
+│                                                                                                                                                                                  │
+│  enter Submit · ctrl+c Skip                                                                                                                 ctrl+d graph · ctrl+t copy mode off  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

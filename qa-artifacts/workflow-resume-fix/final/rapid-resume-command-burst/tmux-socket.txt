@@ -1,1 +1,1 @@
-/tmp/atomic-6-rapid-resume-command-burst.sock
+/tmp/atomic-final-b452-rapid.sock

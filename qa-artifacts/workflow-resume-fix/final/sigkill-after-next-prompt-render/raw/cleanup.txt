@@ -1,1 +1,41 @@
-socket_absent=false
+BEFORE CLEANUP
+43552 43322 bun /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/sessions --session 22222222-2222-4222-8222-222222222222
+43552
+recovered: 1 windows (created Mon Jul 13 13:53:36 2026)
+AFTER CLEANUP
+error connecting to /tmp/atomic-b452fin-sigkill-after-next-prompt-render.sock (No such file or directory)
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/harness-commands.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/launch.sh
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/markers/final-sigkill.events.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/01-first-prompt.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/02-second-prompt-rendered.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/03-only-pending-prompt.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/cleanup.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/durable-before-sigkill.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/durable-checkpoint-workflow-3f1af1f9-4330-4705-b7e2-a5c1a3eb0ce7.json
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/final.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/markers.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/process-after-kill.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/process-before-kill.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/scenario-fixture-hash.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/raw/status-reconciliation.txt
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/sessions-evidence/2026-07-13T00-00-00-000Z_22222222-2222-4222-8222-222222222222.jsonl
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/sigkill-after-next-prompt-render/tmux-socket.txt
+POST-MATRIX CLEANUP PROOF
+scenario=sigkill-after-next-prompt-render
+matching_processes=0
+socket_absent=true
+private_home_absent=true
+private_agent_absent=true
+private_sessions_absent=true
+POST_MATRIX_CLEANUP_PROOF
+matching_processes=0
+socket_absent=true
+private_home_absent=true
+private_agent_absent=true
+private_sessions_absent=true
+
+FINAL POST-MATRIX CLEANUP
+matching_qa_cli_processes=0
+tmux_socket_present=false
+private_home_agent_sessions_present=false

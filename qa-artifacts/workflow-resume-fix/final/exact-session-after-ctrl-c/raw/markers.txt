@@ -1,0 +1,4 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/exact-session-after-ctrl-c/markers/final-exact.events.jsonl
+{"event":"checkpoint-before","timestamp":1783975367905}
+{"event":"first-answer:final-exact-answer","timestamp":1783975382664}
+{"event":"final:final-exact-answer","timestamp":1783975382665}

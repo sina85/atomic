@@ -1,1 +1,1 @@
-/tmp/atomic-final-fresh-empty-sessio-50122.sock
+/tmp/atomic-final-b452-fresh-empty-session-selector.sock

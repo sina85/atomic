@@ -1,1 +1,1 @@
-/tmp/atomic-6-incompatible-definition-on-resume.sock
+/tmp/atomic-final-b452-incompat.sock

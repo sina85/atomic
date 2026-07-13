@@ -1,1 +1,19 @@
+BEFORE CLEANUP
+chooser_pid=53631
+chooser: 1 windows (created Mon Jul 13 14:03:37 2026)
+53631 53401 bun /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/selector-cancel-reopen/sessions
+AFTER CLEANUP
+chooser_alive=false
 socket_absent=false
+matching_processes=0
+private_home_absent=true
+private_agent_absent=true
+private_sessions_absent=true
+private_project_absent=true
+stale_socket_removed=true
+socket_absent_after_stale_removal=true
+
+FINAL POST-MATRIX CLEANUP
+matching_qa_cli_processes=0
+tmux_socket_present=false
+private_home_agent_sessions_present=false

@@ -1,0 +1,3 @@
+tmux_check=no server running on /tmp/atomic-b452-batcha-completed.sock
+socket_absent=true
+matching_processes=0

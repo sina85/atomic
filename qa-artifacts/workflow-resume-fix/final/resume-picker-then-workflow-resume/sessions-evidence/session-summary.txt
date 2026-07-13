@@ -1,0 +1,3 @@
+source_files=1
+redacted_events=10
+private_content_removed=true

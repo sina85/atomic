@@ -1,0 +1,4 @@
+after stale selection: durable path absent
+total 0
+drwx------@ 2 tonystark  staff  64 Jul 13 13:49 .
+drwx------@ 3 tonystark  staff  96 Jul 13 13:49 ..

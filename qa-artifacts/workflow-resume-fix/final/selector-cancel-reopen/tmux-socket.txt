@@ -1,1 +1,2 @@
-/tmp/atomic-6-selector-cancel-reopen.sock
+socket=/tmp/atomic-b452fin-selector-cancel-reopen.sock
+session=seed,chooser

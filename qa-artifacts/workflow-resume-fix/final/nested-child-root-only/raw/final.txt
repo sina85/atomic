@@ -1,40 +1,51 @@
 
    ██████▙                  ▟██████    Atomic v0.0.0
     ██████▙                ▟██████░░   (unknown) unknown
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
       ██████▙            ▟██████░░
        ████████████████████████░░
         ██████▛░░░░░░░░▜██████░░
-         ██████▛      ▜██████░░
-          ██████▛    ▜██████░░
-           ██████▛  ▜██████░░
-            ░████████████░░░
-              ░░░░░░░░░░░░
+
+ ╭──────────────╮
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
+ ╰──────────────╯
 
 
- Warning: No models available. Use /login to log into a provider via OAuth or
- API key. See:
 
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
+                                                                            ╭─────── input ────────╮
+                                                                            │          1s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
 
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
 
- ⠙ Working...
 
-                                                                   0.0%/0 (auto)
 
-────────────────────────────────────────────────────────────────────────────────
 
-Resume Session (Current Fold ◉ Current Folder | ○ All  Name: All  Sort: Threaded
-tab scope · re:<pattern> regex · "phrase" exact
-ctrl+s Sort · ctrl+n Named · ctrl+d Delete · ctrl+p Path (off)
 
-> final-nested-answer
 
-  No sessions in current folder. tab view all.
 
-────────────────────────────────────────────────────────────────────────────────
-unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭───────╮
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ ╰───────╯

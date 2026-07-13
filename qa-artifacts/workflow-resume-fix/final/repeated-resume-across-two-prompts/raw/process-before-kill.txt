@@ -1,0 +1,2 @@
+COMMAND: ps -p 91258 -o pid=,ppid=,stat=,command=
+91258 90981 Ss+  bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/repeated-resume-across-two-prompts/sessions

@@ -1,0 +1,10 @@
+{"type":"session","id":"019f5d22-3f95-7adb-8e00-0433e1a53f32","timestamp":"2026-07-13T20:19:13.429Z","version":3,"sessionId":"019f5d22-3f95-7adb-8e00-0433e1a53f32","cwd":"[redacted isolated QA cwd]"}
+{"type":"thinking_level_change","id":"1767097c","parentId":null,"timestamp":"2026-07-13T20:19:13.433Z"}
+{"type":"session_info","id":"3060ecb1","parentId":"1767097c","timestamp":"2026-07-13T20:19:15.053Z"}
+{"type":"custom","id":"6062d13e","parentId":"3060ecb1","timestamp":"2026-07-13T20:19:17.304Z","customType":"workflow.run.start","data":{"runId":"d5d2c7b3-d948-4978-99d2-337260a68448","name":"workflow-resume-e2e-fixture","ts":1783973957302}}
+{"type":"custom","id":"7c1a7307","parentId":"6062d13e","timestamp":"2026-07-13T20:19:17.308Z","customType":"workflow.stage.start","data":{"runId":"d5d2c7b3-d948-4978-99d2-337260a68448","stageId":"d1f12b51-11e3-46cd-bde7-0d9e71b5e2a7","name":"input","ts":1783973957307}}
+{"type":"custom_message","id":"4cf4a2c8","parentId":"7c1a7307","timestamp":"2026-07-13T20:19:19.865Z","customType":"workflows:hil-answer-notice"}
+{"type":"custom","id":"47aa9454","parentId":"4cf4a2c8","timestamp":"2026-07-13T20:19:19.867Z","customType":"workflow.stage.end","data":{"runId":"d5d2c7b3-d948-4978-99d2-337260a68448","stageId":"d1f12b51-11e3-46cd-bde7-0d9e71b5e2a7","status":"completed","durationMs":2559}}
+{"type":"custom","id":"731e048c","parentId":"47aa9454","timestamp":"2026-07-13T20:19:19.872Z","customType":"workflow.run.end","data":{"runId":"d5d2c7b3-d948-4978-99d2-337260a68448","status":"completed","durationMs":2569,"endedAt":1783973959871,"ts":1783973959872}}
+{"type":"custom_message","id":"9869002f","parentId":"731e048c","timestamp":"2026-07-13T20:19:19.876Z","customType":"workflows:lifecycle-notice"}
+{"type":"message","id":"a4eb0919","parentId":"9869002f","timestamp":"2026-07-13T20:19:19.876Z","messageRole":"assistant"}

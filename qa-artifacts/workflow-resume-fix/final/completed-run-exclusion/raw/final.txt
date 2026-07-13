@@ -1,8 +1,10 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/completed-run-exclusion/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/completed-run-exclusion/launch.sh
 
    ██████▙                  ▟██████    Atomic v0.0.0
     ██████▙                ▟██████░░   (unknown) unknown
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
       ██████▙            ▟██████░░
        ████████████████████████░░
         ██████▛░░░░░░░░▜██████░░
@@ -13,18 +15,13 @@
               ░░░░░░░░░░░░
 
 
- Warning: No models available. Use /login to log into a provider via OAuth or
- API key. See:
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
 RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
 
 
-────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Atomic is a verifiable coding agent runtime for building and running
  agent workflows you can feel confident in.
  Use it to implement tickets, research a codebase, design a UI,
@@ -32,46 +29,47 @@ RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
  Run dynamic workflows and save the ones you like for future use.
  Start building a verifiable software factory.
 
- Type a message or slash command below to continue normally.
- If you have not connected a provider yet, run `/login` first.
- Run `/atomic` for guides or `/workflow list` to see built-in workflows.
-────────────────────────────────────────────────────────────────────────────────
+
+ ╭──────────────╮
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
+ ╰──────────────╯
 
 
-╭ DISPATCHED ──────────────────────────────────────────────────────────────────╮
-│ ●  8ba20bf9  workflow-resume-e2e-fixture  ● running                          │
-│   mode="completed"  ·  marker_root="/Users/tony…"  ·  label="final-compl…"   │
-│                                                                              │
-│  ▸ /workflow connect 8ba20bf9  watch, attach & steer                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
 
-╭ WORKFLOW FAILED ─────────────────────────────────────────────────────────────╮
-│ ✗ Workflow "workflow-resume-e2e-fixture" failed                              │
-│ workflow  workflow-resume-e2e-fixture                                        │
-│ run       8ba20bf9-d08b-4cad-9090-4370693073b4                               │
-│ error                                                                        │
-│   Workflow run completed without creating any workflow stages. Create at     │
-│   least one stage with ctx.stage(), ctx.task(), ctx.chain(), ctx.parallel(), │
-│   or ctx.workflow().                                                         │
-│ duration  12ms                                                               │
-│ ▸ /workflow status 8ba20bf9-d08b-4cad-9090-4370693073b4                      │
-╰──────────────────────────────────────────────────────────────────────────────╯
+                                                                            ╭─────── input ────────╮
+                                                                            │         16s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
 
- Error: No API provider registered for api: unknown
 
- ⠼ Working...
 
-                                                                   0.0%/0 (auto)
 
-────────────────────────────────────────────────────────────────────────────────
 
-Resume Session (Current Fold ◉ Current Folder | ○ All  Name: All  Sort: Threaded
-tab scope · re:<pattern> regex · "phrase" exact
-ctrl+s Sort · ctrl+n Named · ctrl+d Delete · ctrl+p Path (off)
 
->
 
-› workflow-resume-e2e-fixture  failed  0/0 stages                           0 1m
 
-────────────────────────────────────────────────────────────────────────────────
-unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭───────╮
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ ╰───────╯

@@ -1,2 +1,2 @@
-$ find /tmp -maxdepth 1 -type s -name atomic-6-*.sock -print
-RESULT: no matching QA sockets
+command=find /tmp for owned atomic b452/final tmux sockets and query live servers
+live_owned_sockets=0

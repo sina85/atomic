@@ -1,2 +1,0 @@
-helper_pid=69850
-helper_exited=true

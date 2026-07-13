@@ -1,1 +1,4 @@
-{"event":"checkpoint-before","timestamp":1783970310681}
+{"event":"checkpoint-before","timestamp":1783973944368}
+{"event":"first-answer:final-repeated-first","timestamp":1783973952580}
+{"event":"second-answer:final-repeated-second","timestamp":1783973959868}
+{"event":"final:final-repeated-first|final-repeated-second","timestamp":1783973959869}

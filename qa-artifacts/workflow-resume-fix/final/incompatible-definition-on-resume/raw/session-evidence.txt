@@ -1,0 +1,2 @@
+session_jsonl_count=0
+reason=slash-command-only refusal session emitted no JSONL; isolated session directory inspected before removal

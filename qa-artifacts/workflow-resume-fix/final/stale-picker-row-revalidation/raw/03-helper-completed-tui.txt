@@ -1,0 +1,55 @@
+
+ ╭──────────────╮
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
+ ╰──────────────╯
+
+
+
+                                                                            ╭─────── input ────────╮
+                                                                            │          4s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭───────╮
+ │ GRAPH │                                                                                                    ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ ╰───────╯
+

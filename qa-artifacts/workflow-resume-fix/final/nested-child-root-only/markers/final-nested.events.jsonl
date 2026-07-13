@@ -1,2 +1,4 @@
-{"event":"checkpoint-before","timestamp":1783970824331}
-{"event":"nested-before-prompt","timestamp":1783970824333}
+{"event":"checkpoint-before","timestamp":1783974921692}
+{"event":"nested-before-prompt","timestamp":1783974921694}
+{"event":"nested-after:final-nested-answer","timestamp":1783974927913}
+{"event":"final:final-nested-answer","timestamp":1783974927918}

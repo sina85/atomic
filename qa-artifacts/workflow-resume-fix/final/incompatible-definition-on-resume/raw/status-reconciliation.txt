@@ -1,4 +1,6 @@
-COMMAND: cat raw/durable-final-snapshot.json
-{"version":1,"workflows":[{"handle":{"workflowId":"d5f90837-50fd-45dc-bc36-5d3bce7df889","name":"workflow-resume-e2e-fixture","inputs":{"mode":"prompt","marker_root":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/incompatible-definition-on-resume/markers","label":"final-incompatible"},"createdAt":1783971825547,"status":"running","invocationCwd":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e","definitionHash":"h8744d5504524d20c58d8118bcbb373b8","completedCheckpoints":1,"pendingPrompts":0,"updatedAt":1783971825559,"rootWorkflowId":"d5f90837-50fd-45dc-bc36-5d3bce7df889","resumable":true},"checkpoints":[{"kind":"tool","workflowId":"d5f90837-50fd-45dc-bc36-5d3bce7df889","checkpointId":"tool:h632fe0684df18822d46c3e7978cd9532","name":"checkpoint-before","argsHash":"h632fe0684df18822d46c3e7978cd9532","output":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/incompatible-definition-on-resume/markers/final-incompatible.events.jsonl","completedAt":1783971825559}]}]}
-MARKER EVENTS
-{"event":"checkpoint-before","timestamp":1783971825559}
+workflow_id=204b7be5-b6d7-4317-b11c-dd4598aef41c
+before_sha256=701c24380773e70a06ed482d1c794082b0088d7a8853bb5cc59bc3aacfa30eec
+after_sha256=701c24380773e70a06ed482d1c794082b0088d7a8853bb5cc59bc3aacfa30eec
+durable_unchanged=true
+refusal_count=2
+v2_execution_marker_count=0

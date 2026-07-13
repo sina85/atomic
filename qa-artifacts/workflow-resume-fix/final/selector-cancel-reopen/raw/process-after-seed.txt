@@ -1,0 +1,3 @@
+pid=53047
+alive_after=false
+exit_check=ESRCH

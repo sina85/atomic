@@ -1,0 +1,37 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/multiple-resumable-roots/launch.sh
+
+   ██████▙                  ▟██████    Atomic v0.0.0
+    ██████▙                ▟██████░░   (unknown) unknown
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+      ██████▙            ▟██████░░
+       ████████████████████████░░
+        ██████▛░░░░░░░░▜██████░░
+         ██████▛      ▜██████░░
+          ██████▛    ▜██████░░
+           ██████▛  ▜██████░░
+            ░████████████░░░
+              ░░░░░░░░░░░░
+
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
+RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+
+
+                                                                                                                                                                       0.0%/0 (auto)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Resume Session (Current Folder)                                                                                                  ◉ Current Folder | ○ All  Name: All  Sort: Threaded
+tab scope · re:<pattern> regex · "phrase" exact
+ctrl+s Sort · ctrl+n Named · ctrl+d Delete · ctrl+p Path (off)
+
+>
+
+› workflow-resume-e2e-fixture  paused  1 checkpoints  0 prompts                                                                                                                 1 1m
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

@@ -1,24 +1,23 @@
+=== owner=first ===
 
    ██████▙                  ▟██████    Atomic v0.0.0
-    ██████▙                ▟██████░░   (openai-codex) gpt-5.6-sol high fast
+    ██████▙                ▟██████░░   (unknown) unknown
      ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
       ██████▙            ▟██████░░
        ████████████████████████░░
         ██████▛░░░░░░░░▜██████░░
-         ██████▛      ▜██████░░
-          ██████▛    ▜██████░░
 
  ╭──────────────╮
- │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                             ✓ 1
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
  ╰──────────────╯
 
 
 
-                                                                  ╭─────── input ────────╮
-                                                                  │          4s          │
-                                                                  │      ✓ complete      │
-                                                                  │         root         │
-                                                                  ╰──────────────────────╯
+                                                                            ╭─────── input ────────╮
+                                                                            │          2s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
 
 
 
@@ -49,5 +48,36 @@
 
 
  ╭───────╮
- │ GRAPH │                                                           MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
  ╰───────╯
+
+=== refused=second ===
+
+   ██████▙                  ▟██████    Atomic v0.0.0
+    ██████▙                ▟██████░░   (unknown) unknown
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+      ██████▙            ▟██████░░
+       ████████████████████████░░
+        ██████▛░░░░░░░░▜██████░░
+         ██████▛      ▜██████░░
+          ██████▛    ▜██████░░
+           ██████▛  ▜██████░░
+            ░████████████░░░
+              ░░░░░░░░░░░░
+
+
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
+RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+
+
+ Error: Workflow "workflow-resume-e2e-fixture" (224faebb) is already running in another session. Attach with `/workflow connect 224faebb`, or if that session has ended, clear it
+ with `/workflow kill 224faebb` and re-run.
+
+
+                                                                                                                                                                       0.0%/0 (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e

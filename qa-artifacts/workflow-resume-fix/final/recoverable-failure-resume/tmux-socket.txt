@@ -1,1 +1,1 @@
-/tmp/atomic-final-recover-50122.sock
+/tmp/atomic-b452-recoverable-failure-resume.sock

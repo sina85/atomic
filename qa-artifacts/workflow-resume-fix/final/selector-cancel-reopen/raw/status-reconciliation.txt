@@ -1,6 +1,6 @@
-COMMAND: cat raw/durable-final-snapshot.json
-{"version":1,"workflows":[{"handle":{"workflowId":"e6e22ef2-2b9f-4ffe-a0af-15bb5bf94197","name":"workflow-resume-e2e-fixture","inputs":{"mode":"prompt","marker_root":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/selector-cancel-reopen/markers","label":"final-cancel"},"createdAt":1783971610673,"status":"running","invocationCwd":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e","definitionHash":"h8744d5504524d20c58d8118bcbb373b8","completedCheckpoints":1,"pendingPrompts":0,"updatedAt":1783971610682,"rootWorkflowId":"e6e22ef2-2b9f-4ffe-a0af-15bb5bf94197","resumable":true},"checkpoints":[{"kind":"tool","workflowId":"e6e22ef2-2b9f-4ffe-a0af-15bb5bf94197","checkpointId":"tool:hb60c1e7634b96647d88239c0a6b71c34","name":"checkpoint-before","argsHash":"hb60c1e7634b96647d88239c0a6b71c34","output":"/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/selector-cancel-reopen/markers/final-cancel.events.jsonl","completedAt":1783971610682}]}]}
-MARKER EVENTS
-{"event":"checkpoint-before","timestamp":1783971610682}
-{"event":"first-answer:final-cancel-answer","timestamp":1783971621934}
-{"event":"final:final-cancel-answer","timestamp":1783971621934}
+before_cancel_sha256=21237eb2331bf1c9630714773ac5a259a844f627da6cd19b81bc20c3bea9873c
+after_cancel_sha256=21237eb2331bf1c9630714773ac5a259a844f627da6cd19b81bc20c3bea9873c
+byte_identical=true
+final_status=completed
+terminal_durable_pruned=true
+marker_count=3

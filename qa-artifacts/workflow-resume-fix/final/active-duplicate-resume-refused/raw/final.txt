@@ -1,8 +1,10 @@
+/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/active-duplicate-resume-refused/launch.sh
+atomic-fix-workflow-resume-e2e on  fix/workflow-resume-session-ownership [✘!?⇡] is 📦 v0.0.0 via 🦀 v1.97.0
+❯ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/active-duplicate-resume-refused/launch.sh
 
    ██████▙                  ▟██████    Atomic v0.0.0
     ██████▙                ▟██████░░   (unknown) unknown
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+     ██████▙              ▟██████░░    /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
       ██████▙            ▟██████░░
        ████████████████████████░░
         ██████▛░░░░░░░░▜██████░░
@@ -13,18 +15,13 @@
               ░░░░░░░░░░░░
 
 
- Warning: No models available. Use /login to log into a provider via OAuth or
- API key. See:
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
+ Warning: No models available. Use /login to log into a provider via OAuth or API key. See:
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/providers.md
+   /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/coding-agent/docs/models.md
 RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
 
 
-────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Atomic is a verifiable coding agent runtime for building and running
  agent workflows you can feel confident in.
  Use it to implement tickets, research a codebase, design a UI,
@@ -32,37 +29,47 @@ RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
  Run dynamic workflows and save the ones you like for future use.
  Start building a verifiable software factory.
 
- Type a message or slash command below to continue normally.
- If you have not connected a provider yet, run `/login` first.
- Run `/atomic` for guides or `/workflow list` to see built-in workflows.
-────────────────────────────────────────────────────────────────────────────────
+
+ ╭──────────────╮
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
+ ╰──────────────╯
 
 
-╭ DISPATCHED ──────────────────────────────────────────────────────────────────╮
-│ ●  da49da3a  workflow-resume-e2e-fixture  ● running                          │
-│   mode="prompt"  ·  marker_root="/Users/tony…"  ·  label="final-active"      │
-│                                                                              │
-│  ▸ /workflow connect da49da3a  watch, attach & steer                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
 
- Error: No API key found for the selected model.
-
- Use /login to log into a provider via OAuth or API key. See:
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
+                                                                            ╭─────── input ────────╮
+                                                                            │         38s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
 
 
-                                                                   0.0%/0 (auto)
-────────────────────────────────────────────────────────────────────────────────
-❯
-────────────────────────────────────────────────────────────────────────────────
-unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
 
-╭ BACKGROUND  1 run  ● 1 running  ？ ↵ 1 needs attention (attach to workflow … ╮
-│   ●  da49da  workflow-resume-e2e-fixture                                     │
-│     single · 0/1 · 2m 28s                                                    │
-╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭───────╮
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ ╰───────╯

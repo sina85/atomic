@@ -1,0 +1,2 @@
+pane_pid=15540
+15540 15310 bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/incompatible-definition-on-resume/sessions

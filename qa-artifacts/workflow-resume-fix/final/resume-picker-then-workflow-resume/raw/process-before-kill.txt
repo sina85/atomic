@@ -1,0 +1,2 @@
+COMMAND: ps -p 89643 -o pid=,ppid=,stat=,command=
+89643 89416 Ss+  bun packages/coding-agent/dist-dev/cli.js --approve --no-context-files --session-dir /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/resume-picker-then-workflow-resume/sessions

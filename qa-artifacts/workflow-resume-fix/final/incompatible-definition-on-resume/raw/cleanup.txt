@@ -1,1 +1,8 @@
-socket_absent=false
+tmux_socket=/tmp/atomic-final-b452-incompat.sock
+socket_live_after_cleanup=false
+matching_cli_processes=0
+
+FINAL POST-MATRIX CLEANUP
+matching_qa_cli_processes=0
+tmux_socket_present=false
+private_home_agent_sessions_present=false

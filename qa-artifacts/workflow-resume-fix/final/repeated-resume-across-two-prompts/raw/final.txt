@@ -1,47 +1,44 @@
 
-   ██████▙                  ▟██████    Atomic v0.0.0
-    ██████▙                ▟██████░░   (unknown) unknown
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
-      ██████▙            ▟██████░░
-       ████████████████████████░░
-        ██████▛░░░░░░░░▜██████░░
-         ██████▛      ▜██████░░
-          ██████▛    ▜██████░░
-           ██████▛  ▜██████░░
-            ░████████████░░░
-              ░░░░░░░░░░░░
+ ╭──────────────╮
+ │ ORCHESTRATOR │  workflow-resume-e2e-fixture                                                                                                                                 ✓ 1
+ ╰──────────────╯
 
 
- Warning: No models available. Use /login to log into a provider via OAuth or
- API key. See:
 
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
-RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+                                                                            ╭─────── input ────────╮
+                                                                            │          2s          │
+                                                                            │      ✓ complete      │
+                                                                            │         root         │
+                                                                            ╰──────────────────────╯
 
 
- Error: Workflow "workflow-resume-e2e-fixture" (545a217b) is already running in
- another session. Attach with `/workflow connect 545a217b`, or if that session
- has ended, clear it with `/workflow kill 545a217b` and re-run.
 
 
- Error: No API key found for the selected model.
-
- Use /login to log into a provider via OAuth or API key. See:
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
 
 
-                                                                   0.0%/0 (auto)
-────────────────────────────────────────────────────────────────────────────────
-❯
-────────────────────────────────────────────────────────────────────────────────
-unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭───────╮
+ │ GRAPH │                                                                               MCP: 0/1 servers  ·  ↑↓←→ navigate  ·  ↵ attach  ·  / stages  ·  ctrl+d detach  ·  q quit
+ ╰───────╯

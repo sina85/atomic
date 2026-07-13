@@ -1,67 +1,55 @@
-
-   ██████▙                  ▟██████    Atomic v0.0.0
-    ██████▙                ▟██████░░   (unknown) unknown
-     ██████▙              ▟██████░░
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
-      ██████▙            ▟██████░░
-       ████████████████████████░░
-        ██████▛░░░░░░░░▜██████░░
-         ██████▛      ▜██████░░
-          ██████▛    ▜██████░░
-           ██████▛  ▜██████░░
-            ░████████████░░░
-              ░░░░░░░░░░░░
+   STAGE  workflow-resume-e2e-fixture / recoverable-proof                                                                                                         session 019f5d46
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
- Warning: No models available. Use /login to log into a provider via OAuth or
- API key. See:
 
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/providers.md
-
- /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/packages/co
- ding-agent/docs/models.md
-RESOURCES context ready · 18 skills · 14 prompts · 6 extensions
+ read ../raw/01-failed.txt
 
 
-────────────────────────────────────────────────────────────────────────────────
- Atomic is a verifiable coding agent runtime for building and running
- agent workflows you can feel confident in.
- Use it to implement tickets, research a codebase, design a UI,
- or build and run your own loops.
- Run dynamic workflows and save the ones you like for future use.
- Start building a verifiable software factory.
 
- Type a message or slash command below to continue normally.
- If you have not connected a provider yet, run `/login` first.
- Run `/atomic` for guides or `/workflow list` to see built-in workflows.
-────────────────────────────────────────────────────────────────────────────────
+ read ../markers/final-recoverable.events.jsonl
 
 
-╭ DISPATCHED ──────────────────────────────────────────────────────────────────╮
-│ ●  ad5c164c  workflow-resume-e2e-fixture  ● running                          │
-│   mode="fail-once"  ·  marker_root="/Users/tony…"  ·  label="final-recov…"   │
-│                                                                              │
-│  ▸ /workflow connect ad5c164c  watch, attach & steer                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-╭ WORKFLOW FAILED ─────────────────────────────────────────────────────────────╮
-│ ✗ Workflow "workflow-resume-e2e-fixture" failed                              │
-│ workflow  workflow-resume-e2e-fixture                                        │
-│ run       ad5c164c-d1c5-41c4-bdfb-fa75a08f1dbc                               │
-│ error     E2E intentional recoverable failure: final-recoverable             │
-│ duration  12ms                                                               │
-│ ▸ /workflow status ad5c164c-d1c5-41c4-bdfb-fa75a08f1dbc                      │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
- Error: No API provider registered for api: unknown
-
- Error: insufficient_state: failed run ad5c164c-d1c5-41c4-bdfb-fa75a08f1dbc
- does not identify a failed stage
+ Tracing stage completion flow
 
 
-                                                                   0.0%/0 (auto)
-────────────────────────────────────────────────────────────────────────────────
+ $ ps aux | grep -E 'atomic-b452|recoverable-failure-resume|dist-dev/cli.js' | grep -v grep || true
+
+ ... (2 earlier lines, ctrl+o Expand)
+ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions
+ tonystark        51939   0.0  0.0 435300000   2016   ??  Ss    1:59PM   0:00.00 /bin/bash -c tmux -S /tmp/atomic-b452-recoverable-failure-resume.sock kill-server 2>/dev/null ||
+ true; rm -f /tmp/atomic-b452-recoverable-failure-resume.sock; bash /tmp/run-recoverable-fixed.sh recoverable > /tmp/recoverable-final-restored.log 2>&1
+ tonystark        52241   0.0  0.0 435306000   5120   ??  Ss    1:59PM   0:00.06 tmux -S /tmp/atomic-b452-recoverable-failure-resume.sock new-session -d -s resumed -x 180 -y 55
+ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/launch.sh
+
+
+
+ read ../raw/durable-after-recoverable-failure.json
+
+
+
+ read ../sessions/2026-07-13T20-59-21-124Z_019f5d46-fca4-7765-a97c-476387071e35.jsonl
+
+ File read blocked: requested selected range is too large (51,491 chars; threshold: 50,000 chars).
+ Path:
+ /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions/2026-07-13T20-59-21-124Z_019f5d46-fc
+ a4-7765-a97c-476387071e35.jsonl
+
+ Read only the needed context incrementally. Examples:
+ - Search for relevant symbols first: search({ "pattern": "functionName", "paths":
+ "/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions/2026-07-13T20-59-21-124Z_019f5d46-f
+ ca4-7765-a97c-476387071e35.jsonl" })
+ - Read a smaller line range: read({ "path":
+ "/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions/2026-07-13T20-59-21-124Z_019f5d46-f
+ ca4-7765-a97c-476387071e35.jsonl:1+200" })
+ - Read a targeted snippet around a match: read({ "path":
+ "/Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/recoverable-failure-resume/sessions/2026-07-13T20-59-21-124Z_019f5d46-f
+ ca4-7765-a97c-476387071e35.jsonl:120+80" })
+
+
+ Recovered successfully: final-recoverable.
+                                                                                                                      ↑12k • ↓768 • R70k • CH92.4% • $0.238 (sub) • 5.6%/372k (auto)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯
-────────────────────────────────────────────────────────────────────────────────
-unknown • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+(openai-codex) gpt-5.6-sol high fast • /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/ctrl+d graph · ctrl+t copy mode off

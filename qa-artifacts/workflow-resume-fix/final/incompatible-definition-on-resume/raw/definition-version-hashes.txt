@@ -1,5 +1,2 @@
-v1=ac762e71b4440093f66a1ab4c0e8c4f0203fb0c847ecfceea0d9cd47c3e947bf
-v2=46f09d327ee5a8b56279339a8fef3464f959521eaf7b60ff3afb9ed4b033756e
-durable_before=d67fb6acf72e3309d11e55801551277af894adb48779ab372a429c15f68e0eca
-durable_after=d67fb6acf72e3309d11e55801551277af894adb48779ab372a429c15f68e0eca
-v2_marker_count=0
+ac762e71b4440093f66a1ab4c0e8c4f0203fb0c847ecfceea0d9cd47c3e947bf  /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/corrected-workflow-resume-e2e-fixture.ts
+78264aa198743c411681a2714ff0fc394bd52995d255d8cac5bc1d0d022cde68  /Users/tonystark/Documents/projects/atomic-fix-workflow-resume-e2e/qa-artifacts/workflow-resume-fix/final/incompatible-definition-on-resume/agent/workflows/workflow-resume-e2e-fixture.ts
