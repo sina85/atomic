@@ -123,6 +123,7 @@ export interface ExtensionRuntime {
   prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly import("../durable/types.js").ResumableWorkflowEntry[]>;
   isDurableWorkflowExecutionActive(workflowId: string): boolean;
   isDurableRootResumable(workflowId: string): boolean;
+  refreshDurableWorkflowExecution(workflowId: string): Promise<void>;
 }
 export interface RuntimeDispatchOptions {
   readonly policy?: WorkflowExecutionPolicy;
@@ -130,13 +131,9 @@ export interface RuntimeDispatchOptions {
 /**
  * Create an ExtensionRuntime.
  *
- * @example — discovery worker registry
+ * @example
  * ```ts
  * const runtime = createExtensionRuntime({ registry: createBundledWorkflowRegistry() });
- * ```
- *
- * @example — explicit definitions
- * ```ts
  * const runtime = createExtensionRuntime({ definitions: [myWorkflow] });
  * ```
  */
@@ -488,6 +485,9 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
     },
     isDurableRootResumable(workflowId: string): boolean {
       return isDurableRootResumable(getDurableBackend(), workflowId);
+    },
+    async refreshDurableWorkflowExecution(workflowId: string): Promise<void> {
+      await getDurableBackend().refreshWorkflowExecutionActivity?.([workflowId]);
     },
     async prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly ResumableWorkflowEntry[]> {
       await ensureDbosReady();

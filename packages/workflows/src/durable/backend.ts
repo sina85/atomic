@@ -145,7 +145,7 @@ export interface DurableWorkflowBackend {
   hydrateResumableWorkflows?(): Promise<void>;
 
   /** Refresh remotely coordinated execution ownership before listing. */
-  refreshWorkflowExecutionActivity?(): Promise<void>;
+  refreshWorkflowExecutionActivity?(workflowIds?: readonly string[]): Promise<void>;
 }
 
 export class WorkflowExecutionAlreadyClaimedError extends Error {

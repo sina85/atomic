@@ -76,3 +76,35 @@ test("a dropped Postgres connection releases lease ownership so another process 
   assert.equal(await contender.claim("wf-drop"), true);
   await contender.release("wf-drop");
 });
+
+test("refreshing a workflow clears a stale external-owner marker after the real owner exits", async () => {
+  const locks = new Set<string>();
+  const factory = async (): Promise<PostgresLeaseClient> => {
+    let held: string | undefined;
+    return {
+      async connect() {},
+      async query<Row>(sql: string, values: readonly string[]) {
+        const key = values.join(":");
+        if (sql.includes("try_advisory_lock")) {
+          const claimed = !locks.has(key);
+          if (claimed) { locks.add(key); held = key; }
+          return { rows: [{ claimed } as Row] };
+        }
+        if (sql.includes("advisory_unlock")) { locks.delete(key); held = undefined; }
+        return { rows: [] };
+      },
+      async end() { if (held !== undefined) locks.delete(held); held = undefined; },
+    };
+  };
+  const owner = new PostgresExecutionLeaseRegistry("postgres://host-a/db", factory);
+  const contender = new PostgresExecutionLeaseRegistry("postgres://host-b/db", factory);
+  assert.equal(await owner.claim("wf-ext"), true);
+  // The contender's failed claim caches an external-owner marker.
+  assert.equal(await contender.claim("wf-ext"), false);
+  assert.equal(contender.active("wf-ext"), true);
+  // The real owner exits; the contender got no connection event for it.
+  await owner.release("wf-ext");
+  // A targeted refresh must re-validate and clear the now-stale marker.
+  await contender.refresh(["wf-ext"]);
+  assert.equal(contender.active("wf-ext"), false);
+});

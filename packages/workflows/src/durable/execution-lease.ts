@@ -20,6 +20,11 @@ export function executionLeasePath(filePath: string): string {
   return `${filePath}.active`;
 }
 
+/** Test-only: number of live heartbeat intervals (must return to 0 after release/prune). */
+export function activeHeartbeatCountForTests(): number {
+  return heartbeats.size;
+}
+
 export function claimExecutionLease(filePath: string, token: string): boolean {
   return withFileLock(filePath, () => {
     const leasePath = executionLeasePath(filePath);
@@ -65,16 +70,27 @@ export function hasActiveExecutionLease(filePath: string): boolean {
 
 export function releaseExecutionLease(filePath: string, token: string): void {
   const leasePath = executionLeasePath(filePath);
+  // Always stop OUR heartbeat for this token first — even if the lease
+  // directory was already pruned out-of-band (a completed/cancelled workflow
+  // removes it). Heartbeats are keyed by lease path + token, so this never
+  // affects another owner's heartbeat, and it prevents a leaked interval that
+  // would keep issuing failed writes for the life of the process.
+  stopHeartbeat(leasePath, token);
   withFileLock(filePath, () => {
-    if (readOwner(leasePath)?.token !== token) return;
-    stopHeartbeat(leasePath, token);
-    rmSync(leasePath, { recursive: true, force: true });
+    if (readOwner(leasePath)?.token === token) rmSync(leasePath, { recursive: true, force: true });
   });
 }
 
 function leaseIsActive(leasePath: string, owner: ExecutionLeaseOwner | undefined): boolean {
   if (owner === undefined) return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS && existsSync(`${leasePath}/${OWNER_FILE}`);
-  if (owner.host !== hostname()) return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS;
+  // A foreign-host lease cannot be safely liveness-checked from here: heartbeat
+  // age is the owner's event-loop clock, so a long synchronous stage or a
+  // shared-filesystem delay could let another host reclaim a still-live lease
+  // and double-dispatch. File durability is a same-host store; cross-host
+  // coordination must use the DBOS/PostgreSQL backend (connection-fenced
+  // advisory locks). So a foreign-host lease is conservatively active; clear a
+  // genuinely abandoned one with `/workflow kill` or use DBOS.
+  if (owner.host !== hostname()) return true;
   if (!Number.isInteger(owner.pid) || owner.pid <= 0) return true;
   try {
     process.kill(owner.pid, 0);
@@ -113,11 +129,15 @@ function startHeartbeat(leasePath: string, token: string): void {
   const key = heartbeatKey(leasePath, token);
   if (heartbeats.has(key)) return;
   const timer = setInterval(() => {
+    // Stop when the lease directory is definitively gone (released, pruned, or
+    // reclaimed) so a completed workflow never leaks a heartbeat interval that
+    // keeps issuing failed writes for the life of the process. A transient
+    // owner.json read failure while the directory still exists is retried.
+    if (!existsSync(leasePath)) {
+      stopHeartbeat(leasePath, token);
+      return;
+    }
     const owner = readOwner(leasePath);
-    // Only stop when ownership definitively changed hands. A transient read
-    // (undefined) or write failure is retried on the next tick so a brief
-    // filesystem hiccup cannot let the heartbeat lapse and let the lease be
-    // reclaimed out from under a still-live owner.
     if (owner !== undefined && owner.token !== token) {
       stopHeartbeat(leasePath, token);
       return;

@@ -420,6 +420,10 @@ export async function handleRunControlCommand(
       await ensureWorkflowResourcesVisible();
       const runtime = deps.runtimeForContext(ctx);
       try {
+        // Re-validate remote (DBOS) execution ownership first so a stale
+        // externally-owned marker from an owner that has since exited cannot
+        // keep refusing resume; this is a no-op for the file backend.
+        await runtime.refreshDurableWorkflowExecution(stageRunId);
         if (!runtime.isDurableWorkflowExecutionActive(stageRunId) && runtime.isDurableRootResumable(stageRunId)) {
           return await handleDurableResume(stageRunId, ctx, reporter, deps);
         }

@@ -273,8 +273,9 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
     throw first;
   }
 
-  async refreshWorkflowExecutionActivity(): Promise<void> {
-    await this.executionLeases.refresh(this.mem.exportAll().map((record) => record.handle.workflowId));
+  async refreshWorkflowExecutionActivity(workflowIds?: readonly string[]): Promise<void> {
+    const ids = workflowIds ?? this.mem.exportAll().map((record) => record.handle.workflowId);
+    await this.executionLeases.refresh(ids);
   }
 
   /**

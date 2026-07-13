@@ -5,6 +5,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryDurableBackend, workflowDefinitionHash } from "../../packages/workflows/src/durable/backend.js";
 import { WorkflowFileDurableBackend, durableStateFileFor } from "../../packages/workflows/src/durable/file-backend.js";
+import { activeHeartbeatCountForTests } from "../../packages/workflows/src/durable/execution-lease.js";
 import type { DurableCheckpoint } from "../../packages/workflows/src/durable/types.js";
 import { createCancellationRegistry } from "../../packages/workflows/src/runs/background/cancellation-registry.js";
 import { assert as exAssert, createStore, run, Type, workflow } from "./executor-shared.js";
@@ -160,10 +161,9 @@ describe("durable execution ownership", () => {
     assert.equal(recovered.claimWorkflowExecution(workflowId), true);
   });
 
-  test("stale malformed, foreign-host, and reused-PID leases are reclaimed", () => {
+  test("stale malformed and reused-PID leases are reclaimed", () => {
     const cases = [
       "{malformed",
-      JSON.stringify({ pid: 1, host: "retired-host.example", token: "foreign", acquiredAt: 1 }),
       JSON.stringify({ pid: process.pid, host: hostname(), token: "reused", acquiredAt: 1, processIdentity: "different-process-start" }),
     ];
     for (const [index, owner] of cases.entries()) {
@@ -180,6 +180,36 @@ describe("durable execution ownership", () => {
       utimesSync(ownerFile, old, old);
       assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), true);
     }
+  });
+
+  test("a foreign-host execution lease is conservatively pinned to prevent cross-host double-dispatch", () => {
+    // File durability is a same-host store; cross-host coordination must use the
+    // DBOS/PostgreSQL backend. A foreign-host lease is never heartbeat-reclaimed
+    // here, since a stale heartbeat could reflect a long synchronous stage on a
+    // still-live owner rather than a dead one.
+    const workflowId = "wf-foreign-host-pinned";
+    const stateFile = durableStateFileFor(dir, workflowId);
+    const seed = new WorkflowFileDurableBackend(dir);
+    seed.registerWorkflow({ workflowId, name: "foreign", inputs: {}, createdAt: 1, status: "running" });
+    seed.recordCheckpoint(checkpoint(workflowId));
+    const leaseDir = `${stateFile}.active`;
+    mkdirSync(leaseDir, { mode: 0o700 });
+    const ownerFile = `${leaseDir}/owner.json`;
+    writeFileSync(ownerFile, JSON.stringify({ pid: 1, host: "another-host.example", token: "foreign", acquiredAt: 1 }));
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(ownerFile, old, old);
+    assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), false);
+  });
+
+  test("a completed workflow does not leak its execution-lease heartbeat", () => {
+    const before = activeHeartbeatCountForTests();
+    const backend = new WorkflowFileDurableBackend(dir);
+    backend.registerWorkflow({ workflowId: "wf-heartbeat-leak", name: "leak", inputs: {}, createdAt: 1, status: "running" });
+    assert.equal(backend.claimWorkflowExecution("wf-heartbeat-leak"), true);
+    assert.equal(activeHeartbeatCountForTests(), before + 1);
+    // Terminal completion prunes the lease directory; the heartbeat must stop.
+    backend.setWorkflowStatus("wf-heartbeat-leak", "completed");
+    assert.equal(activeHeartbeatCountForTests(), before);
   });
 
   test("an old heartbeat cannot evict a live same-host owner", () => {

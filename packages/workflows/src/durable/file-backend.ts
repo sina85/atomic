@@ -281,6 +281,10 @@ export class WorkflowFileDurableBackend implements DurableWorkflowBackend {
   }
 
   private removeStateFile(filePath: string): void {
+    // Release any execution lease this process holds for the file first, so its
+    // heartbeat interval is stopped before the lease directory is deleted and
+    // cannot leak past the workflow's terminal pruning.
+    this.fileBackends.get(filePath)?.releaseWorkflowExecution("");
     this.fileBackends.delete(filePath);
     rmSync(filePath, { force: true });
     rmSync(`${filePath}.lock`, { recursive: true, force: true });
