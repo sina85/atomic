@@ -235,6 +235,10 @@ export class WorkflowFileDurableBackend implements DurableWorkflowBackend {
   }
 
   reset(): void {
+    // Release this process's own leases before clearing the cache, so the
+    // per-workflow removal below sees them as free and prunes the lease dirs
+    // (rather than treating our own still-active lease as a contender's).
+    for (const backend of this.fileBackends.values()) backend.releaseWorkflowExecution("");
     this.fileBackends.clear();
     for (const filePath of this.stateFiles()) this.removeStateFile(filePath);
     for (const lockPath of this.lockDirs()) rmSync(lockPath, { recursive: true, force: true });
@@ -288,7 +292,10 @@ export class WorkflowFileDurableBackend implements DurableWorkflowBackend {
     this.fileBackends.delete(filePath);
     rmSync(filePath, { force: true });
     rmSync(`${filePath}.lock`, { recursive: true, force: true });
-    rmSync(executionLeasePath(filePath), { recursive: true, force: true });
+    // Our own lease was just released above; only delete the lease directory if
+    // no OTHER live process has since claimed it. Otherwise terminal pruning of
+    // our completed workflow would revoke a contender's freshly acquired lease.
+    if (!hasActiveExecutionLease(filePath)) rmSync(executionLeasePath(filePath), { recursive: true, force: true });
   }
 }
 

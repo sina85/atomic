@@ -6,10 +6,7 @@ import { encodeCheckpoint, decodeToCheckpoint } from "./dbos-envelope.js";
 import { DbosExecutionLeaseRegistry } from "./dbos-execution-lease.js";
 import { PostgresExecutionLeaseRegistry } from "./postgres-execution-lease.js";
 export { dbosLeaseNamespace } from "./dbos-lease-namespace.js";
-/**
- * without Postgres. The real factory (`createRealDbosHandle`) wraps the SDK;
- * tests supply a mock.
- */
+/** SDK abstraction over `@dbos-inc/dbos-sdk` (tests supply a mock). */
 export interface DbosSdkHandle {
   readonly launch: () => Promise<void>;
   readonly shutdown: () => Promise<void>;
@@ -87,7 +84,15 @@ export async function createDbosDurableBackend(config?: { readonly systemDatabas
   const mainWorkflow = sdk.registerWorkflow(async (_name: string, inputs: DurableInputs) => inputs, { name: "atomicWorkflowHandle" });
   const checkpointWorkflow = sdk.registerWorkflow(async (_workflowId: string, _stepName: string, output: WorkflowSerializableValue) => output, { name: "atomicWorkflowCheckpoint" });
   await sdk.launch();
-  return new DbosDurableBackend(createRealDbosHandle(sdk, mainWorkflow, checkpointWorkflow), undefined, url);
+  const onLeaseLost = (workflowId: string): void => {
+    // Fence the local executor when the advisory-lock connection drops, so it
+    // cannot keep running while another process reclaims the workflow. Lazy
+    // import avoids a durable→runs load-time cycle.
+    void import("../runs/background/cancellation-registry.js")
+      .then(({ cancellationRegistry }) => { cancellationRegistry.abort(workflowId, new Error("DBOS execution lease lost: advisory-lock connection dropped")); })
+      .catch(() => undefined);
+  };
+  return new DbosDurableBackend(createRealDbosHandle(sdk, mainWorkflow, checkpointWorkflow), undefined, url, onLeaseLost);
 }
 
 async function importDbosSdk(): Promise<DbosStatic> {
@@ -174,13 +179,9 @@ function statusToInfo(status: DbosStatus, fallbackId: string): DbosWorkflowInfo 
 }
 
 /**
- * DBOS-backed durable backend. Wraps a {@link DbosSdkHandle} to implement the
- * {@link DurableWorkflowBackend} interface. Writes are serialized to DBOS
- * with an in-memory mirror for synchronous queries. A fresh process hydrates
- * its mirror from DBOS via {@link hydrateWorkflow} / {@link hydrateResumableWorkflows}
- * before resume/replay reads.
- *
- * cross-ref: issue #1498 — DBOS read-side hydration.
+ * DBOS-backed durable backend: serializes writes to DBOS with an in-memory
+ * mirror for synchronous queries; a fresh process hydrates its mirror from DBOS
+ * before resume/replay. cross-ref: issue #1498.
  */
 export class DbosDurableBackend implements DurableWorkflowBackend {
   public readonly persistent = true;
@@ -191,11 +192,11 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
   private writeQueue: Promise<void> = Promise.resolve();
   private writeErrors: Error[] = [];
 
-  constructor(sdk: DbosSdkHandle, executionLeaseDir?: string, databaseUrl?: string) {
+  constructor(sdk: DbosSdkHandle, executionLeaseDir?: string, databaseUrl?: string, onLeaseLost?: (workflowId: string) => void) {
     this.sdk = sdk;
     this.executionLeases = databaseUrl === undefined
       ? new DbosExecutionLeaseRegistry(executionLeaseDir)
-      : new PostgresExecutionLeaseRegistry(databaseUrl);
+      : new PostgresExecutionLeaseRegistry(databaseUrl, undefined, onLeaseLost);
   }
 
   registerWorkflow(handle: WorkflowRegistrationInput): void {

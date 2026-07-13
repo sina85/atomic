@@ -77,6 +77,39 @@ test("a dropped Postgres connection releases lease ownership so another process 
   await contender.release("wf-drop");
 });
 
+test("a dropped Postgres connection fences the local executor via onLeaseLost", async () => {
+  const locks = new Set<string>();
+  let dropOwner: (() => void) | undefined;
+  const factory = async (): Promise<PostgresLeaseClient> => {
+    let held: string | undefined;
+    const handlers: Array<() => void> = [];
+    return {
+      async connect() {},
+      async query<Row>(sql: string, values: readonly string[]) {
+        const key = values.join(":");
+        if (sql.includes("try_advisory_lock")) {
+          const claimed = !locks.has(key);
+          if (claimed) { locks.add(key); held = key; }
+          return { rows: [{ claimed } as Row] };
+        }
+        if (sql.includes("advisory_unlock")) { locks.delete(key); held = undefined; }
+        return { rows: [] };
+      },
+      async end() { if (held !== undefined) locks.delete(held); held = undefined; },
+      on(_event, handler) {
+        handlers.push(() => handler());
+        dropOwner = () => { if (held !== undefined) locks.delete(held); held = undefined; for (const h of handlers) h(); };
+      },
+    };
+  };
+  const fenced: string[] = [];
+  const registry = new PostgresExecutionLeaseRegistry("postgres://host/db", factory, (id) => fenced.push(id));
+  assert.equal(await registry.claim("wf-fence"), true);
+  dropOwner?.();
+  assert.deepEqual(fenced, ["wf-fence"]);
+  assert.equal(registry.active("wf-fence"), false);
+});
+
 test("refreshing a workflow clears a stale external-owner marker after the real owner exits", async () => {
   const locks = new Set<string>();
   const factory = async (): Promise<PostgresLeaseClient> => {

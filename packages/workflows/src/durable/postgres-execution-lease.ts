@@ -16,7 +16,11 @@ export class PostgresExecutionLeaseRegistry {
   private readonly owners = new Map<string, PostgresLeaseClient>();
   private readonly externallyActive = new Set<string>();
 
-  constructor(private readonly databaseUrl: string, private readonly clientFactory?: () => Promise<PostgresLeaseClient>) {}
+  constructor(
+    private readonly databaseUrl: string,
+    private readonly clientFactory?: () => Promise<PostgresLeaseClient>,
+    private readonly onLeaseLost?: (workflowId: string) => void,
+  ) {}
 
   async claim(workflowId: string): Promise<boolean> {
     if (this.owners.has(workflowId)) return false;
@@ -32,10 +36,14 @@ export class PostgresExecutionLeaseRegistry {
       this.owners.set(workflowId, client);
       // PostgreSQL releases a session advisory lock when its connection drops.
       // A dropped connection means this process no longer owns the lock, so stop
-      // reporting it active — another process may legitimately reclaim it.
-      // Without this the registry would falsely pin ownership after a connection
-      // loss or failover, recreating duplicate dispatch.
-      const drop = (): void => { if (this.owners.get(workflowId) === client) this.owners.delete(workflowId); };
+      // reporting it active AND fence the local executor (via onLeaseLost) so it
+      // does not keep running while another process legitimately reclaims the
+      // workflow — otherwise a connection loss/failover would double-dispatch.
+      const drop = (): void => {
+        if (this.owners.get(workflowId) !== client) return;
+        this.owners.delete(workflowId);
+        this.onLeaseLost?.(workflowId);
+      };
       client.on?.("error", drop);
       client.on?.("end", drop);
       return true;

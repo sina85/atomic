@@ -111,7 +111,13 @@ export function registerWorkflowLifecycleHandlers(
       // `/workflow kill`. Durable-progress workflows stay available through
       // `/workflow resume`; stage handles are disposed after being paused.
       quitAllRuns({ store, stageControlRegistry });
-      await getDurableBackend().flush?.();
+      // Flush durable pause metadata, but never let a flush error (e.g. a DBOS
+      // write failure) skip the remaining shutdown cleanup below.
+      try {
+        await getDurableBackend().flush?.();
+      } catch (error) {
+        console.warn(`atomic-workflows: durable flush during quit failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
       stageControlRegistry.clear();
     }
     deps.storeWidgetRef.current?.();

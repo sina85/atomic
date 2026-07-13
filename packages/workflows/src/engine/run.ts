@@ -403,11 +403,12 @@ export async function run<
       }
       await durableBackend.flush?.();
     }
-    opts.onRunPublished?.();
     // Honor a cancellation that arrived while awaiting durable startup (e.g. a
-    // Ctrl-C during the resume publication flush) before running workflow code.
+    // Ctrl-C during the resume publication flush) BEFORE reporting the run
+    // published, so a cancelled resume rolls back to its prior resumable state.
     const abortedBeforeRun = await finalizeIfAborted();
     if (abortedBeforeRun !== undefined) return abortedBeforeRun;
+    opts.onRunPublished?.();
     const rawResult = await def.run(ctx);
     const abortedAfterRun = await finalizeIfAborted();
     if (abortedAfterRun !== undefined) return abortedAfterRun;

@@ -57,21 +57,24 @@ describe("durable execution ownership", () => {
     assert.equal(backend.claimWorkflowExecution("wf-reset-claim"), true);
   });
 
-  test("an alive reused PID without confirmable identity is reclaimed once its heartbeat is stale", () => {
-    const workflowId = "wf-reused-pid";
+  test("a confirmed-live PID with unconfirmable identity is pinned, not evicted on a stale heartbeat", () => {
+    const workflowId = "wf-live-unconfirmable";
     const stateFile = durableStateFileFor(dir, workflowId);
     const seed = new WorkflowFileDurableBackend(dir);
-    seed.registerWorkflow({ workflowId, name: "reused", inputs: {}, createdAt: 1, status: "running" });
+    seed.registerWorkflow({ workflowId, name: "live", inputs: {}, createdAt: 1, status: "running" });
     seed.recordCheckpoint(checkpoint(workflowId));
     const leaseDir = `${stateFile}.active`;
     mkdirSync(leaseDir, { mode: 0o700 });
     // Owner records the CURRENT (alive) pid but no saved process identity, so
-    // liveness cannot be confirmed; an old heartbeat must make it reclaimable.
+    // liveness cannot be disambiguated from PID reuse. Because the pid is
+    // confirmed alive, a stale heartbeat must NOT evict it (a long synchronous
+    // stage can stall the heartbeat while the owner still runs); reclaiming
+    // would double-dispatch.
     const ownerFile = `${leaseDir}/owner.json`;
-    writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, host: hostname(), token: "reused-pid-no-identity", acquiredAt: 1 }));
+    writeFileSync(ownerFile, JSON.stringify({ pid: process.pid, host: hostname(), token: "live-no-identity", acquiredAt: 1 }));
     const old = new Date(Date.now() - 60_000);
     utimesSync(ownerFile, old, old);
-    assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), true);
+    assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), false);
   });
 
   test("paused metadata remains owned until the executor actually stops", () => {

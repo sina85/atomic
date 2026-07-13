@@ -97,14 +97,18 @@ function leaseIsActive(leasePath: string, owner: ExecutionLeaseOwner | undefined
     // PID is alive. Confirm it is the SAME process via process-generation
     // identity when both saved and current identities are available. On Linux
     // this is the kernel start time in clock ticks, which distinguishes a PID
-    // reused even within the same second. When identity cannot be confirmed
-    // (unsaved, or the lookup is unavailable/blocked — e.g. `ps`/`powershell.exe`
-    // missing) fall back to heartbeat age so a reused PID cannot pin forever.
+    // reused even within the same second.
     if (owner.processIdentity !== undefined) {
       const currentIdentity = processIdentity(owner.pid);
       if (currentIdentity !== undefined) return currentIdentity === owner.processIdentity;
     }
-    return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS;
+    // The PID is confirmed alive but identity cannot be verified (unsaved, or
+    // the lookup is unavailable/blocked — e.g. `ps`/`powershell.exe` missing).
+    // Do NOT evict a confirmed-live PID on heartbeat age alone: a long
+    // synchronous stage can stall the heartbeat while the owner is still running,
+    // and reclaiming it would double-dispatch. A genuinely reused PID in this
+    // rare case must be cleared explicitly with `/workflow kill`.
+    return true;
   } catch (error) {
     return errorCode(error) !== "ESRCH";
   }
