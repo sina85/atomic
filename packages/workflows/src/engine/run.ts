@@ -169,6 +169,14 @@ export async function run<
     classifyExecutorFailure,
     drainWorkflowExitCleanups: exit.drainWorkflowExitCleanups,
   });
+  const finalizeIfAborted = async (): Promise<RunResult | undefined> => {
+    if (!ownController.signal.aborted) return undefined;
+    const selectedExit = findWorkflowExitSignal(ownController.signal.reason, exitScope);
+    if (selectedExit !== undefined) return await finalizers.finalizeWorkflowExit(selectedExit);
+    const parentExit = parentWorkflowExitAbortReason(ownController.signal.reason);
+    if (parentExit !== undefined) return await finalizers.finalizeParentWorkflowExitCancellation(parentExit);
+    return finalizeKilled(runId, runSnapshot, activeStore, opts.persistence, opts.onRunEnd);
+  };
   const checkpointIdGenerator = createCheckpointIdGenerator();
   const stageReplayKeyGenerator = createStageReplayKeyGenerator(runId);
   const completedStageReplayKeys = new Map<string, string>();
@@ -265,9 +273,6 @@ export async function run<
     return `workflow:${name}:${next}`;
   };
   const taskRunners = createWorkflowTaskRunners({ runtime });
-  // Durable scope holder: the durable child primitive publishes the scope for
-  // the next child invocation; the child runner consumes it when launching the
-  // run. This routes child internal side-effect checkpoints under the root.
   let pendingChildDurableScope: DurableScope | undefined;
   const workflow = createChildWorkflowRunner({
     runtime,
@@ -387,13 +392,8 @@ export async function run<
     }
     if (opts.deferWorkflowStart === true) {
       await nextEventLoopTurn();
-      if (ownController.signal.aborted) {
-        const selectedExit = findWorkflowExitSignal(ownController.signal.reason, exitScope);
-        if (selectedExit !== undefined) return await finalizers.finalizeWorkflowExit(selectedExit);
-        const parentExit = parentWorkflowExitAbortReason(ownController.signal.reason);
-        if (parentExit !== undefined) return await finalizers.finalizeParentWorkflowExitCancellation(parentExit);
-        return finalizeKilled(runId, runSnapshot, activeStore, opts.persistence, opts.onRunEnd);
-      }
+      const abortedEarly = await finalizeIfAborted();
+      if (abortedEarly !== undefined) return abortedEarly;
     }
     if (opts.parentRun === undefined) {
       if (opts.continuation === undefined) {
@@ -404,14 +404,13 @@ export async function run<
       await durableBackend.flush?.();
     }
     opts.onRunPublished?.();
+    // Honor a cancellation that arrived while awaiting durable startup (e.g. a
+    // Ctrl-C during the resume publication flush) before running workflow code.
+    const abortedBeforeRun = await finalizeIfAborted();
+    if (abortedBeforeRun !== undefined) return abortedBeforeRun;
     const rawResult = await def.run(ctx);
-    if (ownController.signal.aborted) {
-      const selectedExit = findWorkflowExitSignal(ownController.signal.reason, exitScope);
-      if (selectedExit !== undefined) return await finalizers.finalizeWorkflowExit(selectedExit);
-      const parentExit = parentWorkflowExitAbortReason(ownController.signal.reason);
-      if (parentExit !== undefined) return await finalizers.finalizeParentWorkflowExitCancellation(parentExit);
-      return finalizeKilled(runId, runSnapshot, activeStore, opts.persistence, opts.onRunEnd);
-    }
+    const abortedAfterRun = await finalizeIfAborted();
+    if (abortedAfterRun !== undefined) return abortedAfterRun;
 
     const result = normalizeWorkflowRunOutput(def.name, rawResult);
     assertWorkflowRunOutputs(def.name, result, def.outputs);

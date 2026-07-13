@@ -234,12 +234,20 @@ export async function resumeDurableWorkflow(
       message: `Resuming durable workflow "${resolved.name}" (${resolved.workflowId.slice(0, 8)}) — completed checkpoints will be replayed.`,
     };
   } catch (error) {
-    try {
-      backend.setWorkflowStatus(resolved.workflowId, handle.status, handle.pendingPrompts, handle.resumable);
-      await backend.flush?.();
-      removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId);
-    } finally {
-      await backend.releaseWorkflowExecution?.(resolved.workflowId);
+    // The engine (run) owns the transferred execution lease once dispatch
+    // starts and releases it in its own finally. Only roll back here when no
+    // other resume has since claimed execution, so this cleanup cannot revoke
+    // a newer rapid-resume owner's lease or clobber its running status. When we
+    // do roll back, release in a finally so a failing status-restore flush
+    // still frees our own pre-dispatch claim.
+    if (backend.isWorkflowExecutionActive?.(resolved.workflowId) !== true) {
+      try {
+        backend.setWorkflowStatus(resolved.workflowId, handle.status, handle.pendingPrompts, handle.resumable);
+        await backend.flush?.();
+        removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId);
+      } finally {
+        await backend.releaseWorkflowExecution?.(resolved.workflowId);
+      }
     }
     throw error;
   }

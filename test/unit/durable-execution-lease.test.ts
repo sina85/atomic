@@ -119,6 +119,34 @@ describe("durable execution ownership", () => {
     assert.equal((await first).status, "completed");
   });
 
+  test("a cancellation during the resume publication flush aborts before workflow code runs", async () => {
+    const controller = new AbortController();
+    let ran = 0;
+    class AbortingFlushBackend extends InMemoryDurableBackend {
+      claimWorkflowExecution(): boolean { return true; }
+      releaseWorkflowExecution(): void {}
+      async flush(): Promise<void> { controller.abort(); }
+    }
+    const def = workflow({
+      name: "ctrlc-publish",
+      description: "",
+      inputs: {},
+      outputs: { result: Type.String() },
+      run: async () => { ran += 1; return { result: "must-not-run" }; },
+    });
+    const result = await run(def, {}, {
+      runId: "wf-ctrlc-publish",
+      store: createStore(),
+      durableBackend: new AbortingFlushBackend(),
+      signal: controller.signal,
+      durableExecutionClaimed: true,
+      deferWorkflowStart: false,
+    });
+    // Cancellation during the durable startup flush must abort before def.run.
+    assert.equal(ran, 0);
+    assert.notEqual(result.status, "completed");
+  });
+
   test("a hard-crashed execution owner is immediately reclaimable", async () => {
     const workflowId = "wf-crashed-owner";
     const stateFile = durableStateFileFor(dir, workflowId);

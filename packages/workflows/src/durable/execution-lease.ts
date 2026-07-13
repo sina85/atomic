@@ -95,10 +95,11 @@ function leaseIsActive(leasePath: string, owner: ExecutionLeaseOwner | undefined
   try {
     process.kill(owner.pid, 0);
     // PID is alive. Confirm it is the SAME process via process-generation
-    // identity when both saved and current identities are available; otherwise
-    // (identity unsaved, or the lookup is unavailable/blocked — e.g. `ps` or
-    // `powershell.exe` missing) a reused PID could pin the lease forever, so
-    // fall back to heartbeat age: a stale heartbeat means the owner is gone.
+    // identity when both saved and current identities are available. On Linux
+    // this is the kernel start time in clock ticks, which distinguishes a PID
+    // reused even within the same second. When identity cannot be confirmed
+    // (unsaved, or the lookup is unavailable/blocked — e.g. `ps`/`powershell.exe`
+    // missing) fall back to heartbeat age so a reused PID cannot pin forever.
     if (owner.processIdentity !== undefined) {
       const currentIdentity = processIdentity(owner.pid);
       if (currentIdentity !== undefined) return currentIdentity === owner.processIdentity;

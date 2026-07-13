@@ -118,3 +118,23 @@ test("async durable startup failure is reported and cannot strand ownership", as
   assert.equal(backend.claimed, false);
   assert.equal(store.runs().some((run) => run.id === "wf-async-reject"), false);
 });
+
+test("a failed resume does not roll back when another resume has claimed execution", async () => {
+  // Simulates the rapid double-resume race: the first attempt fails after
+  // another attempt already re-claimed execution. The first attempt's cleanup
+  // must not release the new owner's lease or restore its status.
+  class ContendedBackend extends InMemoryDurableBackend {
+    releaseCount = 0;
+    isWorkflowExecutionActive(): boolean { return true; }
+    claimWorkflowExecution(): boolean { return true; }
+    releaseWorkflowExecution(): void { this.releaseCount += 1; }
+    async flush(): Promise<void> { throw new Error("injected post-claim failure"); }
+  }
+  const backend = new ContendedBackend();
+  const { input } = deps(backend);
+  backend.registerWorkflow({ workflowId: "wf-contended", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "paused", completedCheckpoints: 1 });
+  await assert.rejects(() => resumeDurableWorkflow("wf-contended", input), /injected post-claim failure/);
+  // The new owner's lease is not revoked and its running status is preserved.
+  assert.equal(backend.releaseCount, 0);
+  assert.equal(backend.getWorkflow("wf-contended")?.status, "running");
+});
