@@ -78,9 +78,16 @@ function leaseIsActive(leasePath: string, owner: ExecutionLeaseOwner | undefined
   if (!Number.isInteger(owner.pid) || owner.pid <= 0) return true;
   try {
     process.kill(owner.pid, 0);
-    if (owner.processIdentity === undefined) return true;
-    const currentIdentity = processIdentity(owner.pid);
-    return currentIdentity === undefined || currentIdentity === owner.processIdentity;
+    // PID is alive. Confirm it is the SAME process via process-generation
+    // identity when both saved and current identities are available; otherwise
+    // (identity unsaved, or the lookup is unavailable/blocked — e.g. `ps` or
+    // `powershell.exe` missing) a reused PID could pin the lease forever, so
+    // fall back to heartbeat age: a stale heartbeat means the owner is gone.
+    if (owner.processIdentity !== undefined) {
+      const currentIdentity = processIdentity(owner.pid);
+      if (currentIdentity !== undefined) return currentIdentity === owner.processIdentity;
+    }
+    return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS;
   } catch (error) {
     return errorCode(error) !== "ESRCH";
   }
@@ -106,7 +113,12 @@ function startHeartbeat(leasePath: string, token: string): void {
   const key = heartbeatKey(leasePath, token);
   if (heartbeats.has(key)) return;
   const timer = setInterval(() => {
-    if (readOwner(leasePath)?.token !== token) {
+    const owner = readOwner(leasePath);
+    // Only stop when ownership definitively changed hands. A transient read
+    // (undefined) or write failure is retried on the next tick so a brief
+    // filesystem hiccup cannot let the heartbeat lapse and let the lease be
+    // reclaimed out from under a still-live owner.
+    if (owner !== undefined && owner.token !== token) {
       stopHeartbeat(leasePath, token);
       return;
     }
@@ -114,7 +126,7 @@ function startHeartbeat(leasePath: string, token: string): void {
       const now = new Date();
       utimesSync(`${leasePath}/${OWNER_FILE}`, now, now);
     } catch {
-      stopHeartbeat(leasePath, token);
+      // Transient; retry next tick.
     }
   }, HEARTBEAT_INTERVAL_MS);
   timer.unref?.();

@@ -139,6 +139,7 @@ export class FileDurableBackend implements DurableWorkflowBackend {
   }
 
   reset(): void {
+    this.executionClaimed = false;
     releaseExecutionLease(this.filePath, this.executionToken);
     this.mem.reset();
     withFileLock(this.filePath, () => writeState(this.filePath, { version: FILE_FORMAT_VERSION, workflows: [] }));
@@ -187,7 +188,16 @@ export class WorkflowFileDurableBackend implements DurableWorkflowBackend {
   }
 
   getWorkflow(workflowId: string) {
-    return this.backendFor(workflowId).getWorkflow(workflowId);
+    // Read fresh from disk rather than a cached per-workflow backend snapshot.
+    // Another process can complete and prune this workflow's state file while a
+    // cached `paused` handle lingers here; trusting that stale handle would let
+    // a retry recreate the pruned state and redispatch a completed workflow.
+    const filePath = durableStateFileFor(this.dir, workflowId);
+    if (!existsSync(filePath)) {
+      this.fileBackends.delete(filePath);
+      return undefined;
+    }
+    return readState(filePath).workflows.find((record) => record.handle.workflowId === workflowId)?.handle;
   }
 
   setWorkflowStatus(workflowId: string, status: DurableWorkflowStatus, pendingPrompts?: number, resumable?: boolean): void {

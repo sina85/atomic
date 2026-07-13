@@ -76,16 +76,20 @@ function acquireLock(lockDir: string): LockOwner {
 
 function tryReclaimStaleLock(lockDir: string): boolean {
   if (!isStaleLock(lockDir)) return false;
-  const owner = readLockOwner(lockDir);
+  // Read the owner content ONCE and decide abandonment from that snapshot. The
+  // quarantine comparison must test this exact snapshot: if a contender reclaims
+  // and installs a fresh live lock between here and the rename, the quarantined
+  // content will differ and we must restore rather than delete a live lock.
+  const snapshot = readLockOwnerRaw(lockDir);
+  const owner = parseLockOwner(snapshot);
   if (owner !== undefined && !isLockOwnerAbandoned(owner)) return false;
-  const identity = lockIdentity(lockDir);
   const quarantine = `${lockDir}.stale.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
   try {
     renameSync(lockDir, quarantine);
   } catch {
     return false;
   }
-  if (identity !== lockIdentity(quarantine)) {
+  if (snapshot !== readLockOwnerRaw(quarantine)) {
     restoreQuarantinedLock(lockDir, quarantine);
     return false;
   }
@@ -101,22 +105,27 @@ function isStaleLock(lockDir: string): boolean {
   }
 }
 
-function lockIdentity(lockDir: string): string {
+function readLockOwnerRaw(lockDir: string): string | undefined {
   try {
-    return `owner:${readFileSync(`${lockDir}/${LOCK_OWNER_FILE}`, "utf-8")}`;
+    return readFileSync(`${lockDir}/${LOCK_OWNER_FILE}`, "utf-8");
   } catch {
-    return "owner:absent";
+    return undefined;
   }
 }
 
-function readLockOwner(lockDir: string): LockOwner | undefined {
+function parseLockOwner(raw: string | undefined): LockOwner | undefined {
+  if (raw === undefined) return undefined;
   try {
-    const parsed: object = JSON.parse(readFileSync(`${lockDir}/${LOCK_OWNER_FILE}`, "utf-8"));
+    const parsed: object = JSON.parse(raw);
     if (!isLockOwner(parsed)) return undefined;
     return parsed;
   } catch {
     return undefined;
   }
+}
+
+function readLockOwner(lockDir: string): LockOwner | undefined {
+  return parseLockOwner(readLockOwnerRaw(lockDir));
 }
 
 function isLockOwner(value: object): value is LockOwner {

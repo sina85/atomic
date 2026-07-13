@@ -3,6 +3,8 @@ export interface PostgresLeaseClient {
   connect(): Promise<void>;
   query<Row>(sql: string, values: readonly string[]): Promise<QueryResult<Row>>;
   end(): Promise<void>;
+  /** Optional connection lifecycle events (the real `pg` Client is an EventEmitter). */
+  on?(event: "error" | "end", handler: (error?: unknown) => void): void;
 }
 interface PgModule { readonly Client: new (config: { readonly connectionString: string }) => PostgresLeaseClient }
 
@@ -28,6 +30,14 @@ export class PostgresExecutionLeaseRegistry {
       }
       this.externallyActive.delete(workflowId);
       this.owners.set(workflowId, client);
+      // PostgreSQL releases a session advisory lock when its connection drops.
+      // A dropped connection means this process no longer owns the lock, so stop
+      // reporting it active — another process may legitimately reclaim it.
+      // Without this the registry would falsely pin ownership after a connection
+      // loss or failover, recreating duplicate dispatch.
+      const drop = (): void => { if (this.owners.get(workflowId) === client) this.owners.delete(workflowId); };
+      client.on?.("error", drop);
+      client.on?.("end", drop);
       return true;
     } catch (error) {
       await client.end().catch(() => undefined);
