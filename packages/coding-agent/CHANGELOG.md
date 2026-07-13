@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fixed cross-session `/workflow resume` so exact `--session` restoration resumes the authoritative paused durable root instead of opening an ended snapshot, heartbeat-backed file and DBOS execution leases hide and refuse workflows still active in another Atomic process while recovering same-host hard crashes and malformed, migrated-host, or reused-PID stale ownership, stale write locks recover after interrupted owner publication, Windows-illegal workflow-id characters are encoded in durable filenames, changed workflow definitions are refused before stage execution rather than reinterpreting persisted checkpoints, and multiple resumable roots have deterministic newest-first ordering.
+- Fixed cross-session `/workflow resume` so exact `--session` restoration resumes the authoritative paused durable root instead of an ended snapshot; per-dispatch heartbeat-backed file leases and PostgreSQL advisory DBOS leases prevent duplicate execution across processes and hosts while recovering crashes safely; paused metadata retains ownership until execution stops; file-lock handoff is atomic and process-generation aware; stale picker rows and DBOS metadata are revalidated; durable setup is awaited before success; rollback releases ownership; Windows-illegal workflow IDs are encoded; changed definitions are refused; and resumable roots are ordered deterministically.
 
 ## [0.9.8] - 2026-07-12
 

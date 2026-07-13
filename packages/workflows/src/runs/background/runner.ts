@@ -44,6 +44,8 @@ export interface DetachedAccepted {
 
 export interface DetachedRunOpts
   extends Omit<RunOpts, "signal" | "cancellation" | "deferWorkflowStart"> {
+  /** Internal durable-resume handshake: publish setup synchronously. */
+  deferWorkflowStart?: boolean;
   /**
    * Override CancellationRegistry (default: singleton cancellationRegistry).
    */
@@ -121,6 +123,7 @@ export function runDetached<
     ...restOpts
   } = opts;
   const store: Store = storeOverride ?? defaultStore;
+  let published = false;
   const execOpts: RunOpts = {
     ...restOpts,
     runId,
@@ -128,28 +131,21 @@ export function runDetached<
     cancellation: registry,
     store,
     usePromptNodesForUi: opts.executionMode !== "non_interactive",
-    deferWorkflowStart: true,
+    deferWorkflowStart: opts.deferWorkflowStart ?? true,
+    onRunPublished: () => { published = true; opts.onRunPublished?.(); },
   };
 
-  // 5. Start background promise
   const backgroundPromise: Promise<RunResult> = syncRun(def, inputs, execOpts);
-
-  // 6. Build void promise that unregisters on settle and swallows rejections
   const voidPromise: Promise<void> = backgroundPromise.then(
-    () => {
+    (result) => {
+      if (!published) opts.onRunPublishFailed?.(new Error(result.error ?? `Workflow ${runId.slice(0, 8)} failed before publication.`));
       tracker.unregister(runId);
-      // CancellationRegistry.unregister called by executor in its finally block.
     },
-    (_err: unknown) => {
-      // Reject path: executor already records failed/killed status in store.
-      // Swallow here to avoid unhandled rejection — store is source of truth.
+    (err: unknown) => {
+      if (!published) opts.onRunPublishFailed?.(err);
       tracker.unregister(runId);
     },
   );
-
-  // 7. Register live job in tracker
   tracker.register({ runId, controller, promise: voidPromise });
-
-  // 8. Return immediate accepted result
   return buildDetachedAccepted(def.name, runId);
 }

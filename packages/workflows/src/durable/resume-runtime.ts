@@ -100,11 +100,11 @@ export function resolveDurableEntry(
  * with the cached inputs and the original workflow id so durable checkpoints
  * replay (skipping completed side effects).
  */
-export function resumeDurableWorkflow(
+export async function resumeDurableWorkflow(
   workflowIdOrPrefix: string,
   deps: ResumeDurableDeps,
   catalog?: readonly ResumableWorkflowEntry[],
-): ResumeDurableResult {
+): Promise<ResumeDurableResult> {
   const backend = deps.durableBackend ?? getDurableBackend();
   const resolvedCatalog = catalog ?? backend.listResumableWorkflows();
   const resolved = resolveDurableEntry(workflowIdOrPrefix, resolvedCatalog);
@@ -159,8 +159,8 @@ export function resumeDurableWorkflow(
   if (handle.status === "running" && hasActiveLiveRun(deps.baseRunOpts.store, resolved.workflowId)) {
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
-  if (!isResumableEntry(resolved)) {
-    return { ok: false, reason: "not_resumable", message: `Workflow ${resolved.workflowId.slice(0, 8)} is ${resolved.status}, not resumable.` };
+  if (!isResumableEntry(handle)) {
+    return { ok: false, reason: "not_resumable", message: `Workflow ${handle.workflowId.slice(0, 8)} is ${handle.status}, not resumable.` };
   }
 
   const def = deps.registry.get(resolved.name);
@@ -185,7 +185,7 @@ export function resumeDurableWorkflow(
   } catch (err) {
     return { ok: false, reason: "invalid_inputs", message: `invalid_inputs: ${err instanceof Error ? err.message : String(err)}` };
   }
-  if (backend.claimWorkflowExecution !== undefined && !backend.claimWorkflowExecution(resolved.workflowId)) {
+  if (backend.claimWorkflowExecution !== undefined && !await backend.claimWorkflowExecution(resolved.workflowId)) {
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
   try {
@@ -194,15 +194,24 @@ export function resumeDurableWorkflow(
     // Mark the workflow as resuming in the backend, then re-dispatch with the
     // ORIGINAL workflow id as the run id so durable checkpoints replay.
     backend.setWorkflowStatus(resolved.workflowId, "running");
+    await backend.flush?.();
 
+    let publish!: () => void;
+    let rejectPublish!: (error: unknown) => void;
+    const published = new Promise<void>((resolve, reject) => { publish = resolve; rejectPublish = reject; });
     const resumeRunOpts: RunOpts = {
       ...deps.baseRunOpts,
       ...(handle.invocationCwd !== undefined ? { cwd: handle.invocationCwd } : {}),
       runId: resolved.workflowId,
       durableBackend: backend,
+      deferWorkflowStart: false,
+      durableExecutionClaimed: true,
+      onRunPublished: publish,
+      onRunPublishFailed: rejectPublish,
     };
 
     const accepted: DetachedAccepted = runDetached(def, inputs, resumeRunOpts);
+    await published;
 
     return {
       ok: true,
@@ -212,7 +221,13 @@ export function resumeDurableWorkflow(
       message: `Resuming durable workflow "${resolved.name}" (${resolved.workflowId.slice(0, 8)}) — completed checkpoints will be replayed.`,
     };
   } catch (error) {
-    backend.releaseWorkflowExecution?.(resolved.workflowId);
+    try {
+      backend.setWorkflowStatus(resolved.workflowId, handle.status, handle.pendingPrompts, handle.resumable);
+      await backend.flush?.();
+      removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId);
+    } finally {
+      await backend.releaseWorkflowExecution?.(resolved.workflowId);
+    }
     throw error;
   }
 }

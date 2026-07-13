@@ -38,6 +38,7 @@ export class FileDurableBackend implements DurableWorkflowBackend {
   private readonly filePath: string;
   private loaded = false;
   private readonly executionToken = `${process.pid}-${randomUUID()}`;
+  private executionClaimed = false;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -104,14 +105,17 @@ export class FileDurableBackend implements DurableWorkflowBackend {
     this.ensureLoaded();
     this.mem.setWorkflowStatus(workflowId, status, pendingPrompts, resumable);
     this.persist();
-    if (status !== "running") releaseExecutionLease(this.filePath, this.executionToken);
   }
 
   claimWorkflowExecution(_workflowId: string): boolean {
-    return claimExecutionLease(this.filePath, this.executionToken);
+    if (this.executionClaimed) return false;
+    this.executionClaimed = claimExecutionLease(this.filePath, this.executionToken);
+    return this.executionClaimed;
   }
 
   releaseWorkflowExecution(_workflowId: string): void {
+    if (!this.executionClaimed) return;
+    this.executionClaimed = false;
     releaseExecutionLease(this.filePath, this.executionToken);
   }
 

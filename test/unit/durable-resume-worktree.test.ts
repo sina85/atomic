@@ -106,7 +106,7 @@ describe("durable resume with reusable git worktrees", () => {
         adapters: { complete: { complete: async (text: string) => text } },
       };
 
-      const result = resumeDurableWorkflow("wf-worktree-resume", { ...depsFor(def), baseRunOpts });
+      const result = await resumeDurableWorkflow("wf-worktree-resume", { ...depsFor(def), baseRunOpts });
 
       assert.equal(result.ok, true);
       await jobs.get("wf-worktree-resume")?.promise;
@@ -159,14 +159,11 @@ describe("durable resume with reusable git worktrees", () => {
         adapters: { complete: { complete: async (text: string) => text } },
       };
 
-      const result = resumeDurableWorkflow("wf-worktree-partial-fails", { ...depsFor(def), baseRunOpts });
-
-      assert.equal(result.ok, true);
-      await jobs.get("wf-worktree-partial-fails")?.promise;
-      const run = store.runs().find((snapshot) => snapshot.id === "wf-worktree-partial-fails");
-      assert.equal(run?.status, "failed");
-      assert.equal(typeof run?.endedAt, "number");
-      assert.match(run?.error ?? "", /already exists but is not a Git worktree/);
+      await assert.rejects(
+        () => resumeDurableWorkflow("wf-worktree-partial-fails", { ...depsFor(def), baseRunOpts }),
+        /already exists but is not a Git worktree/,
+      );
+      assert.equal(store.runs().some((snapshot) => snapshot.id === "wf-worktree-partial-fails"), false);
       assert.equal(backend.getWorkflow("wf-worktree-partial-fails")?.status, "failed");
     } finally {
       rmSync(primary.root, { recursive: true, force: true });

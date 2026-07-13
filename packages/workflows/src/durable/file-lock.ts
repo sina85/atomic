@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname } from "node:path";
+import { processIdentity } from "./process-identity.js";
 
 interface LockOwner {
   readonly pid: number;
   readonly host: string;
   readonly token: string;
   readonly acquiredAt: number;
+  readonly processIdentity?: string;
 }
 
 const LOCK_OWNER_FILE = "owner.json";
@@ -32,16 +34,33 @@ export function withFileLock<T>(filePath: string, fn: () => T): T {
   try {
     return fn();
   } finally {
-    if (sameLockOwner(owner, readLockOwner(lockDir))) rmSync(lockDir, { recursive: true, force: true });
+    releaseLock(lockDir, owner);
+  }
+}
+
+function releaseLock(lockDir: string, owner: LockOwner): void {
+  if (!sameLockOwner(owner, readLockOwner(lockDir))) return;
+  const releasedDir = `${lockDir}.release.${owner.token}`;
+  try {
+    renameSync(lockDir, releasedDir);
+  } catch {
+    return;
+  }
+  if (sameLockOwner(owner, readLockOwner(releasedDir))) {
+    rmSync(releasedDir, { recursive: true, force: true });
+  } else {
+    restoreQuarantinedLock(lockDir, releasedDir);
   }
 }
 
 function acquireLock(lockDir: string): LockOwner {
+  const identity = processIdentity(process.pid);
   const owner: LockOwner = {
     pid: process.pid,
     host: hostname(),
     token: `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     acquiredAt: Date.now(),
+    ...(identity !== undefined ? { processIdentity: identity } : {}),
   };
   const temporaryDir = `${lockDir}.claim.${owner.token}`;
   rmSync(temporaryDir, { recursive: true, force: true });
@@ -105,15 +124,18 @@ function isLockOwner(value: object): value is LockOwner {
   return typeof record.pid === "number"
     && typeof record.host === "string"
     && typeof record.token === "string"
-    && typeof record.acquiredAt === "number";
+    && typeof record.acquiredAt === "number"
+    && (record.processIdentity === undefined || typeof record.processIdentity === "string");
 }
 
 function isLockOwnerAbandoned(owner: LockOwner): boolean {
-  if (owner.host !== hostname()) return false;
+  if (owner.host !== hostname()) return true;
   if (!Number.isInteger(owner.pid) || owner.pid <= 0) return false;
   try {
     process.kill(owner.pid, 0);
-    return false;
+    if (owner.processIdentity === undefined) return false;
+    const currentIdentity = processIdentity(owner.pid);
+    return currentIdentity !== undefined && currentIdentity !== owner.processIdentity;
   } catch (error) {
     return errorCode(error) === "ESRCH";
   }
@@ -126,9 +148,8 @@ function sameLockOwner(a: LockOwner, b: LockOwner | undefined): boolean {
 function restoreQuarantinedLock(lockDir: string, quarantine: string): void {
   try {
     if (!existsSync(lockDir)) renameSync(quarantine, lockDir);
-    else rmSync(quarantine, { recursive: true, force: true });
   } catch {
-    // Best effort: never delete an active lock after a failed owner comparison.
+    // Preserve quarantine rather than deleting an owner after a comparison race.
   }
 }
 

@@ -76,7 +76,7 @@ async function handleDurableResume(
   const durable = filterSelectorDurableEntries(runtime, prepared);
   if (target !== undefined) {
     // Attempt resume by id/prefix against the durable catalog.
-    const result = runtime.resumeDurableWorkflow(target, { policy });
+    const result = await runtime.resumeDurableWorkflow(target, { policy });
     if (result.ok) {
       print(result.message);
       // Open/connect the overlay to the resumed run, analogous to live resume.
@@ -102,7 +102,7 @@ async function handleDurableResume(
   }
   const picked = await openWorkflowResumeSelector(ctx.ui, [], durable);
   if (picked.kind === "durable") {
-    const result = runtime.resumeDurableWorkflow(picked.workflowId, { policy });
+    const result = await runtime.resumeDurableWorkflow(picked.workflowId, { policy });
     if (result.ok) {
       print(result.message);
       if (policy.allowInputPicker) deps.overlay.open(result.runId, overlaySurfaceFromContext(ctx));
@@ -435,7 +435,7 @@ export async function handleRunControlCommand(
       const runtime = deps.runtimeForContext(ctx);
       try {
         const durable = await runtime.prepareDurableResumable(stageRunId);
-        if (durable.some((entry) => entry.workflowId === stageRunId)) {
+        if (durable.some((entry) => entry.workflowId === stageRunId) || runtime.isDurableWorkflowExecutionActive(stageRunId)) {
           return await handleDurableResume(stageRunId, ctx, reporter, deps);
         }
       } catch (error) {

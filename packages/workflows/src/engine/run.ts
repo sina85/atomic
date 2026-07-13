@@ -74,7 +74,6 @@ export async function run<
   const activeStore = opts.store ?? defaultStore;
   const adapters = opts.adapters ?? {};
   // Prompt-node UI is the graph-mode transport and intentionally takes precedence
-  // over an injected RunOpts.ui adapter; warn because that adapter will be ignored.
   if (opts.usePromptNodesForUi === true && opts.ui !== undefined) {
     console.warn("atomic-workflows: usePromptNodesForUi ignores the provided RunOpts.ui adapter");
   }
@@ -132,12 +131,10 @@ export async function run<
     classifiedFailures.set(error, classified);
     return classified;
   };
-
   const rootBackend: DurableWorkflowBackend = opts.durableBackend ?? getDurableBackend();
   const durableBackend: DurableWorkflowBackend = opts.durableScope !== undefined
     ? new ScopedDurableBackend(rootBackend, opts.durableScope)
     : rootBackend;
-
   const tracker = new GraphFrontierTracker();
   const inputConcurrency = resolveInputConcurrency(def.inputs, resolvedInputs);
   const inputRuntimeDefaults = resolveInputRuntimeDefaults(def, resolvedInputs), gitWorktreeSetupCacheOwner = createGitWorktreeSetupCacheOwner(opts.gitWorktreeSetupCache);
@@ -163,7 +160,6 @@ export async function run<
     () => scheduler.rejectReleaseBarriers(ownController.signal.reason ?? new Error("atomic-workflows: run aborted")),
     { once: true },
   );
-
   const finalizers = createRunFinalizers({
     def,
     runId,
@@ -306,7 +302,6 @@ export async function run<
     signal: ownController.signal,
   });
 
-  // Durable ctx.ui wrapper — caches completed user responses so a resumed workflow does not re-ask answered prompts.
   const durableUiDeps = { workflowId: runId, backend: durableBackend, nextCheckpointId: checkpointIdGenerator };
   const recordCachedStage = (name: string, replayKey: string, checkpoint: DurableCompletedStageCheckpoint): void =>
     recordCachedStageWithTracker(activeStore, tracker, runId, name, replayKey, checkpoint, completedStageReplayKeys);
@@ -361,9 +356,13 @@ export async function run<
     workflow: durableWorkflow,
     tool,
   };
-
+  let ownsExecutionLease = opts.parentRun === undefined && opts.durableExecutionClaimed === true;
   try {
-    if (opts.parentRun === undefined) claimWorkflowExecution(durableBackend, runId);
+    if (opts.parentRun === undefined && !ownsExecutionLease) {
+      const claim = claimWorkflowExecution(durableBackend, runId);
+      if (claim !== undefined) await claim;
+      ownsExecutionLease = true;
+    }
     try {
       activeStore.recordRunStart(runSnapshot);
       if (!opts.signal) opts.cancellation?.register(runId, ownController);
@@ -384,7 +383,6 @@ export async function run<
     } catch (error) {
       activeStore.removeRun(runId);
       opts.cancellation?.unregister(runId);
-      durableBackend.releaseWorkflowExecution?.(runId);
       throw error;
     }
     if (opts.deferWorkflowStart === true) {
@@ -403,7 +401,9 @@ export async function run<
       } else {
         durableBackend.setWorkflowStatus(runId, "running");
       }
+      await durableBackend.flush?.();
     }
+    opts.onRunPublished?.();
     const rawResult = await def.run(ctx);
     if (ownController.signal.aborted) {
       const selectedExit = findWorkflowExitSignal(ownController.signal.reason, exitScope);
@@ -491,10 +491,10 @@ export async function run<
       });
     } finally {
       try {
-        if (opts.parentRun === undefined) durableBackend.releaseWorkflowExecution?.(runId);
+        if (ownsExecutionLease) await durableBackend.releaseWorkflowExecution?.(runId);
       } finally {
         gitWorktreeSetupCacheOwner.release(() => opts.cancellation?.unregister(runId));
       }
     }
+    }
   }
-}

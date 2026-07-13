@@ -1,15 +1,12 @@
-/** DBOS-backed durable backend adapter, loaded only when configured. */
-
 import type { DurableCheckpoint, DurableCheckpointEntry, DurableWorkflowHandle, DurableWorkflowStatus, ResumableWorkflowEntry } from "./types.js";
 import type { WorkflowSerializableValue } from "../shared/types.js";
 import type { WorkflowSerializableObject as DurableInputs } from "./types.js";
 import { InMemoryDurableBackend, type DurableWorkflowBackend, type WorkflowRegistrationInput } from "./backend.js";
-import { defaultDurableStateDir } from "./file-backend.js";
-import { DbosExecutionLeaseRegistry } from "./dbos-execution-lease.js";
 import { encodeCheckpoint, decodeToCheckpoint } from "./dbos-envelope.js";
-
+import { DbosExecutionLeaseRegistry } from "./dbos-execution-lease.js";
+import { PostgresExecutionLeaseRegistry } from "./postgres-execution-lease.js";
+export { dbosLeaseNamespace } from "./dbos-lease-namespace.js";
 /**
- * Abstraction over the real `@dbos-inc/dbos-sdk` so the adapter is testable
  * without Postgres. The real factory (`createRealDbosHandle`) wraps the SDK;
  * tests supply a mock.
  */
@@ -90,12 +87,7 @@ export async function createDbosDurableBackend(config?: { readonly systemDatabas
   const mainWorkflow = sdk.registerWorkflow(async (_name: string, inputs: DurableInputs) => inputs, { name: "atomicWorkflowHandle" });
   const checkpointWorkflow = sdk.registerWorkflow(async (_workflowId: string, _stepName: string, output: WorkflowSerializableValue) => output, { name: "atomicWorkflowCheckpoint" });
   await sdk.launch();
-  const executionLeaseDir = defaultDurableStateDir();
-  if (executionLeaseDir === undefined) {
-    await sdk.shutdown();
-    throw new Error("DBOS workflow durability requires HOME or USERPROFILE for cross-process execution leases.");
-  }
-  return new DbosDurableBackend(createRealDbosHandle(sdk, mainWorkflow, checkpointWorkflow), executionLeaseDir);
+  return new DbosDurableBackend(createRealDbosHandle(sdk, mainWorkflow, checkpointWorkflow), undefined, url);
 }
 
 async function importDbosSdk(): Promise<DbosStatic> {
@@ -194,14 +186,16 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
   public readonly persistent = true;
   private readonly mem = new InMemoryDurableBackend();
   private readonly sdk: DbosSdkHandle;
-  private readonly executionLeases: DbosExecutionLeaseRegistry;
+  private readonly executionLeases: DbosExecutionLeaseRegistry | PostgresExecutionLeaseRegistry;
   private readonly hydrated = new Set<string>();
   private writeQueue: Promise<void> = Promise.resolve();
   private writeErrors: Error[] = [];
 
-  constructor(sdk: DbosSdkHandle, executionLeaseDir?: string) {
+  constructor(sdk: DbosSdkHandle, executionLeaseDir?: string, databaseUrl?: string) {
     this.sdk = sdk;
-    this.executionLeases = new DbosExecutionLeaseRegistry(executionLeaseDir);
+    this.executionLeases = databaseUrl === undefined
+      ? new DbosExecutionLeaseRegistry(executionLeaseDir)
+      : new PostgresExecutionLeaseRegistry(databaseUrl);
   }
 
   registerWorkflow(handle: WorkflowRegistrationInput): void {
@@ -247,12 +241,11 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
       if (status === "cancelled") await this.sdk.cancelWorkflow(workflowId);
       else if (status === "running") await this.sdk.resumeWorkflow(workflowId);
       await this.writeMetadata(workflowId);
-      if (status !== "running") this.releaseWorkflowExecution(workflowId);
     });
   }
 
-  claimWorkflowExecution(workflowId: string): boolean { return this.executionLeases.claim(workflowId); }
-  releaseWorkflowExecution(workflowId: string): void { this.executionLeases.release(workflowId); }
+  claimWorkflowExecution(workflowId: string): boolean | Promise<boolean> { return this.executionLeases.claim(workflowId); }
+  releaseWorkflowExecution(workflowId: string): void | Promise<void> { return this.executionLeases.release(workflowId); }
   isWorkflowExecutionActive(workflowId: string): boolean { return this.executionLeases.active(workflowId); }
 
   listActiveWorkflowHandles(): readonly DurableWorkflowHandle[] {
@@ -266,7 +259,7 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
   }
   toCacheEntry(workflowId: string) { return this.mem.toCacheEntry(workflowId); }
   reset(): void {
-    this.executionLeases.reset();
+    void this.executionLeases.reset();
     this.mem.reset();
     this.hydrated.clear();
     this.writeQueue = Promise.resolve();
@@ -280,13 +273,16 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
     throw first;
   }
 
+  async refreshWorkflowExecutionActivity(): Promise<void> {
+    await this.executionLeases.refresh(this.mem.exportAll().map((record) => record.handle.workflowId));
+  }
+
   /**
    * Hydrate a single workflow's handle and checkpoints from DBOS into the
    * in-memory mirror. Idempotent: skips workflows already hydrated with
    * checkpoints. Safe to call before synchronous replay reads.
    */
   async hydrateWorkflow(workflowId: string): Promise<void> {
-    if (this.hydrated.has(workflowId) && this.mem.getWorkflow(workflowId) !== undefined) return;
     const info = await this.sdk.retrieveWorkflow(workflowId);
     if (info !== undefined && this.mem.getWorkflow(workflowId) === undefined) {
       this.mem.registerWorkflow({
@@ -304,6 +300,7 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
       const cp = decodeToCheckpoint(workflowId, rec.stepName, rec.output);
       if (cp !== undefined) this.mem.recordCheckpoint(cp);
     }
+    await this.executionLeases.refresh([workflowId]);
     this.hydrated.add(workflowId);
   }
 
@@ -324,17 +321,16 @@ export class DbosDurableBackend implements DurableWorkflowBackend {
           status: dbosStatusToDurable(info.status),
         });
       }
-      if (!this.hydrated.has(info.workflowId)) {
-        const stepRecords = await this.sdk.listStepRecords(info.workflowId);
-        this.applyMetadata(info.workflowId, stepRecords);
-        for (const rec of stepRecords) {
-          if (isMetadataStep(rec.stepName)) continue;
-          const cp = decodeToCheckpoint(info.workflowId, rec.stepName, rec.output);
-          if (cp !== undefined) this.mem.recordCheckpoint(cp);
-        }
-        this.hydrated.add(info.workflowId);
+      const stepRecords = await this.sdk.listStepRecords(info.workflowId);
+      this.applyMetadata(info.workflowId, stepRecords);
+      for (const rec of stepRecords) {
+        if (isMetadataStep(rec.stepName)) continue;
+        const cp = decodeToCheckpoint(info.workflowId, rec.stepName, rec.output);
+        if (cp !== undefined) this.mem.recordCheckpoint(cp);
       }
+      this.hydrated.add(info.workflowId);
     }
+    await this.refreshWorkflowExecutionActivity();
   }
 
   private enqueueWrite(fn: () => Promise<void>): Promise<void> {

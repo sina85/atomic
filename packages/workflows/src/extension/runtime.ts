@@ -124,17 +124,14 @@ export interface ExtensionRuntime {
    *
    * cross-ref: issue #1498 — cross-session /workflow resume selector.
    */
-  resumeDurableWorkflow(workflowIdOrPrefix: string, options?: RuntimeDispatchOptions): import("../durable/resume-runtime.js").ResumeDurableResult;
+  resumeDurableWorkflow(workflowIdOrPrefix: string, options?: RuntimeDispatchOptions): Promise<import("../durable/resume-runtime.js").ResumeDurableResult>;
   listDurableResumable(sessionDir?: string): readonly import("../durable/types.js").ResumableWorkflowEntry[];
   prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly import("../durable/types.js").ResumableWorkflowEntry[]>;
+  isDurableWorkflowExecutionActive(workflowId: string): boolean;
 }
 export interface RuntimeDispatchOptions {
   readonly policy?: WorkflowExecutionPolicy;
 }
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 /**
  * Create an ExtensionRuntime.
  *
@@ -472,13 +469,13 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
 
     resumeFailedRun,
 
-    resumeDurableWorkflow(workflowIdOrPrefix: string, options?: RuntimeDispatchOptions): ResumeDurableResult {
+    async resumeDurableWorkflow(workflowIdOrPrefix: string, options?: RuntimeDispatchOptions): Promise<ResumeDurableResult> {
       const adapterDeps: ResumeDurableDeps = {
         registry,
         baseRunOpts: runOptions({ workflow: "", inputs: {} }, options?.policy),
         durableBackend: getDurableBackend(),
       };
-      return resumeDurableWorkflowAdapter(workflowIdOrPrefix, adapterDeps, preparedDurableCatalog);
+      return await resumeDurableWorkflowAdapter(workflowIdOrPrefix, adapterDeps, preparedDurableCatalog);
     },
     listDurableResumable(sessionDir?: string): readonly ResumableWorkflowEntry[] {
       const backend = getDurableBackend();
@@ -491,6 +488,9 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
       return [...live, ...compatible];
     },
 
+    isDurableWorkflowExecutionActive(workflowId: string): boolean {
+      return getDurableBackend().isWorkflowExecutionActive?.(workflowId) === true;
+    },
     async prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly ResumableWorkflowEntry[]> {
       await ensureDbosReady();
       preparedDurableCatalog = await prepareRuntimeDurableResumable(getDurableBackend, () => resolveDefaultStageSessionDir?.(), workflowIdOrPrefix, sessionDir);

@@ -107,10 +107,10 @@ export interface DurableWorkflowBackend {
   setWorkflowStatus(workflowId: string, status: DurableWorkflowStatus, pendingPrompts?: number, resumable?: boolean): void;
 
   /** Atomically claim ownership before executing a persistent workflow. */
-  claimWorkflowExecution?(workflowId: string): boolean;
+  claimWorkflowExecution?(workflowId: string): boolean | Promise<boolean>;
 
   /** Release execution ownership when setup aborts before durable registration. */
-  releaseWorkflowExecution?(workflowId: string): void;
+  releaseWorkflowExecution?(workflowId: string): void | Promise<void>;
 
   /** Report whether another live process currently owns workflow execution. */
   isWorkflowExecutionActive?(workflowId: string): boolean;
@@ -143,6 +143,9 @@ export interface DurableWorkflowBackend {
    * process. Implementations that do not need async hydration omit this.
    */
   hydrateResumableWorkflows?(): Promise<void>;
+
+  /** Refresh remotely coordinated execution ownership before listing. */
+  refreshWorkflowExecutionActivity?(): Promise<void>;
 }
 
 export class WorkflowExecutionAlreadyClaimedError extends Error {
@@ -152,10 +155,15 @@ export class WorkflowExecutionAlreadyClaimedError extends Error {
   }
 }
 
-export function claimWorkflowExecution(backend: DurableWorkflowBackend, workflowId: string): void {
-  if (backend.claimWorkflowExecution !== undefined && !backend.claimWorkflowExecution(workflowId)) {
-    throw new WorkflowExecutionAlreadyClaimedError(workflowId);
+export function claimWorkflowExecution(backend: DurableWorkflowBackend, workflowId: string): void | Promise<void> {
+  if (backend.claimWorkflowExecution === undefined) return;
+  const claimed = backend.claimWorkflowExecution(workflowId);
+  if (claimed instanceof Promise) {
+    return claimed.then((accepted) => {
+      if (!accepted) throw new WorkflowExecutionAlreadyClaimedError(workflowId);
+    });
   }
+  if (!claimed) throw new WorkflowExecutionAlreadyClaimedError(workflowId);
 }
 
 // ---------------------------------------------------------------------------

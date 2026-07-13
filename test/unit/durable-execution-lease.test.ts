@@ -33,19 +33,49 @@ describe("durable execution ownership", () => {
     assert.equal(existsSync(filePath), true);
   });
 
-  test("active ownership hides a running workflow and graceful pause releases it", () => {
+  test("paused metadata remains owned until the executor actually stops", () => {
     const owner = new WorkflowFileDurableBackend(dir);
     const contender = new WorkflowFileDurableBackend(dir);
     owner.registerWorkflow({ workflowId: "wf-active", name: "active", inputs: {}, createdAt: 1, status: "running" });
     owner.recordCheckpoint(checkpoint("wf-active"));
 
     assert.equal(owner.claimWorkflowExecution("wf-active"), true);
+    owner.setWorkflowStatus("wf-active", "paused", undefined, true);
     assert.equal(contender.listResumableWorkflows().some((entry) => entry.workflowId === "wf-active"), false);
     assert.equal(contender.claimWorkflowExecution("wf-active"), false);
 
-    owner.setWorkflowStatus("wf-active", "paused", undefined, true);
+    owner.releaseWorkflowExecution("wf-active");
     assert.equal(contender.listResumableWorkflows().some((entry) => entry.workflowId === "wf-active"), true);
     assert.equal(contender.claimWorkflowExecution("wf-active"), true);
+  });
+
+  test("one backend cannot dispatch the same workflow id twice concurrently", async () => {
+    const backend = new WorkflowFileDurableBackend(dir);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let executions = 0;
+    const def = workflow({
+      name: "single-dispatch",
+      description: "",
+      inputs: {},
+      outputs: { result: Type.String() },
+      run: async (ctx) => {
+        executions += 1;
+        await gate;
+        await ctx.stage("done").complete("done");
+        return { result: "done" };
+      },
+    });
+    const opts = { runId: "wf-single-dispatch", store: createStore(), durableBackend: backend, adapters: { complete: { complete: async (text: string) => text } } };
+    const first = run(def, {}, opts);
+    await Promise.resolve();
+    await assert.rejects(
+      () => run(def, {}, { ...opts, store: createStore() }),
+      /already running in another Atomic process/,
+    );
+    assert.equal(executions, 1);
+    release();
+    assert.equal((await first).status, "completed");
   });
 
   test("a hard-crashed execution owner is immediately reclaimable", async () => {
@@ -94,7 +124,7 @@ describe("durable execution ownership", () => {
     const cases = [
       "{malformed",
       JSON.stringify({ pid: 1, host: "retired-host.example", token: "foreign", acquiredAt: 1 }),
-      JSON.stringify({ pid: process.pid, host: hostname(), token: "reused-pid", acquiredAt: 1 }),
+      JSON.stringify({ pid: process.pid, host: hostname(), token: "reused", acquiredAt: 1, processIdentity: "different-process-start" }),
     ];
     for (const [index, owner] of cases.entries()) {
       const workflowId = `wf-stale-lease-${index}`;
@@ -110,6 +140,18 @@ describe("durable execution ownership", () => {
       utimesSync(ownerFile, old, old);
       assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), true);
     }
+  });
+
+  test("an old heartbeat cannot evict a live same-host owner", () => {
+    const workflowId = "wf-live-suspended-owner";
+    const stateFile = durableStateFileFor(dir, workflowId);
+    const owner = new WorkflowFileDurableBackend(dir);
+    owner.registerWorkflow({ workflowId, name: "live", inputs: {}, createdAt: 1, status: "running" });
+    assert.equal(owner.claimWorkflowExecution(workflowId), true);
+    const ownerFile = `${stateFile}.active/owner.json`;
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(ownerFile, old, old);
+    assert.equal(new WorkflowFileDurableBackend(dir).claimWorkflowExecution(workflowId), false);
   });
 
   test("stale ownerless and dead-process state locks are recoverable", () => {
@@ -249,6 +291,35 @@ describe("durable execution ownership", () => {
       cancellation,
     }), /injected release failure/);
     assert.equal(cancellation.abort("wf-release-failure"), false);
+  });
+
+  test("one backend token cannot re-enter the same workflow through two dispatches", async () => {
+    const backend = new WorkflowFileDurableBackend(dir);
+    let executions = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const def = workflow({
+      name: "single-dispatch",
+      description: "",
+      inputs: {},
+      outputs: { result: Type.String() },
+      run: async (ctx) => {
+        executions += 1;
+        await gate;
+        await ctx.stage("done").complete("done");
+        return { result: "done" };
+      },
+    });
+    const adapters = { complete: { complete: async (text: string) => text } };
+    const first = run(def, {}, { runId: "wf-single-dispatch", store: createStore(), durableBackend: backend, adapters });
+    await assert.rejects(
+      () => run(def, {}, { runId: "wf-single-dispatch", store: createStore(), durableBackend: backend, adapters }),
+      /already running in another Atomic process/,
+    );
+    assert.equal(executions, 1);
+    release();
+    const firstResult = await first;
+    assert.equal(firstResult.status, "completed", JSON.stringify(firstResult));
   });
 
   test("resumable roots are deterministic newest-first with an id tie-break", () => {

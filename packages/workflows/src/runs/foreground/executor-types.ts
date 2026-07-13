@@ -89,6 +89,8 @@ export interface RunOpts extends Omit<AuthoringContract.RunOpts, "adapters" | "s
    * cross-ref: issue #1498.
    */
   durableScope?: import("../../durable/scoped-backend.js").DurableScope;
+  /** Internal: durable resume already claimed this root before detached dispatch. */
+  durableExecutionClaimed?: boolean;
   /** Internal parent linkage for nested ctx.workflow(...) runs. */
   parentRun?: {
     readonly runId: string;
@@ -96,6 +98,10 @@ export interface RunOpts extends Omit<AuthoringContract.RunOpts, "adapters" | "s
     readonly rootRunId: string;
   };
   onRunStart?: (snapshot: RunSnapshot) => void;
+  /** Internal detached-run handshake fired after durable registration succeeds. */
+  onRunPublished?: () => void;
+  /** Internal detached-run handshake rejection before publication. */
+  onRunPublishFailed?: (error: unknown) => void;
   onStageStart?: (runId: string, snapshot: StageSnapshot) => void;
   onStageEnd?: (runId: string, snapshot: StageSnapshot) => unknown;
   onStageSession?: (runId: string, snapshot: StageSnapshot) => unknown;

@@ -9,24 +9,23 @@ export class DbosExecutionLeaseRegistry {
   constructor(private readonly dir?: string) {}
 
   claim(workflowId: string): boolean {
-    if (this.dir === undefined) {
-      if (this.owned.has(workflowId)) return true;
-      this.owned.add(workflowId);
-      return true;
-    }
+    if (this.owned.has(workflowId)) return false;
+    if (this.dir === undefined) throw new Error("DBOS execution leases require a shared lease directory.");
     const claimed = claimExecutionLease(this.file(workflowId), this.token);
     if (claimed) this.owned.add(workflowId);
     return claimed;
   }
 
   release(workflowId: string): void {
-    this.owned.delete(workflowId);
+    if (!this.owned.delete(workflowId)) return;
     if (this.dir !== undefined) releaseExecutionLease(this.file(workflowId), this.token);
   }
 
   active(workflowId: string): boolean {
-    return this.dir === undefined ? this.owned.has(workflowId) : hasActiveExecutionLease(this.file(workflowId));
+    return this.dir !== undefined && hasActiveExecutionLease(this.file(workflowId));
   }
+
+  async refresh(_workflowIds: readonly string[]): Promise<void> {}
 
   reset(): void {
     for (const workflowId of [...this.owned]) this.release(workflowId);

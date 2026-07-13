@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { withFileLock } from "./file-lock.js";
+import { processIdentity } from "./process-identity.js";
 
 interface ExecutionLeaseOwner {
   readonly pid: number;
   readonly host: string;
   readonly token: string;
   readonly acquiredAt: number;
+  readonly processIdentity?: string;
 }
 
 const OWNER_FILE = "owner.json";
@@ -23,10 +25,7 @@ export function claimExecutionLease(filePath: string, token: string): boolean {
     const leasePath = executionLeasePath(filePath);
     if (existsSync(leasePath)) {
       const owner = readOwner(leasePath);
-      if (owner?.token === token) {
-        startHeartbeat(leasePath, token);
-        return true;
-      }
+      if (owner?.token === token) return false;
       if (leaseIsActive(leasePath, owner)) return false;
       rmSync(leasePath, { recursive: true, force: true });
     }
@@ -34,7 +33,14 @@ export function claimExecutionLease(filePath: string, token: string): boolean {
     rmSync(temporaryPath, { recursive: true, force: true });
     mkdirSync(temporaryPath, { mode: 0o700 });
     try {
-      const owner: ExecutionLeaseOwner = { pid: process.pid, host: hostname(), token, acquiredAt: Date.now() };
+      const identity = processIdentity(process.pid);
+      const owner: ExecutionLeaseOwner = {
+        pid: process.pid,
+        host: hostname(),
+        token,
+        acquiredAt: Date.now(),
+        ...(identity !== undefined ? { processIdentity: identity } : {}),
+      };
       writeFileSync(`${temporaryPath}/${OWNER_FILE}`, JSON.stringify(owner), { encoding: "utf-8", mode: 0o600 });
       renameSync(temporaryPath, leasePath);
     } finally {
@@ -51,7 +57,7 @@ export function hasActiveExecutionLease(filePath: string): boolean {
     if (!existsSync(leasePath)) return false;
     const owner = readOwner(leasePath);
     if (leaseIsActive(leasePath, owner)) return true;
-    stopHeartbeat(leasePath);
+    if (owner !== undefined) stopHeartbeat(leasePath, owner.token);
     rmSync(leasePath, { recursive: true, force: true });
     return false;
   });
@@ -59,20 +65,22 @@ export function hasActiveExecutionLease(filePath: string): boolean {
 
 export function releaseExecutionLease(filePath: string, token: string): void {
   const leasePath = executionLeasePath(filePath);
-  stopHeartbeat(leasePath);
   withFileLock(filePath, () => {
-    if (readOwner(leasePath)?.token === token) rmSync(leasePath, { recursive: true, force: true });
+    if (readOwner(leasePath)?.token !== token) return;
+    stopHeartbeat(leasePath, token);
+    rmSync(leasePath, { recursive: true, force: true });
   });
 }
 
 function leaseIsActive(leasePath: string, owner: ExecutionLeaseOwner | undefined): boolean {
-  if (heartbeatAge(leasePath) > STALE_HEARTBEAT_MS) return false;
-  if (owner === undefined) return existsSync(`${leasePath}/${OWNER_FILE}`);
-  if (owner.host !== hostname()) return true;
+  if (owner === undefined) return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS && existsSync(`${leasePath}/${OWNER_FILE}`);
+  if (owner.host !== hostname()) return heartbeatAge(leasePath) <= STALE_HEARTBEAT_MS;
   if (!Number.isInteger(owner.pid) || owner.pid <= 0) return true;
   try {
     process.kill(owner.pid, 0);
-    return true;
+    if (owner.processIdentity === undefined) return true;
+    const currentIdentity = processIdentity(owner.pid);
+    return currentIdentity === undefined || currentIdentity === owner.processIdentity;
   } catch (error) {
     return errorCode(error) !== "ESRCH";
   }
@@ -90,28 +98,34 @@ function heartbeatAge(leasePath: string): number {
   }
 }
 
+function heartbeatKey(leasePath: string, token: string): string {
+  return `${leasePath}\0${token}`;
+}
+
 function startHeartbeat(leasePath: string, token: string): void {
-  if (heartbeats.has(leasePath)) return;
+  const key = heartbeatKey(leasePath, token);
+  if (heartbeats.has(key)) return;
   const timer = setInterval(() => {
     if (readOwner(leasePath)?.token !== token) {
-      stopHeartbeat(leasePath);
+      stopHeartbeat(leasePath, token);
       return;
     }
     try {
       const now = new Date();
       utimesSync(`${leasePath}/${OWNER_FILE}`, now, now);
     } catch {
-      stopHeartbeat(leasePath);
+      stopHeartbeat(leasePath, token);
     }
   }, HEARTBEAT_INTERVAL_MS);
   timer.unref?.();
-  heartbeats.set(leasePath, timer);
+  heartbeats.set(key, timer);
 }
 
-function stopHeartbeat(leasePath: string): void {
-  const timer = heartbeats.get(leasePath);
+function stopHeartbeat(leasePath: string, token: string): void {
+  const key = heartbeatKey(leasePath, token);
+  const timer = heartbeats.get(key);
   if (timer !== undefined) clearInterval(timer);
-  heartbeats.delete(leasePath);
+  heartbeats.delete(key);
 }
 
 function readOwner(leasePath: string): ExecutionLeaseOwner | undefined {
@@ -129,7 +143,8 @@ function isOwner(value: object): value is ExecutionLeaseOwner {
   return typeof owner.pid === "number"
     && typeof owner.host === "string"
     && typeof owner.token === "string"
-    && typeof owner.acquiredAt === "number";
+    && typeof owner.acquiredAt === "number"
+    && (owner.processIdentity === undefined || typeof owner.processIdentity === "string");
 }
 
 function errorCode(error: unknown): string | undefined {

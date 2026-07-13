@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DbosDurableBackend, type DbosSdkHandle, type DbosWorkflowInfo } from "../../packages/workflows/src/durable/dbos-backend.js";
+import { DbosDurableBackend, dbosLeaseNamespace, type DbosSdkHandle, type DbosWorkflowInfo } from "../../packages/workflows/src/durable/dbos-backend.js";
 import type { WorkflowSerializableValue } from "../../packages/workflows/src/shared/types.js";
 
 function mockSdk(): DbosSdkHandle {
@@ -27,6 +27,19 @@ function mockSdk(): DbosSdkHandle {
   };
 }
 
+test("DBOS lease namespaces canonicalize same-database URLs without credentials", () => {
+  assert.equal(
+    dbosLeaseNamespace("postgres://alice:one@DB.EXAMPLE/app?sslmode=require"),
+    dbosLeaseNamespace("postgresql://bob:two@db.example:5432/app"),
+  );
+  assert.notEqual(dbosLeaseNamespace("postgres://db.example/app"), dbosLeaseNamespace("postgres://db.example/other"));
+});
+
+test("DBOS backend fails loudly rather than disabling execution exclusion without a lease directory", () => {
+  const backend = new DbosDurableBackend(mockSdk());
+  assert.throws(() => backend.claimWorkflowExecution("wf-no-lease-dir"), /require a shared lease directory/);
+});
+
 test("DBOS backends share duplicate-dispatch execution leases", async () => {
   const leaseDir = mkdtempSync(join(tmpdir(), "dbos-execution-lease-"));
   try {
@@ -44,6 +57,8 @@ test("DBOS backends share duplicate-dispatch execution leases", async () => {
 
     owner.setWorkflowStatus("wf-dbos-owned", "paused", undefined, true);
     await owner.flush();
+    assert.equal(contender.claimWorkflowExecution("wf-dbos-owned"), false);
+    owner.releaseWorkflowExecution("wf-dbos-owned");
     assert.equal(contender.claimWorkflowExecution("wf-dbos-owned"), true);
   } finally {
     rmSync(leaseDir, { recursive: true, force: true });

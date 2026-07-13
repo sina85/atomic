@@ -7,6 +7,8 @@ import factory, { type ExtensionAPI } from "../../packages/workflows/src/extensi
 import { stageControlRegistry } from "../../packages/workflows/src/runs/foreground/stage-control-registry.js";
 import { store } from "../../packages/workflows/src/shared/store.js";
 import type { RunSnapshot } from "../../packages/workflows/src/shared/store-types.js";
+import { InMemoryDurableBackend } from "../../packages/workflows/src/durable/backend.js";
+import { setDurableBackend } from "../../packages/workflows/src/durable/factory.js";
 
 type SessionBeforeSwitchHandler = (event?: unknown, ctx?: unknown) => unknown;
 
@@ -384,6 +386,30 @@ test("session_shutdown quit leaves in-flight workflows resumable", async () => {
   assert.equal(run?.exitReason, "quit");
   assert.equal(run?.resumable, true);
   assert.equal(disposed, 1);
+});
+
+test("session_shutdown pause retains durable ownership until the executor settles", async () => {
+  class OwnedBackend extends InMemoryDurableBackend {
+    claimed = false;
+    claimWorkflowExecution(_workflowId: string): boolean { if (this.claimed) return false; this.claimed = true; return true; }
+    releaseWorkflowExecution(_workflowId: string): void { this.claimed = false; }
+    isWorkflowExecutionActive(_workflowId: string): boolean { return this.claimed; }
+  }
+  const backend = new OwnedBackend();
+  setDurableBackend(backend);
+  try {
+    backend.registerWorkflow({ workflowId: "quit-owned", name: "owned", inputs: {}, createdAt: 1, status: "running" });
+    assert.equal(backend.claimWorkflowExecution("quit-owned"), true);
+    store.recordRunStart(workflowRun({ id: "quit-owned" }));
+    const sessionShutdown = captureHandlers().get("session_shutdown");
+    await sessionShutdown?.({ reason: "quit" });
+    assert.equal(backend.getWorkflow("quit-owned")?.status, "paused");
+    assert.equal(backend.isWorkflowExecutionActive("quit-owned"), true);
+    assert.equal(backend.claimWorkflowExecution("quit-owned"), false);
+  } finally {
+    backend.releaseWorkflowExecution("quit-owned");
+    setDurableBackend(undefined);
+  }
 });
 
 test("session_start removes ask_user_question but keeps workflow in non-interactive sessions", async () => {
