@@ -149,6 +149,7 @@ export function createWorkflowExtensionRuntimeState(
     listDurableResumable(sessionDir) { return runtimeRef.current.listDurableResumable(sessionDir); },
     prepareDurableResumable(workflowIdOrPrefix, sessionDir) { return runtimeRef.current.prepareDurableResumable(workflowIdOrPrefix, sessionDir); },
     isDurableWorkflowExecutionActive(workflowId) { return runtimeRef.current.isDurableWorkflowExecutionActive(workflowId); },
+    isDurableRootResumable(workflowId) { return runtimeRef.current.isDurableRootResumable(workflowId); },
   };
 
   function workflowModelCatalogFromContext(ctx?: PiModelContext): WorkflowModelCatalogPort | undefined {

@@ -52,6 +52,40 @@ test("resume revalidates a stale picker row against the authoritative terminal h
   assert.equal(store.runs().some((run) => run.id === "wf-picker-race"), false);
 });
 
+test("a restored running snapshot with a free execution lease resumes instead of being refused", async () => {
+  class LeaseBackend extends InMemoryDurableBackend {
+    leaseActive = false;
+    isWorkflowExecutionActive(): boolean { return this.leaseActive; }
+  }
+  const backend = new LeaseBackend();
+  const { store, input } = deps(backend);
+  backend.registerWorkflow({ workflowId: "wf-ctrlc-ghost", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "running", completedCheckpoints: 1 });
+  // Exact-session restoration reconstructs a `running` store snapshot even
+  // though the crashed process released nothing gracefully; the execution
+  // lease is free (leaseActive=false).
+  store.recordRunStart({ id: "wf-ctrlc-ghost", name: "resumable-pipeline", inputs: {}, status: "running", stages: [], startedAt: 1 });
+  const result = await resumeDurableWorkflow("wf-ctrlc-ghost", input);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.runId, "wf-ctrlc-ghost");
+  // The ghost snapshot must not be duplicated by re-dispatch.
+  assert.equal(store.runs().filter((run) => run.id === "wf-ctrlc-ghost").length, 1);
+});
+
+test("an actively-leased running workflow is still refused as already running", async () => {
+  class LeaseBackend extends InMemoryDurableBackend {
+    isWorkflowExecutionActive(): boolean { return true; }
+  }
+  const backend = new LeaseBackend();
+  const { input } = deps(backend);
+  backend.registerWorkflow({ workflowId: "wf-live-owned", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "running", completedCheckpoints: 1 });
+  const result = await resumeDurableWorkflow("wf-live-owned", input);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.reason, "not_resumable");
+    assert.match(result.message, /already running/);
+  }
+});
+
 test("resume fails synchronously and restores state when detached setup is not published", async () => {
   class FailingBackend extends InMemoryDurableBackend {
     failRegistration = false;

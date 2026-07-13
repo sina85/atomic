@@ -43,15 +43,12 @@ import { runDetached } from "../runs/background/runner.js";
 import type { JobTracker } from "../runs/background/job-tracker.js";
 import { appendRunEnd } from "../shared/persistence-session-entries.js";
 import { classifyWorkflowFailure } from "../shared/workflow-failures.js";
-import { resumeDurableWorkflow as resumeDurableWorkflowAdapter, prepareRuntimeDurableResumable, isBackendTerminal, type ResumeDurableDeps, type ResumeDurableResult } from "../durable/resume-runtime.js";
+import { resumeDurableWorkflow as resumeDurableWorkflowAdapter, prepareRuntimeDurableResumable, isBackendTerminal, isDurableRootResumable, type ResumeDurableDeps, type ResumeDurableResult } from "../durable/resume-runtime.js";
 import { getDurableBackend, initializeDbosDurableBackendFromEnv } from "../durable/factory.js";
 import { scanResumableWorkflows } from "../durable/resume-catalog.js";
 import type { ResumableWorkflowEntry } from "../durable/types.js";
 import { directMode, directModelRequests, directOptions, directProgressTotal } from "./runtime-direct.js";
 
-// ---------------------------------------------------------------------------
-// Options
-// ---------------------------------------------------------------------------
 
 export interface ExtensionRuntimeOpts {
   /**
@@ -91,9 +88,6 @@ export interface ExtensionRuntimeOpts {
   /** Resolve the host's non-default session directory for workflow stage transcripts. */
   resolveDefaultStageSessionDir?: () => string | undefined;
 }
-// ---------------------------------------------------------------------------
-// Public interface
-// ---------------------------------------------------------------------------
 export type ResumeFailedRunResult =
   | { ok: true; runId: string; sourceRunId: string; resumeFromStageId: string; message: string }
   | { ok: false; reason: "run_not_found" | "not_resumable" | "workflow_not_found" | "insufficient_state"; message: string };
@@ -128,6 +122,7 @@ export interface ExtensionRuntime {
   listDurableResumable(sessionDir?: string): readonly import("../durable/types.js").ResumableWorkflowEntry[];
   prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly import("../durable/types.js").ResumableWorkflowEntry[]>;
   isDurableWorkflowExecutionActive(workflowId: string): boolean;
+  isDurableRootResumable(workflowId: string): boolean;
 }
 export interface RuntimeDispatchOptions {
   readonly policy?: WorkflowExecutionPolicy;
@@ -490,6 +485,9 @@ export function createExtensionRuntime(opts: ExtensionRuntimeOpts = {}): Extensi
 
     isDurableWorkflowExecutionActive(workflowId: string): boolean {
       return getDurableBackend().isWorkflowExecutionActive?.(workflowId) === true;
+    },
+    isDurableRootResumable(workflowId: string): boolean {
+      return isDurableRootResumable(getDurableBackend(), workflowId);
     },
     async prepareDurableResumable(workflowIdOrPrefix?: string, sessionDir?: string): Promise<readonly ResumableWorkflowEntry[]> {
       await ensureDbosReady();

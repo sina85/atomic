@@ -156,7 +156,16 @@ export async function resumeDurableWorkflow(
       message: `Workflow ${resolved.workflowId.slice(0, 8)} has only session-cache metadata and no durable checkpoint state; resume would re-run from scratch. Re-run the workflow to start fresh.`,
     };
   }
-  if (handle.status === "running" && hasActiveLiveRun(deps.baseRunOpts.store, resolved.workflowId)) {
+  // "Already running" means a live process still owns execution. When the
+  // backend tracks execution leases, that lease is authoritative; a restored
+  // `running` session snapshot with a free lease is a crashed process and must
+  // remain resumable. Fall back to the store heuristic only for backends
+  // without lease support (e.g. in-memory).
+  const executionActive = backend.isWorkflowExecutionActive?.(resolved.workflowId);
+  const liveOwner = executionActive === undefined
+    ? hasActiveLiveRun(deps.baseRunOpts.store, resolved.workflowId)
+    : executionActive;
+  if (handle.status === "running" && liveOwner) {
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
   if (!isResumableEntry(handle)) {
@@ -189,7 +198,11 @@ export async function resumeDurableWorkflow(
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
   try {
-    removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId);
+    // The execution lease is now held and no live owner exists, so any store
+    // snapshot for this id is a crashed-process ghost (including a restored
+    // `running` snapshot after a hard exit). Clear it so re-dispatch does not
+    // duplicate the run id.
+    removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId, { force: true });
 
     // Mark the workflow as resuming in the backend, then re-dispatch with the
     // ORIGINAL workflow id as the run id so durable checkpoints replay.
@@ -236,11 +249,11 @@ function isDurableResumeShadow(run: RunSnapshot): boolean {
   return run.endedAt !== undefined || run.exitReason === "quit" || run.status === "paused";
 }
 
-function removeDurableResumeShadowRuns(store: RunOpts["store"], workflowId: string): void {
+function removeDurableResumeShadowRuns(store: RunOpts["store"], workflowId: string, options?: { readonly force?: boolean }): void {
   if (store === undefined) return;
   for (;;) {
     const existing = store.runs().find((run) => run.id === workflowId);
-    if (existing === undefined || !isDurableResumeShadow(existing)) return;
+    if (existing === undefined || (options?.force !== true && !isDurableResumeShadow(existing))) return;
     if (!store.removeRun(workflowId)) return;
   }
 }
@@ -268,6 +281,17 @@ function isResumableEntry(entry: ResumableWorkflowEntry): boolean {
   // crashed process. Same-session double-resume is blocked separately via
   // `hasActiveLiveRun` before dispatch.
   return (entry.status === "running" || entry.status === "paused") && hasResumeProgress(entry);
+}
+
+/**
+ * True when the durable backend holds a resumable root handle for `workflowId`.
+ * A cheap, scan-free check (single backend handle lookup) used to decide whether
+ * a restored `running` session snapshot should divert to durable resume.
+ */
+export function isDurableRootResumable(backend: DurableWorkflowBackend, workflowId: string): boolean {
+  const handle = backend.getWorkflow(workflowId);
+  if (handle === undefined) return false;
+  return isResumableEntry(handle);
 }
 
 /**

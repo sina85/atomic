@@ -62,21 +62,11 @@ describe("/workflow resume — durable regression coverage", () => {
     singletonStore.recordRunEnd(runId, "failed", undefined, "Run did not complete — process was interrupted", {
       resumable: false,
     });
-    let preparedTarget: string | undefined;
     let resumedTarget: string | undefined;
     const runtime = {
-      prepareDurableResumable: async (target?: string) => {
-        preparedTarget = target;
-        return [{
-          workflowId: runId,
-          name: "restored-shadow",
-          status: "paused" as const,
-          completedCheckpoints: 1,
-          pendingPrompts: 0,
-          createdAt: 1,
-          updatedAt: 2,
-        }];
-      },
+      isDurableWorkflowExecutionActive: () => false,
+      isDurableRootResumable: (target: string) => target === runId,
+      prepareDurableResumable: async () => [],
       resumeDurableWorkflow: (target: string) => {
         resumedTarget = target;
         return { ok: true as const, runId: target, workflowId: target, name: "restored-shadow", message: `Resumed durable ${target}` };
@@ -96,7 +86,6 @@ describe("/workflow resume — durable regression coverage", () => {
       ensureWorkflowResourcesLoaded: () => undefined,
     });
 
-    assert.equal(preparedTarget, runId);
     assert.equal(resumedTarget, runId);
     assert.match(messages.join("\n"), /Resumed durable restored-shadow-durable-root/);
     assert.doesNotMatch(messages.join("\n"), /Snapshot available/);

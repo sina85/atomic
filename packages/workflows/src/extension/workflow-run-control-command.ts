@@ -411,6 +411,21 @@ export async function handleRunControlCommand(
     const isResumableContinuation = run !== undefined && !isPaused && ((run.status === "failed" && run.endedAt !== undefined && run.resumable !== false) || (run.endedAt === undefined && run.resumable === true && run.failureRecoverability === "recoverable"));
     const isActivelyRunning = run !== undefined && run.endedAt === undefined && run.status === "running" && !isPaused && run.exitReason !== "quit";
     if (isActivelyRunning && action === "resume") {
+      // A restored session snapshot can reconstruct a durable workflow as
+      // `running` even when no live process owns it (e.g. a hard Ctrl-C before
+      // the graceful quit-to-paused flush). Divert to cross-session durable
+      // resume only when a resumable durable root exists and its execution
+      // lease is free (a scan-free backend-handle check); otherwise this is a
+      // genuinely live in-session run and must be refused.
+      await ensureWorkflowResourcesVisible();
+      const runtime = deps.runtimeForContext(ctx);
+      try {
+        if (!runtime.isDurableWorkflowExecutionActive(stageRunId) && runtime.isDurableRootResumable(stageRunId)) {
+          return await handleDurableResume(stageRunId, ctx, reporter, deps);
+        }
+      } catch {
+        // Fall through to the active-run refusal below.
+      }
       fail(`Workflow ${stageRunId.slice(0, 8)} is already running in this session. Attach with \`/workflow connect ${stageRunId.slice(0, 8)}\` instead of resuming.`);
       return true;
     }
@@ -434,8 +449,7 @@ export async function handleRunControlCommand(
       await ensureWorkflowResourcesVisible();
       const runtime = deps.runtimeForContext(ctx);
       try {
-        const durable = await runtime.prepareDurableResumable(stageRunId);
-        if (durable.some((entry) => entry.workflowId === stageRunId) || runtime.isDurableWorkflowExecutionActive(stageRunId)) {
+        if (runtime.isDurableRootResumable(stageRunId) || runtime.isDurableWorkflowExecutionActive(stageRunId)) {
           return await handleDurableResume(stageRunId, ctx, reporter, deps);
         }
       } catch (error) {
