@@ -151,4 +151,76 @@ describe("workflow stage usage rollups", () => {
 		assert.equal(emitted.at(-1)?.usage.cost.total, 3);
 		assert.equal(emitted.at(-1)?.settled, true);
 	});
+	test("continuation replay emits persisted stage usage to the launching session", async () => {
+		const sourceStore = createStore();
+		let replayConcurrently = false;
+		const def = workflow({
+			name: "replayed-stage-usage",
+			description: "",
+			inputs: {},
+			outputs: { ok: Type.Boolean() },
+			run: async (ctx) => {
+				const firstStage = ctx.stage("first");
+				let first: string;
+				let firstFinalization: Promise<string> | undefined;
+				if (replayConcurrently) {
+					firstFinalization = firstStage.prompt("first");
+					first = await firstStage.complete("first");
+				} else {
+					first = await firstStage.prompt("first");
+				}
+				await ctx.stage("second").prompt(`second:${first}`);
+				await firstFinalization;
+				return { ok: true };
+			},
+		});
+		const firstRun = await run(def, {}, {
+			store: sourceStore,
+			adapters: { prompt: { prompt: async (text) => {
+				if (text.startsWith("second:")) throw new Error("fail once");
+				return "first-result";
+			} } },
+		});
+		assert.equal(firstRun.status, "failed");
+		const source = sourceStore.runs().find((candidate) => candidate.id === firstRun.runId)!;
+		Object.assign(source.stages[0]!, {
+			sessionId: "replayed-stage-session",
+			sessionFile: "/tmp/replayed-stage.jsonl",
+			usage: usage(20, 2),
+			usageComplete: false,
+		});
+		replayConcurrently = true;
+		const emitted: Array<{ stageId: string; usage: Usage; meta: { label?: string; sessionId: string; sessionFile?: string; settled?: boolean } }> = [];
+		const replayStageEndStarted = Promise.withResolvers<void>();
+		const releaseReplayStageEnd = Promise.withResolvers<void>();
+		let resumedStageCalls = 0;
+		const continuedPromise = run(def, {}, {
+			store: createStore(),
+			continuation: { source, resumeFromStageId: source.failedStageId! },
+			adapters: { prompt: { prompt: async () => { resumedStageCalls += 1; return "second-result"; } } },
+			usageRollup: {
+				emitStageRollup(stageId, nextUsage, meta) { emitted.push({ stageId, usage: nextUsage, meta }); },
+			},
+			onStageEnd: async (_runId, snapshot) => {
+				if (snapshot.replayed !== true) return;
+				replayStageEndStarted.resolve();
+				await releaseReplayStageEnd.promise;
+			},
+		});
+		await replayStageEndStarted.promise;
+		assert.equal(resumedStageCalls, 0, "replay persistence must settle before the resumed stage starts");
+		releaseReplayStageEnd.resolve();
+		const continued = await continuedPromise;
+		assert.equal(continued.status, "completed");
+		assert.equal(emitted.length, 1);
+		assert.equal(emitted[0]?.stageId, continued.stages[0]?.id);
+		assert.deepEqual(emitted[0]?.usage, usage(20, 2));
+		assert.deepEqual(emitted[0]?.meta, {
+			label: "first",
+			sessionId: "replayed-stage-session",
+			sessionFile: "/tmp/replayed-stage.jsonl",
+			settled: false,
+		});
+	});
+
 });

@@ -4,9 +4,9 @@ I don’t have a file write/edit tool in this subagent session, so I could not c
 
 # Current Subagents Transitive-Cost Review
 
-Date: 2026-07-10  
-Scope: `/workspaces/atomic/packages/subagents`  
-Mode: read-only research  
+Date: 2026-07-10
+Scope: `/workspaces/atomic/packages/subagents`
+Mode: read-only research
 Breaking changes allowed: false
 
 ## Overview

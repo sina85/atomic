@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Changed workflow stages to persist usage snapshots and emit stage rollups so Atomic's status-bar cost and token badges reflect full transitive workflow-stage spend, including internal stage sessions hidden from normal resume lists. Stages emit interim rollups while running, forward nested descendant updates, and restore persisted spend when continuation or durable-checkpoint replay skips provider work ([#1636](https://github.com/bastani-inc/atomic/issues/1636)). Based on and supersedes [#1725](https://github.com/bastani-inc/atomic/pull/1725) by [@gebner](https://github.com/gebner).
+
+### Fixed
+
+- Fixed live workflow-stage usage reporting for tool, slash-command, background, resumed, continuation-replay, and durable-checkpoint launches by retaining the launching root, subscribing before the first turn, forwarding nested usage changes, reconciling descendants before terminal persistence, sharing one asynchronous finalization barrier across concurrent replay calls, and restoring only stages inside the exact cached child-workflow scope ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+
 ## [0.9.8] - 2026-07-12
 
 ### Changed
@@ -85,11 +93,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Restored workflow-first model routing for non-trivial, structured, and verifiable work while retaining the newer ability to author task-specific TypeScript workflows inline. Prompt guidance now explicitly combines the documented classify/branch, fan-out/synthesis, adversarial verification, generate/filter, tournament, and bounded loop patterns instead of forcing every workflow-fit task into an installed workflow, direct shape, or builtin.
 - Restored Ralph's builtin implementation-stage prompts to require subagent-led investigation, editing, and validation, reversing the selective direct-implementation wording introduced with intent-first routing.
 - Expanded model-facing workflow guidance to treat composition as a first-class design option: custom parents can import reusable project/package workflows or bundled builtin definitions, invoke them through `ctx.workflow(...)`, and nest further child workflows within `maxDepth` while preserving expanded graph visibility, HIL, durability, controls, and declared output contracts.
-- Changed workflow stages to persist usage snapshots and emit stage rollups so Atomic's status-bar cost and token badges reflect full transitive workflow-stage spend, including internal stage sessions hidden from normal resume lists. Stages emit interim (unsettled) usage rollups while running, forward nested descendant updates from subagents/workflows, and emit the final settled rollup after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
-
-### Fixed
-
-- Fixed live workflow-stage usage reporting for tool, slash-command, background, and resumed launches by capturing the launching root session before asynchronous execution, subscribing for interim stage turn-end usage before the first model turn can emit events, forwarding stage-session `descendant_usage_changed` events from nested subagents/workflows while the stage turn is still running, reconciling the stage's descendant session tree before persisting its terminal usage snapshot, and emitting the final settled stage rollup only after the durable `workflow.stage.end` entry is persisted ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 

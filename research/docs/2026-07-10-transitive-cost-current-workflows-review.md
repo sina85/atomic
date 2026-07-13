@@ -4,9 +4,9 @@ I could not write `/workspaces/atomic/research/docs/2026-07-10-transitive-cost-c
 
 # Current Workflows Transitive-Cost Review Findings
 
-Date: 2026-07-10  
-Scope: `/workspaces/atomic/packages/workflows` current working tree  
-Mode: read-only research  
+Date: 2026-07-10
+Scope: `/workspaces/atomic/packages/workflows` current working tree
+Mode: read-only research
 Breaking changes allowed: false
 
 ## Overview
@@ -424,22 +424,22 @@ Existing persistence restore tests cover session metadata but not usage:
 
 Add workflows-specific tests for:
 
-1. **Stage end persistence restore**  
+1. **Stage end persistence restore**
    Add a `workflow.stage.end` payload with `usage` to a persistence restore test and assert `stage.usage` is restored.
 
-2. **DBOS envelope usage round-trip**  
+2. **DBOS envelope usage round-trip**
    Extend `test/unit/durable-dbos-backend.test.ts:131-155` to include `usage` in `DurableStageCheckpoint`, assert `encodeCheckpoint()` writes it, and assert `decodeToCheckpoint()` restores it.
 
-3. **Live workflow stage rollup root id**  
+3. **Live workflow stage rollup root id**
    Use the real extension API construction path or a faithful mock without `pi.sessionManager` to reproduce the current no-op, then test the additive root-session-id seam emits `"usage:descendant-rollup"`.
 
-4. **Lower-bound propagation**  
+4. **Lower-bound propagation**
    Use a stage session stub whose `getTransitiveUsage()` returns `{ total: usage, complete: false }`; assert emitted report has `settled: false` or equivalent lower-bound marker.
 
-5. **Stage session id keying**  
+5. **Stage session id keying**
    Assert workflow stage rollup `childRunId` equals `sessionId`, not the workflow stage id.
 
-6. **StageSnapshot/store usage copy**  
+6. **StageSnapshot/store usage copy**
    Exercise `recordStageUsage()` + `recordStageEnd()` through the store public API and assert the final stored stage retains usage.
 
 All of these are additive tests and do not require breaking API changes.

@@ -897,53 +897,53 @@ Nested async result paths use this root ID:
 
 ### Foreground Edge Cases
 
-1. **Running updates preserve messages/progress until terminal compaction**  
+1. **Running updates preserve messages/progress until terminal compaction**
    `compactForegroundResult()` returns running results unchanged at `packages/subagents/src/shared/utils.ts:243-245`; terminal results drop `messages` and `progress` at `packages/subagents/src/shared/utils.ts:246-251`.
 
-2. **File-only output removes messages in snapshots but preserves usage**  
+2. **File-only output removes messages in snapshots but preserves usage**
    `snapshotResult()` sets `messages: undefined` for file-only saved output at `packages/subagents/src/runs/foreground/execution-utils.ts:36-40`, while still copying `usage` at line 40.
 
-3. **Interrupted foreground runs return paused-like output but keep accumulated usage**  
+3. **Interrupted foreground runs return paused-like output but keep accumulated usage**
    `finalizeSingleAttempt()` handles interrupted runs at `packages/subagents/src/runs/foreground/execution-attempt-finalize.ts:20-33`. It sets `exitCode = 0`, `interrupted = true`, and returns without clearing `usage`.
 
-4. **Detached intercom foreground runs return before normal output path**  
+4. **Detached intercom foreground runs return before normal output path**
    Detach is set at `packages/subagents/src/runs/foreground/execution-attempt.ts:155-164`; finalization returns early at `packages/subagents/src/runs/foreground/execution-attempt-finalize.ts:35-39`.
 
-5. **Model fallback attempts are double represented**  
+5. **Model fallback attempts are double represented**
    Final `SingleResult.usage` is aggregate usage across attempts, and `modelAttempts[].usage` also contains per-attempt usage (`packages/subagents/src/runs/foreground/execution-run-sync.ts:137-149`, `packages/subagents/src/runs/foreground/execution-run-sync.ts:172`). Rollups should avoid summing both final `usage` and `modelAttempts[].usage` for the same child.
 
 ### Async Edge Cases
 
-1. **Async start result has no usage**  
+1. **Async start result has no usage**
    Async start `details.results` is always `[]` at `packages/subagents/src/runs/background/async-execution-single.ts:221` and `packages/subagents/src/runs/background/async-execution-chain.ts:409`.
 
-2. **Async status token totals are not cost totals**  
+2. **Async status token totals are not cost totals**
    `AsyncStatus.totalTokens` is `TokenUsage`, not `Usage`, and is assigned from session token parsing or model attempt input/output only (`packages/subagents/src/runs/background/subagent-runner-sequential.ts:73-92`, `packages/subagents/src/runs/background/subagent-runner-parallel.ts:131-140`).
 
-3. **Async result file preserves per-attempt cost usage but has no top-level rollup**  
+3. **Async result file preserves per-attempt cost usage but has no top-level rollup**
    `modelAttempts` are written in result files at `packages/subagents/src/runs/background/subagent-runner-finalize.ts:107-108`, but no top-level `usage` exists.
 
-4. **Result watcher session mismatch leaves result file in place**  
+4. **Result watcher session mismatch leaves result file in place**
    If `data.sessionId` does not match `state.currentSessionId`, `handleResult()` returns at `packages/subagents/src/runs/background/result-watcher.ts:120` before deleting the file. Same for mismatched `cwd` at line 121.
 
-5. **Duplicate completion deletes the result file**  
+5. **Duplicate completion deletes the result file**
    If `markSeenWithTtl()` reports a duplicate, the watcher unlinks the result file at `packages/subagents/src/runs/background/result-watcher.ts:134-139`.
 
-6. **Stale-run reconciliation writes synthetic failed results**  
+6. **Stale-run reconciliation writes synthetic failed results**
    `buildFailedRepair()` creates a failed result object at `packages/subagents/src/runs/background/stale-run-reconciler.ts:169-222`. It includes `modelAttempts` copied from status steps at `packages/subagents/src/runs/background/stale-run-reconciler.ts:204-214`, but no top-level usage.
 
-7. **Parallel step completion events may not carry tokens at step event time**  
+7. **Parallel step completion events may not carry tokens at step event time**
    Sequential step completion event includes `tokens` at `packages/subagents/src/runs/background/subagent-runner-sequential.ts:115-124`. Parallel step completion event at `packages/subagents/src/runs/background/subagent-runner-parallel.ts:125` does not include tokens; tokens are computed afterward at `packages/subagents/src/runs/background/subagent-runner-parallel.ts:131-140`.
 
 ### Nested Edge Cases
 
-1. **Nested foreground summaries omit usage**  
+1. **Nested foreground summaries omit usage**
    Nested foreground event summaries include step agent/status/session/error only at `packages/subagents/src/runs/foreground/subagent-executor-context.ts:250-255`.
 
-2. **Nested async summaries include token totals, not cost usage**  
+2. **Nested async summaries include token totals, not cost usage**
    Nested async summaries can carry `totalTokens`, and intercom preserves that field at `packages/subagents/src/intercom/result-intercom.ts:99`.
 
-3. **Nested result watcher enrichment can retry later**  
+3. **Nested result watcher enrichment can retry later**
    If `projectNestedRegistryForRoot(runId)` fails, result watcher logs and returns without deleting at `packages/subagents/src/runs/background/result-watcher.ts:126-132`.
 
 ## Concrete Integration Points for `transitiveUsage` and `usage:descendant-rollup`
@@ -1102,4 +1102,3 @@ Current intercom result children do not carry usage. If intercom is part of the 
 - Intercom result payloads omit usage/modelAttempts.
 - Parent `tool_result` listener for `subagent` does not currently inspect or emit usage.
 - Async completion event forwarding can carry new fields automatically because it emits `...data`.
-

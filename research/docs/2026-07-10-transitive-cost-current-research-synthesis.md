@@ -5,9 +5,9 @@ Below is the complete content intended for that file:
 ```md
 # Transitive Cost Current Research Synthesis
 
-Date: 2026-07-10  
-Scope: `/workspaces/atomic`  
-Mode: read-only synthesis  
+Date: 2026-07-10
+Scope: `/workspaces/atomic`
+Mode: read-only synthesis
 Breaking changes allowed: false
 
 ## Analysis of: `research/2026-07-10-read-the-file-at-specs-2026-07-10-transitive-cost-status-bar-md-and-implement-it.md`

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed foreground, async, and live foreground-update subagent reports to send transitive usage rollups back to the parent session so Atomic's status-bar cost and token badges reflect delegated and nested spend exactly once while subagents are still running, not only after their final tool result ([#1636](https://github.com/bastani-inc/atomic/issues/1636)). Based on and supersedes [#1725](https://github.com/bastani-inc/atomic/pull/1725) by [@gebner](https://github.com/gebner).
+
+### Fixed
+
+- Fixed terminal subagent rollups to keep newer scalar usage as an incomplete floor when session files lag or contain malformed tails, deduplicate equivalent portable session-file aliases deterministically, omit untrusted file-derived fork ancestry while retaining direct scalar evidence, prevent Windows subtree double-counting, and retain the launching root across async session switches ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
+
 ## [0.9.8] - 2026-07-12
 
 ### Changed
@@ -41,11 +49,6 @@
 
 - Aligned model-facing subagent guidance with workflow-first routing: subagents remain focused specialists inside workflow stages or bounded direct delegation, rather than becoming an ad hoc implementation/review/retry pipeline for workflow-fit work.
 - Changed bundled Intercom coordination back to model-driven connection: launching foreground or background children no longer connects the parent or child session automatically; an Intercom tool or UI action must establish each session's broker connection.
-- Changed foreground, async, and live foreground-update subagent reports to send transitive usage rollups back to the parent session so Atomic's status-bar cost and token badges reflect delegated subagent spend without double-counting while subagents are still running, not only after their final tool result ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
-
-### Fixed
-
-- Fixed transitive usage rollups to mark malformed session JSONL as incomplete lower bounds, conservatively omit fork-session usage when the inherited parent transcript is missing or malformed, prevent case/separator-sensitive Windows subtree double-counting, and charge async completion reports to the root session that launched the async run after session switches ([#1636](https://github.com/bastani-inc/atomic/issues/1636)).
 
 ## [0.9.5] - 2026-07-11
 

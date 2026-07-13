@@ -9,16 +9,16 @@ Below is the content intended for the requested research document.
 
 # Transitive Cost Patterns, Tests, and Docs Research
 
-Date: 2026-07-10  
-Scope: `/workspaces/atomic`  
-Mode: read-only research  
+Date: 2026-07-10
+Scope: `/workspaces/atomic`
+Mode: read-only research
 Breaking changes allowed: false
 
 ## Pattern Examples: Keyed Maps / Upsert Tests
 
 ### Pattern 1: Live chat tool-call upsert by `toolCallId`
 
-**Found in**: `packages/coding-agent/src/modes/interactive/components/chat-message-renderer.ts:276-308`  
+**Found in**: `packages/coding-agent/src/modes/interactive/components/chat-message-renderer.ts:276-308`
 **Used for**: Maintaining a keyed live transcript row per tool call, replacing existing rows on repeated events and deleting pending state on final result.
 
 ```ts
@@ -69,7 +69,7 @@ private updateToolResult(toolCallId: string, result: unknown, isPartial: boolean
 
 ### Pattern 2: Tests for keyed tool-call upsert and parallel same-name calls
 
-**Found in**: `test/unit/chat-message-renderer.test.ts:88-138`  
+**Found in**: `test/unit/chat-message-renderer.test.ts:88-138`
 **Used for**: Verifying multiple same-name tool calls remain distinct by ID.
 
 ```ts
@@ -135,7 +135,7 @@ test("renders distinct rows and output for parallel same-name tool calls (live e
 
 ### Pattern 3: Built-in model/custom model upsert documentation
 
-**Found in**: `packages/coding-agent/docs/models.md:362-365`  
+**Found in**: `packages/coding-agent/docs/models.md:362-365`
 **Used for**: Provider model merge-by-ID behavior.
 
 ```md
@@ -157,7 +157,7 @@ test("renders distinct rows and output for parallel same-name tool calls (live e
 
 ### Pattern 1: Extension event subscribers with `pi.on(...)`
 
-**Found in**: `packages/coding-agent/docs/extensions.md:69-77`  
+**Found in**: `packages/coding-agent/docs/extensions.md:69-77`
 **Used for**: Extensions subscribing to session/tool events.
 
 ```ts
@@ -176,7 +176,7 @@ pi.on("tool_call", async (event, ctx) => {
 
 ### Pattern 2: Generic extension event subscriber shape
 
-**Found in**: `packages/coding-agent/docs/extensions.md:172-176`  
+**Found in**: `packages/coding-agent/docs/extensions.md:172-176`
 **Used for**: Event handler API documentation.
 
 ```ts
@@ -190,7 +190,7 @@ pi.on("event_name", async (event, ctx) => {
 
 ### Pattern 3: Compaction event subscribers
 
-**Found in**: `packages/coding-agent/docs/compaction.md:688-729`  
+**Found in**: `packages/coding-agent/docs/compaction.md:688-729`
 **Used for**: Extension hooks around compaction lifecycle.
 
 ```ts
@@ -211,7 +211,7 @@ pi.on("session_compact", async (event, ctx) => {
 
 ### Pattern 4: Session-tree event subscribers
 
-**Found in**: `packages/coding-agent/docs/compaction.md:910-913`  
+**Found in**: `packages/coding-agent/docs/compaction.md:910-913`
 **Used for**: Intercepting tree navigation.
 
 ```ts
@@ -222,7 +222,7 @@ pi.on("session_before_tree", async (event, ctx) => {
 
 ### Pattern 5: SDK session event subscription
 
-**Found in**: `packages/coding-agent/docs/sdk.md:24-34`  
+**Found in**: `packages/coding-agent/docs/sdk.md:24-34`
 **Used for**: Programmatic SDK listeners.
 
 ```ts
@@ -242,7 +242,7 @@ session.subscribe((event) => {
 
 ### Pattern 6: Internal event emit after session rename
 
-**Found in**: `packages/coding-agent/src/core/agent-session-tree.ts:6-10`  
+**Found in**: `packages/coding-agent/src/core/agent-session-tree.ts:6-10`
 **Used for**: Runtime emitting both local session event and extension event.
 
 ```ts
@@ -256,7 +256,7 @@ export function setSessionName(this: AgentSession, name: string): void {
 
 ### Pattern 7: Internal event emit after compaction
 
-**Found in**: `packages/coding-agent/src/core/agent-session-compaction.ts:176-179`  
+**Found in**: `packages/coding-agent/src/core/agent-session-compaction.ts:176-179`
 **Used for**: Emitting extension event after context compaction entry is persisted.
 
 ```ts
@@ -272,7 +272,7 @@ try {
 
 ### Pattern 1: Slash command metadata registry
 
-**Found in**: `packages/coding-agent/src/core/slash-commands.ts:163-193`  
+**Found in**: `packages/coding-agent/src/core/slash-commands.ts:163-193`
 **Used for**: Built-in slash command names, descriptions, and optional completions.
 
 ```ts
@@ -311,7 +311,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 
 ### Pattern 2: Bundled extension slash commands
 
-**Found in**: `packages/coding-agent/src/core/slash-commands.ts:195-213`  
+**Found in**: `packages/coding-agent/src/core/slash-commands.ts:195-213`
 **Used for**: Commands supplied by bundled extensions/workflows/subagents.
 
 ```ts
@@ -338,7 +338,7 @@ export const BUNDLED_EXTENSION_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand
 
 ### Pattern 3: Interactive slash command dispatch
 
-**Found in**: `packages/coding-agent/src/modes/interactive/interactive-input-handling.ts:267-379`  
+**Found in**: `packages/coding-agent/src/modes/interactive/interactive-input-handling.ts:267-379`
 **Used for**: Handling built-in interactive commands before normal prompt submission.
 
 ```ts
@@ -382,7 +382,7 @@ if (text === "/import" || text.startsWith("/import ")) {
 
 ### Pattern 4: Slash command argument parser for path commands
 
-**Found in**: `packages/coding-agent/src/modes/interactive/interactive-slash-commands.ts:119-146`  
+**Found in**: `packages/coding-agent/src/modes/interactive/interactive-slash-commands.ts:119-146`
 **Used for**: `/export` and `/import` path argument parsing, including quoted paths.
 
 ```ts
@@ -417,7 +417,7 @@ InteractiveModeBase.prototype.getPathCommandArgument = function(this: Interactiv
 
 ### Pattern 5: `/compact` validation before handler call
 
-**Found in**: `packages/coding-agent/src/modes/interactive/interactive-input-handling.ts:373-380`  
+**Found in**: `packages/coding-agent/src/modes/interactive/interactive-input-handling.ts:373-380`
 **Used for**: Slash command with no arguments.
 
 ```ts
@@ -438,7 +438,7 @@ if (/^\/compact(?:\s|$)/.test(text)) {
 
 ### Pattern 1: Docs for invalidate + requestRender
 
-**Found in**: `packages/coding-agent/docs/tui.md:479-483`  
+**Found in**: `packages/coding-agent/docs/tui.md:479-483`
 **Used for**: Guidance on cache invalidation and requesting repaint.
 
 ```md
@@ -451,7 +451,7 @@ When the theme changes, the TUI calls `invalidate()` on all components to clear 
 
 ### Pattern 2: Component invalidate method clears cached render state
 
-**Found in**: `packages/coding-agent/docs/tui.md:358-361`  
+**Found in**: `packages/coding-agent/docs/tui.md:358-361`
 **Used for**: Component-level cache invalidation.
 
 ```ts
@@ -463,7 +463,7 @@ invalidate(): void {
 
 ### Pattern 3: Rebuild on invalidate
 
-**Found in**: `packages/coding-agent/docs/tui.md:528-531`  
+**Found in**: `packages/coding-agent/docs/tui.md:528-531`
 **Used for**: Components that bake themed content.
 
 ```ts
@@ -475,7 +475,7 @@ override invalidate(): void {
 
 ### Pattern 4: Request render from input handler
 
-**Found in**: `packages/coding-agent/docs/tui.md:632-635`  
+**Found in**: `packages/coding-agent/docs/tui.md:632-635`
 **Used for**: Custom component input handling.
 
 ```ts
@@ -488,7 +488,7 @@ return {
 
 ### Pattern 5: Footer data subscription requests render
 
-**Found in**: `packages/coding-agent/docs/tui.md:802-807`  
+**Found in**: `packages/coding-agent/docs/tui.md:802-807`
 **Used for**: Reactive footer updates.
 
 ```ts
@@ -505,7 +505,7 @@ ctx.ui.setFooter((tui, theme, footerData) => ({
 
 ### Pattern 6: Extension spinner requesting render
 
-**Found in**: `packages/coding-agent/examples/extensions/border-status-editor.ts:89-98`  
+**Found in**: `packages/coding-agent/examples/extensions/border-status-editor.ts:89-98`
 **Used for**: Timer-driven UI updates.
 
 ```ts
@@ -523,7 +523,7 @@ pi.on("agent_end", () => {
 
 ### Pattern 7: Event handler invalidates footer and usage meter
 
-**Found in**: `packages/coding-agent/src/modes/interactive/interactive-agent-events.ts:70-90`  
+**Found in**: `packages/coding-agent/src/modes/interactive/interactive-agent-events.ts:70-90`
 **Used for**: Session/model/context events updating UI.
 
 ```ts
@@ -564,7 +564,7 @@ case "context_window_changed":
 
 ### Pattern 1: Streaming JSONL session parser
 
-**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:35-78`  
+**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:35-78`
 **Used for**: Loading session entries from JSONL without reading entire file at once.
 
 ```ts
@@ -616,7 +616,7 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 
 ### Pattern 2: Tolerant per-line JSON parsing
 
-**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:26-33`  
+**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:26-33`
 **Used for**: Ignoring blank or malformed JSONL lines.
 
 ```ts
@@ -632,7 +632,7 @@ function parseSessionEntryLine(line: string): FileEntry | null {
 
 ### Pattern 3: Header-only session read
 
-**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:80-124`  
+**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:80-124`
 **Used for**: Reading session metadata cheaply for listing/resume filtering.
 
 ```ts
@@ -686,7 +686,7 @@ export function readSessionHeader(filePath: string): SessionHeader | null {
 
 ### Pattern 4: Session directory walking/filtering
 
-**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:141-163`  
+**Found in**: `packages/coding-agent/src/core/session-manager-storage.ts:141-163`
 **Used for**: Finding newest session matching cwd and internal-session filtering.
 
 ```ts
@@ -721,7 +721,7 @@ export function findMostRecentSession(sessionDir: string, cwd?: string, includeI
 
 ### Pattern 1: Usage helper factory
 
-**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:13-29`  
+**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:13-29`
 **Used for**: Creating `Usage` objects in tests.
 
 ```ts
@@ -745,7 +745,7 @@ function createUsage(totalTokens: number): Usage {
 
 ### Pattern 2: Assistant message helper with usage
 
-**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:30-44`  
+**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:30-44`
 **Used for**: Creating assistant messages with typed usage for session stats tests.
 
 ```ts
@@ -769,7 +769,7 @@ function createAssistantMessage(text: string, totalTokens: number, timestamp: nu
 
 ### Pattern 3: Context compaction stats helper
 
-**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:55-63`  
+**Found in**: `packages/coding-agent/test/agent-session-stats.test.ts:55-63`
 **Used for**: Constructing stats objects with token delta and reduction percentage.
 
 ```ts
@@ -787,7 +787,7 @@ function createContextCompactionStats(tokensBefore: number, tokensAfter: number)
 
 ### Pattern 4: Compaction mock calculating context tokens from usage
 
-**Found in**: `packages/coding-agent/test/agent-session-auto-compaction-queue-01.suite.ts:41-49`  
+**Found in**: `packages/coding-agent/test/agent-session-auto-compaction-queue-01.suite.ts:41-49`
 **Used for**: Mocking compaction token calculation.
 
 ```ts
@@ -803,7 +803,7 @@ vi.mock("../src/core/compaction/index.js", () => ({
 
 ### Pattern 5: Test helper walking backwards for latest usable assistant usage
 
-**Found in**: `packages/coding-agent/test/agent-session-auto-compaction-queue-01.suite.ts:57-73`  
+**Found in**: `packages/coding-agent/test/agent-session-auto-compaction-queue-01.suite.ts:57-73`
 **Used for**: Mocking `estimateContextTokens`.
 
 ```ts
@@ -829,7 +829,7 @@ estimateContextTokens: (
 
 ### Pattern 6: Inline usage object shape in tests
 
-**Found in**: `test/unit/chat-message-renderer.test.ts:20-27`  
+**Found in**: `test/unit/chat-message-renderer.test.ts:20-27`
 **Used for**: Minimal zero-cost usage object in Bun tests.
 
 ```ts
@@ -849,7 +849,7 @@ usage: {
 
 ### Pattern 1: Bun test imports with strict assert
 
-**Found in**: `test/unit/chat-message-renderer.test.ts:1-2`  
+**Found in**: `test/unit/chat-message-renderer.test.ts:1-2`
 **Used for**: Bun-native unit tests.
 
 ```ts
@@ -859,7 +859,7 @@ import assert from "node:assert/strict";
 
 ### Pattern 2: Bun test with `assert.equal` / `assert.deepEqual`
 
-**Found in**: `test/unit/chat-message-renderer.test.ts:41-48`  
+**Found in**: `test/unit/chat-message-renderer.test.ts:41-48`
 **Used for**: Structural assertions without Vitest `expect`.
 
 ```ts
@@ -874,7 +874,7 @@ assert.equal(toolEntry.result?.isError, false);
 
 ### Pattern 3: Bun test for live event controller
 
-**Found in**: `test/unit/chat-message-renderer.test.ts:50-86`  
+**Found in**: `test/unit/chat-message-renderer.test.ts:50-86`
 **Used for**: Stateful controller assertions.
 
 ```ts
@@ -897,7 +897,7 @@ test("live chat controller accumulates assistant deltas and tool results", () =>
 
 ### Pattern 4: Mixed testing style elsewhere: Vitest with `node:assert/strict`
 
-**Found in**: `packages/coding-agent/test/agent-session-copilot-catalog-refresh.test.ts:3-6`  
+**Found in**: `packages/coding-agent/test/agent-session-copilot-catalog-refresh.test.ts:3-6`
 **Used for**: Vitest test runner plus Node strict assert.
 
 ```ts
@@ -913,7 +913,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 1: Package CHANGELOG headings and sections
 
-**Found in**: `packages/coding-agent/CHANGELOG.md:561-565`  
+**Found in**: `packages/coding-agent/CHANGELOG.md:561-565`
 **Used for**: Versioned package changelog.
 
 ```md
@@ -924,7 +924,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 2: CHANGELOG bullet with issue reference
 
-**Found in**: `packages/coding-agent/CHANGELOG.md:993-996`  
+**Found in**: `packages/coding-agent/CHANGELOG.md:993-996`
 **Used for**: Feature notes with issue references.
 
 ```md
@@ -934,7 +934,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 3: CHANGELOG breaking changes section
 
-**Found in**: `packages/coding-agent/CHANGELOG.md:1681-1683`  
+**Found in**: `packages/coding-agent/CHANGELOG.md:1681-1683`
 **Used for**: Explicit breaking change grouping.
 
 ```md
@@ -943,7 +943,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 4: Docs site changelog MDX `Update` blocks
 
-**Found in**: `packages/coding-agent/docs/changelog.mdx:9-14`  
+**Found in**: `packages/coding-agent/docs/changelog.mdx:9-14`
 **Used for**: User-facing docs changelog.
 
 ```mdx
@@ -956,7 +956,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 5: Docs changelog update with tags
 
-**Found in**: `packages/coding-agent/docs/changelog.mdx:29-35`  
+**Found in**: `packages/coding-agent/docs/changelog.mdx:29-35`
 **Used for**: Tagged release notes.
 
 ```mdx
@@ -970,7 +970,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 6: Documentation source-file list convention
 
-**Found in**: `packages/coding-agent/docs/compaction.md:7-17`  
+**Found in**: `packages/coding-agent/docs/compaction.md:7-17`
 **Used for**: Docs pages linking source files.
 
 ```md
@@ -983,7 +983,7 @@ import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-work
 
 ### Pattern 7: Development docs testing commands
 
-**Found in**: `packages/coding-agent/docs/development.md:61-70`  
+**Found in**: `packages/coding-agent/docs/development.md:61-70`
 **Used for**: Developer test command documentation.
 
 ```md

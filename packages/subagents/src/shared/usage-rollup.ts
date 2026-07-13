@@ -88,16 +88,7 @@ export function usageFromResults(results: readonly SingleResult[]): AtomicUsage 
 }
 
 export function usageRollupFromResults(results: readonly SingleResult[], options: UsageRollupOptions = {}): RollupUsage {
-	let total = emptyAtomicUsage();
-	let complete = true;
-	const sessionFiles: string[] = [];
-	for (const result of results) {
-		const rollup = usageRollupFromResult(result, options);
-		total = addAtomicUsage(total, rollup.usage);
-		if (!rollup.complete) complete = false;
-		sessionFiles.push(...rollup.sessionFiles);
-	}
-	return { usage: total, complete, sessionFiles };
+	return aggregateUsageRollups(results, (result) => usageRollupFromResult(result, options));
 }
 
 export function usageFromModelAttempts(results: readonly { sessionFile?: string; usage?: Usage; modelAttempts?: readonly ModelAttempt[] }[]): AtomicUsage {
@@ -105,16 +96,41 @@ export function usageFromModelAttempts(results: readonly { sessionFile?: string;
 }
 
 export function usageRollupFromModelAttempts(results: readonly { sessionFile?: string; usage?: Usage; modelAttempts?: readonly ModelAttempt[] }[]): RollupUsage {
-	let total = emptyAtomicUsage();
+	return aggregateUsageRollups(results, usageRollupFromAttemptBackedResult);
+}
+
+function aggregateUsageRollups<T extends { sessionFile?: string }>(results: readonly T[], rollupFor: (result: T) => RollupUsage): RollupUsage {
+	const grouped = new Map<string, RollupUsage>();
+	const ungrouped: RollupUsage[] = [];
+	for (const result of results) {
+		const rollup = rollupFor(result);
+		if (!result.sessionFile) {
+			ungrouped.push(rollup);
+			continue;
+		}
+		const key = normalizedPathKey(result.sessionFile);
+		const previous = grouped.get(key);
+		if (!previous) {
+			grouped.set(key, rollup);
+			continue;
+		}
+		const usage = maxAtomicUsage(previous.usage, rollup.usage);
+		const sessionFiles = [...new Map([...previous.sessionFiles, ...rollup.sessionFiles].map((file) => [normalizedPathKey(file), file])).values()];
+		grouped.set(key, {
+			usage,
+			complete: previous.complete && rollup.complete && sameAtomicUsage(usage, previous.usage) && sameAtomicUsage(usage, rollup.usage),
+			sessionFiles,
+		});
+	}
+	let usage = emptyAtomicUsage();
 	let complete = true;
 	const sessionFiles: string[] = [];
-	for (const result of results) {
-		const rollup = usageRollupFromAttemptBackedResult(result);
-		total = addAtomicUsage(total, rollup.usage);
-		if (!rollup.complete) complete = false;
+	for (const rollup of [...grouped.values(), ...ungrouped]) {
+		usage = addAtomicUsage(usage, rollup.usage);
+		complete = complete && rollup.complete;
 		sessionFiles.push(...rollup.sessionFiles);
 	}
-	return { usage: total, complete, sessionFiles };
+	return { usage, complete, sessionFiles };
 }
 
 export function attachTransitiveUsage<T extends Details>(details: T, options: UsageRollupOptions = {}): T {
@@ -185,16 +201,16 @@ export function consumeAsyncRootSession(roots: Map<string, string> | undefined, 
 
 function usageRollupFromResult(result: SingleResult, options: UsageRollupOptions): RollupUsage {
 	const fileUsage = usageFromSessionTree(result.sessionFile);
+	const scalarUsage = scalarUsageToAtomic(result.usage);
 	if (options.live) {
-		const scalarUsage = scalarUsageToAtomic(result.usage);
 		return {
 			usage: fileUsage ? maxAtomicUsage(scalarUsage, fileUsage.usage) : scalarUsage,
 			complete: false,
 			sessionFiles: fileUsage?.sessionFiles ?? (result.sessionFile ? [result.sessionFile] : []),
 		};
 	}
-	if (fileUsage) return fileUsage;
-	return { usage: scalarUsageToAtomic(result.usage), complete: false, sessionFiles: result.sessionFile ? [result.sessionFile] : [] };
+	if (fileUsage) return usageRollupWithScalarFloor(fileUsage, scalarUsage);
+	return { usage: scalarUsage, complete: false, sessionFiles: result.sessionFile ? [result.sessionFile] : [] };
 }
 
 function maxAtomicUsage(left: AtomicUsage, right: AtomicUsage): AtomicUsage {
@@ -214,15 +230,29 @@ function maxAtomicUsage(left: AtomicUsage, right: AtomicUsage): AtomicUsage {
 	};
 }
 
+function usageRollupWithScalarFloor(fileUsage: RollupUsage, scalarUsage: AtomicUsage): RollupUsage {
+	const usage = maxAtomicUsage(fileUsage.usage, scalarUsage);
+	return { ...fileUsage, usage, complete: fileUsage.complete && sameAtomicUsage(usage, fileUsage.usage) };
+}
+
+function sameAtomicUsage(left: AtomicUsage, right: AtomicUsage): boolean {
+	return left.input === right.input && left.output === right.output &&
+		left.cacheRead === right.cacheRead && left.cacheWrite === right.cacheWrite &&
+		left.totalTokens === right.totalTokens && left.cost.input === right.cost.input &&
+		left.cost.output === right.cost.output && left.cost.cacheRead === right.cost.cacheRead &&
+		left.cost.cacheWrite === right.cost.cacheWrite && left.cost.total === right.cost.total;
+}
+
 function usageRollupFromAttemptBackedResult(result: { sessionFile?: string; usage?: Usage; modelAttempts?: readonly ModelAttempt[] }): RollupUsage {
 	const fileUsage = usageFromSessionTree(result.sessionFile);
-	if (fileUsage) return fileUsage;
-	if (result.usage) return { usage: scalarUsageToAtomic(result.usage), complete: false, sessionFiles: result.sessionFile ? [result.sessionFile] : [] };
-	let total = emptyAtomicUsage();
-	for (const attempt of result.modelAttempts ?? []) {
-		if (attempt.usage) total = addAtomicUsage(total, scalarUsageToAtomic(attempt.usage));
+	let scalarUsage = result.usage ? scalarUsageToAtomic(result.usage) : emptyAtomicUsage();
+	if (!result.usage) {
+		for (const attempt of result.modelAttempts ?? []) {
+			if (attempt.usage) scalarUsage = addAtomicUsage(scalarUsage, scalarUsageToAtomic(attempt.usage));
+		}
 	}
-	return { usage: total, complete: false, sessionFiles: result.sessionFile ? [result.sessionFile] : [] };
+	if (fileUsage) return usageRollupWithScalarFloor(fileUsage, scalarUsage);
+	return { usage: scalarUsage, complete: false, sessionFiles: result.sessionFile ? [result.sessionFile] : [] };
 }
 
 function usageFromSessionTree(sessionFile: string | undefined): RollupUsage | undefined {

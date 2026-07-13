@@ -4,7 +4,7 @@ I’m unable to write `/workspaces/atomic/research/docs/2026-07-10-transitive-co
 
 ### Pattern 1: `footer-width.test.ts` fake `AgentSession` stub
 
-**Found in**: `packages/coding-agent/test/footer-width.test.ts:18-70`  
+**Found in**: `packages/coding-agent/test/footer-width.test.ts:18-70`
 **Used for**: Lightweight footer/usage meter tests without constructing a real `AgentSession`.
 
 ```ts
@@ -101,7 +101,7 @@ it("shows the latest cache hit rate when cache usage is present", () => {
 
 ### Pattern 2: Transitive usage aggregator tests for reconcile preserving unsettled/live reports
 
-**Found in**: `test/unit/transitive-usage.test.ts:29-123`  
+**Found in**: `test/unit/transitive-usage.test.ts:29-123`
 **Used for**: Unit-testing `TransitiveUsageAggregator` directly with synthetic usage reports.
 
 ```ts
@@ -160,7 +160,7 @@ Existing test preserves a `settled: true` live report during incomplete reconcil
 
 ### Pattern 3: Session-file aliasing during incomplete reconciliation
 
-**Found in**: `test/unit/transitive-usage.test.ts:72-96`  
+**Found in**: `test/unit/transitive-usage.test.ts:72-96`
 **Used for**: Avoiding double-counting when a live run-id report later reconciles to a durable session-id report.
 
 ```ts
@@ -235,7 +235,7 @@ function sharesSessionFileAlias(left: DescendantUsageContribution, right: Descen
 
 ### Pattern 4: Parallel/sessionFiles aliasing coverage
 
-**Found in**: `test/unit/transitive-usage.test.ts:98-122`  
+**Found in**: `test/unit/transitive-usage.test.ts:98-122`
 **Used for**: Testing a rollup report with multiple `sessionFiles` aliases against a later single durable session report.
 
 ```ts
@@ -277,7 +277,7 @@ test("incomplete reconciliation aliases parallel rollups by sessionFiles", () =>
 
 ### Pattern 5: Nested workflow/stage rollup double-counting collection tests
 
-**Found in**: `test/unit/transitive-usage.test.ts:125-170`  
+**Found in**: `test/unit/transitive-usage.test.ts:125-170`
 **Used for**: Testing durable descendant usage discovery from JSONL session files and `workflow.stage.end` custom entries.
 
 ```ts
@@ -410,7 +410,7 @@ function customStageEnd(sessionId: string, entryUsage: Usage, sessionFile: strin
 
 ### Pattern 6: Workflow-stage completeness persistence / settled forwarding
 
-**Found in**: `test/unit/transitive-usage.test.ts:246-266`  
+**Found in**: `test/unit/transitive-usage.test.ts:246-266`
 **Used for**: Testing workflow usage rollup port emits the root session id, stage session id, and `settled` flag.
 
 ```ts
@@ -487,7 +487,7 @@ const emitStageRollup = (): void => {
 
 ### Pattern 7: Subagent async placeholder / unsettled zero-usage report
 
-**Found in**: `test/unit/transitive-usage.test.ts:237-243`  
+**Found in**: `test/unit/transitive-usage.test.ts:237-243`
 **Used for**: Testing async start emits a placeholder descendant report before completion.
 
 ```ts
@@ -535,7 +535,7 @@ const handleStarted = (payload: unknown) => {
 
 ### Pattern 8: Subagent usage rollup preserving incomplete/fallback state
 
-**Found in**: `test/unit/transitive-usage.test.ts:208-235`  
+**Found in**: `test/unit/transitive-usage.test.ts:208-235`
 **Used for**: Testing fallback usage is marked incomplete and emitted unsettled.
 
 ```ts
@@ -631,7 +631,7 @@ function usageRollupFromAttemptBackedResult(result: { sessionFile?: string; usag
 
 ### Pattern 9: Named workflow `usageRollup` forwarding
 
-**Found in**: `packages/workflows/src/engine/run.ts:222-245`  
+**Found in**: `packages/workflows/src/engine/run.ts:222-245`
 **Used for**: Passing `usageRollup` from top-level workflow run options into both primary and named/nested workflow execution paths.
 
 ```ts
@@ -709,7 +709,7 @@ usageRollup: usageRollupPort,
 
 ### Pattern 10: Footer transitive cost rendering tests with fake session
 
-**Found in**: `test/unit/transitive-usage.test.ts:268-319`  
+**Found in**: `test/unit/transitive-usage.test.ts:268-319`
 **Used for**: Testing footer usage line behavior with `getTransitiveUsage()` supplied by a fake session object.
 
 ```ts

@@ -355,7 +355,7 @@ describe("subagent transitive usage rollup", () => {
 			writeSession(rootPath, "subagent-root", [inherited, assistantEntry(usage(10, 1))], parentPath);
 			const rollup = usageRollupFromResults([{ agent: "worker", task: "task", exitCode: 0, usage: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0.1, turns: 1 }, sessionFile: rootPath }]);
 			assert.equal(rollup.complete, false);
-			assert.equal(rollup.usage.cost.total, 0);
+			assert.equal(rollup.usage.cost.total, 0.1);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

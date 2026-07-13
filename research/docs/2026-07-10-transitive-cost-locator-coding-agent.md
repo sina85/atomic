@@ -529,4 +529,3 @@ Directories and files found:
   - SDK, JSON events, extensions, custom providers, compaction, sessions, session format, changelog docs.
 - `packages/coding-agent/README.md`
 - `packages/coding-agent/CHANGELOG.md`
-

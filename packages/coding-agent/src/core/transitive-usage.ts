@@ -1,8 +1,10 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, extname, join, posix, win32 } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { FileEntry, SessionInfo } from "./session-manager-types.ts";
 import { loadEntriesFromFileWithParseStatus } from "./session-manager-storage.ts";
+import { coversAllSessionFileAliases, mergeStringArrays, normalizedPathKey, pathApi, sessionFileAliases, sharesSessionFileAlias } from "./transitive-usage-aliases.ts";
+import { coalesceCompleteReconciliationReports } from "./transitive-usage-reconciliation.ts";
 
 export const USAGE_DESCENDANT_ROLLUP_CHANNEL = "usage:descendant-rollup";
 
@@ -99,10 +101,6 @@ function maxUsage(left: Usage, right: Usage): Usage {
 	};
 }
 
-function mergeStringArrays(left: readonly string[] | undefined, right: readonly string[] | undefined): string[] | undefined {
-	const merged = [...(left ?? []), ...(right ?? [])];
-	return merged.length === 0 ? undefined : [...new Set(merged)];
-}
 
 export function totalTokens(usage: Usage): number {
 	return finiteNumber(usage.totalTokens) || finiteNumber(usage.input) + finiteNumber(usage.output) + finiteNumber(usage.cacheRead) + finiteNumber(usage.cacheWrite);
@@ -147,25 +145,6 @@ function sameStringArray(left: readonly string[] | undefined, right: readonly st
 	return left.every((value, index) => value === right[index]);
 }
 
-function sessionFileAliases(report: DescendantUsageReport): Set<string> {
-	const aliases = [report.sessionFile, ...(report.sessionFiles ?? [])];
-	return new Set(aliases.filter((value): value is string => typeof value === "string" && value.length > 0).map(normalizedPathKey));
-}
-
-function sharesSessionFileAlias(left: DescendantUsageContribution, right: DescendantUsageReport): boolean {
-	const aliases = sessionFileAliases(right);
-	if (aliases.size === 0) return false;
-	for (const alias of sessionFileAliases(left)) {
-		if (aliases.has(alias)) return true;
-	}
-	return false;
-}
-
-function coversAllSessionFileAliases(covering: DescendantUsageReport, covered: DescendantUsageReport): boolean {
-	const coveringAliases = sessionFileAliases(covering);
-	const coveredAliases = sessionFileAliases(covered);
-	return coveredAliases.size > 0 && [...coveredAliases].every((alias) => coveringAliases.has(alias));
-}
 
 export class TransitiveUsageAggregator {
 	private readonly descendants = new Map<string, DescendantUsageContribution>();
@@ -213,15 +192,35 @@ export class TransitiveUsageAggregator {
 	attributeDescendantUsage(report: DescendantUsageReport): boolean {
 		if (report.rootSessionId !== this.rootSessionId) return false;
 		const previous = this.descendants.get(report.childRunId);
-		if (!report.settled && previous?.settled) return false;
-		const aliasKeysToDelete: string[] = [];
-		for (const [key, contribution] of this.descendants) {
-			if (key === report.childRunId || !sharesSessionFileAlias(contribution, report)) continue;
-			aliasKeysToDelete.push(key);
+		const matching = [...this.descendants].filter(([key, contribution]) => key === report.childRunId || sharesSessionFileAlias(contribution, report));
+		let knownUsage = emptyUsage();
+		let knownSettled = matching.length > 0;
+		const knownAliases = new Set<string>();
+		const knownSessionFiles: string[] = [];
+		for (const [, contribution] of matching) {
+			knownUsage = addUsage(knownUsage, contribution.usage);
+			knownSettled = knownSettled && contribution.settled;
+			for (const alias of sessionFileAliases(contribution)) knownAliases.add(alias);
+			knownSessionFiles.push(...(contribution.sessionFile ? [contribution.sessionFile] : []), ...(contribution.sessionFiles ?? []));
 		}
-		const nextReport = previous && !report.settled
-			? { ...report, usage: maxUsage(previous.usage, report.usage), sessionFiles: mergeStringArrays(previous.sessionFiles, report.sessionFiles) }
-			: report;
+		const incomingAliases = sessionFileAliases(report);
+		const mergedUsage = matching.length === 0 ? report.usage : maxUsage(knownUsage, report.usage);
+		const expandsUsage = matching.length > 0 && !sameUsage(mergedUsage, knownUsage);
+		const expandsAliases = matching.length > 0 && [...incomingAliases].some((alias) => !knownAliases.has(alias));
+		const coversKnownUsage = matching.length === 0 || sameUsage(mergedUsage, report.usage);
+		const coversKnownAliases = [...knownAliases].every((alias) => incomingAliases.has(alias));
+		const sessionFile = report.sessionFile ?? matching.map(([, contribution]) => contribution.sessionFile).find((value) => value !== undefined);
+		const mergedSessionFiles = mergeStringArrays(report.sessionFiles, knownSessionFiles)?.filter((value) => value !== sessionFile);
+		const nextReport = {
+			...report,
+			usage: mergedUsage,
+			settled: matching.length === 0
+				? report.settled
+				: (knownSettled && !expandsUsage && !expandsAliases) || (report.settled && coversKnownUsage && coversKnownAliases),
+			sessionFile,
+			sessionFiles: mergedSessionFiles && mergedSessionFiles.length > 0 ? mergedSessionFiles : undefined,
+		};
+		const aliasKeysToDelete = matching.map(([key]) => key).filter((key) => key !== report.childRunId);
 		const contributionChanged = !sameContribution(previous, nextReport);
 		if (aliasKeysToDelete.length === 0 && !contributionChanged) return false;
 		const nextRevision = ++this.revision;
@@ -244,7 +243,13 @@ export class TransitiveUsageAggregator {
 		}
 		let metadataChanged = this.walkComplete !== complete;
 		this.walkComplete = complete;
-		const nextKeys = new Set(reports.map((report) => report.childRunId));
+		const nextReports = complete
+			? coalesceCompleteReconciliationReports(reports, [...this.descendants.values()], addUsage)
+			: reports;
+		const nextKeys = new Set(nextReports.map((report) => report.childRunId));
+		for (const [key, contribution] of this.descendants) {
+			if (nextReports.some((report) => sharesSessionFileAlias(contribution, report))) nextKeys.add(key);
+		}
 		if (complete) {
 			for (const [key, contribution] of this.descendants) {
 				if (nextKeys.has(key) || !contribution.settled) continue;
@@ -256,7 +261,7 @@ export class TransitiveUsageAggregator {
 				metadataChanged = true;
 			}
 		}
-		for (const report of reports) {
+		for (const report of nextReports) {
 			if (this.isStaleWalkReport(report, options.startedAtRevision)) continue;
 			if (!complete && this.wouldDiscardKnownAliasCoverage(report)) continue;
 			this.attributeDescendantUsage(report);
@@ -440,15 +445,6 @@ function isCovered(path: string, coveredFiles: Set<string>, coveredSubtrees: rea
 	return coveredSubtrees.some((root) => isSameOrDescendant(root, candidate));
 }
 
-function pathApi(value: string): typeof posix | typeof win32 {
-	return /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") ? win32 : posix;
-}
-
-function normalizedPathKey(path: string): string {
-	const api = pathApi(path);
-	const normalized = api.normalize(path);
-	return api === win32 ? normalized.toLowerCase() : normalized;
-}
 
 function sessionSubtreeRoot(sessionFile: string): string {
 	const api = pathApi(sessionFile);

@@ -10,7 +10,7 @@ Below are the findings intended for that file.
 
 ### Pattern 1: Workflow task options carry `context: "fork"` and `forkFromSessionFile`
 
-**Found in**: `test/unit/builtin-workflows-goal-02.test.ts:224-298`  
+**Found in**: `test/unit/builtin-workflows-goal-02.test.ts:224-298`
 **Used for**: Verifying later worker turns fork from prior worker sessions while reviewer sessions do not inherit worker history.
 
 ```ts
@@ -56,7 +56,7 @@ test("forks later worker turns from the prior worker session without forking rev
 
 ### Pattern 2: Repeated design workflow stages fork only matching prior stage sessions
 
-**Found in**: `test/unit/builtin-workflows-open_claude_design-02.test.ts:58-85`  
+**Found in**: `test/unit/builtin-workflows-open_claude_design-02.test.ts:58-85`
 **Used for**: Verifying generate and feedback loops fork from their own previous session baselines.
 
 ```ts
@@ -94,7 +94,7 @@ test("forks generate and user-feedback loops from their prior sessions", async (
 
 ### Pattern 3: Runtime stage session options convert fork metadata into `SessionManager.forkFrom`
 
-**Found in**: `packages/workflows/src/runs/foreground/stage-runner-options.ts:19-35`  
+**Found in**: `packages/workflows/src/runs/foreground/stage-runner-options.ts:19-35`
 **Used for**: Applying fork or resume semantics when creating stage agent sessions.
 
 ```ts
@@ -129,7 +129,7 @@ export function buildStageSessionOptions(input: BuildStageSessionOptionsInput): 
 
 ### Pattern 4: Tool helper injects current session file as fork baseline for direct workflow requests
 
-**Found in**: `packages/workflows/src/extension/workflow-tool-helpers.ts:25-50`  
+**Found in**: `packages/workflows/src/extension/workflow-tool-helpers.ts:25-50`
 **Used for**: Supplying a parent transcript baseline when user requests forked context without an explicit file.
 
 ```ts
@@ -172,7 +172,7 @@ export function withForkFromCurrentSession(args: WorkflowToolArgs, ctx: Workflow
 
 ### Pattern 1: Descendant usage walk filters sessions by root path
 
-**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:186-236`  
+**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:186-236`
 **Used for**: Walking descendant sessions for transitive usage rollups.
 
 ```ts
@@ -240,7 +240,7 @@ export async function collectDescendantUsageReports(input: {
 
 ### Pattern 2: Test creates a root session plus child session directory
 
-**Found in**: `test/unit/transitive-usage.test.ts:124-145`  
+**Found in**: `test/unit/transitive-usage.test.ts:124-145`
 **Used for**: Verifying subagent roots and workflow stage-end entries are discovered from the session tree.
 
 ```ts
@@ -279,7 +279,7 @@ describe("collectDescendantUsageReports", () => {
 
 ### Pattern 3: Workflow stage reports are extracted only from `workflow.stage.end` entries
 
-**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:239-257`  
+**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:239-257`
 **Used for**: Deriving workflow-stage usage from persisted custom entries.
 
 ```ts
@@ -319,7 +319,7 @@ function workflowStageReportsFromEntries(entries: readonly FileEntry[], rootSess
 
 ### Pattern 1: Aggregator marks totals incomplete when initial reconciliation has not completed
 
-**Found in**: `test/unit/transitive-usage.test.ts:55-60`  
+**Found in**: `test/unit/transitive-usage.test.ts:55-60`
 **Used for**: Representing pending or incomplete transitive usage walks.
 
 ```ts
@@ -339,7 +339,7 @@ test("pending initial reconciliation marks totals incomplete", () => {
 
 ### Pattern 2: Incomplete reconciliation preserves live reports not found durably
 
-**Found in**: `test/unit/transitive-usage.test.ts:62-69`  
+**Found in**: `test/unit/transitive-usage.test.ts:62-69`
 **Used for**: Maintaining lower-bound usage when durable walk is incomplete.
 
 ```ts
@@ -361,7 +361,7 @@ test("incomplete reconciliation preserves live reports not found durably", () =>
 
 ### Pattern 3: Incomplete reconciliation aliases live run-id reports by session file
 
-**Found in**: `test/unit/transitive-usage.test.ts:71-95`  
+**Found in**: `test/unit/transitive-usage.test.ts:71-95`
 **Used for**: Avoiding double-counting when live report IDs differ from durable session IDs.
 
 ```ts
@@ -401,7 +401,7 @@ test("incomplete reconciliation aliases live run-id reports by session file", ()
 
 ### Pattern 4: Parallel rollups alias by `sessionFiles`
 
-**Found in**: `test/unit/transitive-usage.test.ts:97-121`  
+**Found in**: `test/unit/transitive-usage.test.ts:97-121`
 **Used for**: Replacing a parallel aggregate with file-derived partial reports when reconciliation is incomplete.
 
 ```ts
@@ -441,7 +441,7 @@ test("incomplete reconciliation aliases parallel rollups by sessionFiles", () =>
 
 ### Pattern 5: Footer renders incomplete totals with a lower-bound `~` prefix
 
-**Found in**: `test/unit/transitive-usage.test.ts:166-190`  
+**Found in**: `test/unit/transitive-usage.test.ts:166-190`
 **Used for**: Displaying incomplete transitive cost as a lower-bound while keeping context self-only.
 
 ```ts
@@ -480,7 +480,7 @@ test("incomplete totals render a lower-bound ~ prefix and keep context percent s
 
 ### Pattern 6: Zero-cost incomplete totals still render lower-bound dollars
 
-**Found in**: `test/unit/transitive-usage.test.ts:192-202`  
+**Found in**: `test/unit/transitive-usage.test.ts:192-202`
 **Used for**: Ensuring lower-bound marker appears even when total cost is zero.
 
 ```ts
@@ -505,7 +505,7 @@ test("incomplete zero-cost totals render lower-bound dollars for non-subscriptio
 
 ### Pattern 7: Aggregator implementation computes `complete` from walk state plus unsettled contributions
 
-**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:132-141`  
+**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:132-141`
 **Used for**: Combining self and descendant usage while reflecting unsettled or incomplete rollups.
 
 ```ts
@@ -535,7 +535,7 @@ getTransitiveUsage(): TransitiveUsage {
 
 ### Pattern 1: Workflow lifecycle notification emits one completion notice
 
-**Found in**: `test/unit/workflow-lifecycle-notifications-01.test.ts:105-108`  
+**Found in**: `test/unit/workflow-lifecycle-notifications-01.test.ts:105-108`
 **Used for**: Verifying workflow completion notification behavior.
 
 ```ts
@@ -553,7 +553,7 @@ describe("installWorkflowLifecycleNotifications", () => {
 
 ### Pattern 2: Async notification suppression does not suppress later unrelated completion
 
-**Found in**: `test/unit/workflow-lifecycle-notifications-02.test.ts:116-143`  
+**Found in**: `test/unit/workflow-lifecycle-notifications-02.test.ts:116-143`
 **Used for**: Ensuring async suppression is scoped to the async run.
 
 ```ts
@@ -579,7 +579,7 @@ assert.deepEqual(sent.map((message) => message.details?.runId), ["run-after-asyn
 
 ### Pattern 3: Stage-end persistence includes session, usage, replay, and child workflow metadata
 
-**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:190-218`  
+**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:190-218`
 **Used for**: Persisting completion events with metadata needed by restore and rollup paths.
 
 ```ts
@@ -624,7 +624,7 @@ export function appendStageEnd(
 
 ### Pattern 4: Stage-start persistence includes parent IDs and replay metadata
 
-**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:163-176`  
+**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:163-176`
 **Used for**: Persisting start events for later restore and graph reconstruction.
 
 ```ts
@@ -658,7 +658,7 @@ export function appendStageStart(api: PersistenceAPI, payload: StageStartPayload
 
 ### Pattern 1: Scanning in-flight runs from persisted session entries
 
-**Found in**: `test/unit/persistence-restore-01.test.ts:21-43`  
+**Found in**: `test/unit/persistence-restore-01.test.ts:21-43`
 **Used for**: Finding runs that have a `workflow.run.start` entry but no matching `workflow.run.end`.
 
 ```ts
@@ -697,7 +697,7 @@ describe("scanInFlightRuns", () => {
 
 ### Pattern 2: Restore collects stage IDs from `workflow.stage.start`
 
-**Found in**: `test/unit/persistence-restore-01.test.ts:56-64`  
+**Found in**: `test/unit/persistence-restore-01.test.ts:56-64`
 **Used for**: Reconstructing stage membership during workflow restore.
 
 ```ts
@@ -720,7 +720,7 @@ test("collects stageIds from stage.start entries for in-flight run", () => {
 
 ### Pattern 3: Restore de-duplicates duplicate stage starts
 
-**Found in**: `test/unit/persistence-restore-01.test.ts:66-74`  
+**Found in**: `test/unit/persistence-restore-01.test.ts:66-74`
 **Used for**: Handling repeated persisted lifecycle entries.
 
 ```ts
@@ -742,7 +742,7 @@ test("does not duplicate stageIds from duplicate stage.start entries", () => {
 
 ### Pattern 4: Restore preserves run inputs
 
-**Found in**: `test/unit/persistence-restore-01.test.ts:76-82`  
+**Found in**: `test/unit/persistence-restore-01.test.ts:76-82`
 **Used for**: Reconstructing workflow inputs from persisted run-start payload.
 
 ```ts
@@ -762,7 +762,7 @@ test("preserves inputs from run.start payload", () => {
 
 ### Pattern 5: Restore applies blocked status only to descendants of failed stage
 
-**Found in**: `test/unit/persistence-restore-03.test.ts:21-85`  
+**Found in**: `test/unit/persistence-restore-03.test.ts:21-85`
 **Used for**: Session tree/graph restoration from persisted blocked-run metadata.
 
 ```ts
@@ -841,7 +841,7 @@ test("restores workflow.run.blocked only onto descendants of the failed stage", 
 
 ### Pattern 1: DBOS mock SDK stores checkpoint envelopes and supports hydration
 
-**Found in**: `test/unit/durable-dbos-backend.test.ts:23-68`  
+**Found in**: `test/unit/durable-dbos-backend.test.ts:23-68`
 **Used for**: Testing DBOS-backed durable behavior without real Postgres.
 
 ```ts
@@ -902,7 +902,7 @@ function createMockSdk(): DbosSdkHandle & { state: MockDbosState } {
 
 ### Pattern 2: `recordCheckpoint` stores a typed DBOS envelope
 
-**Found in**: `test/unit/durable-dbos-backend.test.ts:114-129`  
+**Found in**: `test/unit/durable-dbos-backend.test.ts:114-129`
 **Used for**: Verifying DBOS checkpoint metadata is not reduced to raw output.
 
 ```ts
@@ -934,7 +934,7 @@ test("recordCheckpoint stores envelope in DBOS", async () => {
 
 ### Pattern 3: Stage checkpoint envelope round-trips timing, session, model, and replay metadata
 
-**Found in**: `test/unit/durable-dbos-backend.test.ts:131-156`  
+**Found in**: `test/unit/durable-dbos-backend.test.ts:131-156`
 **Used for**: Ensuring stage metadata survives encode/decode.
 
 ```ts
@@ -976,7 +976,7 @@ test("stage checkpoint envelope round-trips hydration metadata", () => {
 
 ### Pattern 4: Durable cache replay hydrates persisted stage timing, result, session, and model metadata into store
 
-**Found in**: `test/unit/durable-stage-frontier-fixes.test.ts:160-184`  
+**Found in**: `test/unit/durable-stage-frontier-fixes.test.ts:160-184`
 **Used for**: Verifying checkpoint metadata reaches workflow graph/store snapshots.
 
 ```ts
@@ -1016,7 +1016,7 @@ test("cached replay hydrates persisted stage timing, result, session, and model 
 
 ### Pattern 5: DBOS hydration ignores malformed metadata and falls back to valid metadata
 
-**Found in**: `test/unit/durable-dbos-metadata-validation.test.ts:38-66`  
+**Found in**: `test/unit/durable-dbos-metadata-validation.test.ts:38-66`
 **Used for**: Validation behavior around durable metadata during hydration.
 
 ```ts
@@ -1061,7 +1061,7 @@ test("DBOS hydration ignores malformed Atomic metadata and keeps valid metadata 
 
 ### Pattern 6: DBOS envelope schema and encode/decode functions
 
-**Found in**: `packages/workflows/src/durable/dbos-envelope.ts:1-14`, `packages/workflows/src/durable/dbos-envelope.ts:27-40`, `packages/workflows/src/durable/dbos-envelope.ts:64-71`, `packages/workflows/src/durable/dbos-envelope.ts:104-117`  
+**Found in**: `packages/workflows/src/durable/dbos-envelope.ts:1-14`, `packages/workflows/src/durable/dbos-envelope.ts:27-40`, `packages/workflows/src/durable/dbos-envelope.ts:64-71`, `packages/workflows/src/durable/dbos-envelope.ts:104-117`
 **Used for**: Persisting full durable checkpoint metadata as DBOS step output.
 
 ```ts
@@ -1121,7 +1121,7 @@ export function encodeCheckpoint(cp: DurableCheckpoint): DbosCheckpointEnvelope 
 
 ### Pattern 1: Workflow usage rollup port obtains root session ID from extension API session manager
 
-**Found in**: `packages/workflows/src/extension/workflow-ports.ts:44-62`  
+**Found in**: `packages/workflows/src/extension/workflow-ports.ts:44-62`
 **Used for**: Emitting workflow-stage descendant usage rollups with the root session ID.
 
 ```ts
@@ -1157,7 +1157,7 @@ export function makeUsageRollupPort(pi: ExtensionAPI): WorkflowUsageRollupPort |
 
 ### Pattern 2: Agent session transitive usage walk passes root session ID into collector
 
-**Found in**: `packages/coding-agent/src/core/agent-session-transitive-usage.ts:12-39`  
+**Found in**: `packages/coding-agent/src/core/agent-session-transitive-usage.ts:12-39`
 **Used for**: Linking a session tree walk to the current root session.
 
 ```ts
@@ -1203,7 +1203,7 @@ return this.getTransitiveUsage();
 
 ### Pattern 3: Aggregator rejects reports for the wrong root
 
-**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:144-145`  
+**Found in**: `packages/coding-agent/src/core/transitive-usage.ts:144-145`
 **Used for**: Ensuring descendant rollups are attributed only to the matching root session.
 
 ```ts
@@ -1220,7 +1220,7 @@ attributeDescendantUsage(report: DescendantUsageReport): boolean {
 
 ### Pattern 4: Wrong-root behavior is tested
 
-**Found in**: `test/unit/transitive-usage.test.ts:38-42`  
+**Found in**: `test/unit/transitive-usage.test.ts:38-42`
 **Used for**: Verifying root session ID gates descendant usage rollups.
 
 ```ts
@@ -1244,7 +1244,7 @@ test("wrong-root reports are rejected", () => {
 
 ### Pattern 1: Stage prompt metadata propagates run ID, stage ID, and stage name
 
-**Found in**: `test/unit/stage-runner-prompt-metadata.test.ts:21-68`  
+**Found in**: `test/unit/stage-runner-prompt-metadata.test.ts:21-68`
 **Used for**: Testing metadata passed from stage context to prompt adapters.
 
 ```ts
@@ -1307,7 +1307,7 @@ describe("createStageContext — prompt metadata propagation", () => {
 
 ### Pattern 2: Full prompt metadata object includes signal, stage options, and execution mode
 
-**Found in**: `test/unit/stage-runner-prompt-metadata.test.ts:86-110`  
+**Found in**: `test/unit/stage-runner-prompt-metadata.test.ts:86-110`
 **Used for**: Ensuring prompt metadata object has the expected complete shape.
 
 ```ts
@@ -1347,7 +1347,7 @@ test("prompt adapter receives full meta object in one call", async () => {
 
 ### Pattern 3: Stage-end persistence writes session id, session file, and usage
 
-**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:211-213`  
+**Found in**: `packages/workflows/src/shared/persistence-session-entries.ts:211-213`
 **Used for**: Persisting stage session metadata for restore and rollup paths.
 
 ```ts
@@ -1365,7 +1365,7 @@ test("prompt adapter receives full meta object in one call", async () => {
 
 ### Pattern 4: Durable cached replay restores session id and session file into stage snapshot
 
-**Found in**: `test/unit/durable-stage-frontier-fixes.test.ts:164-180`  
+**Found in**: `test/unit/durable-stage-frontier-fixes.test.ts:164-180`
 **Used for**: Verifying stage session metadata survives durable replay.
 
 ```ts

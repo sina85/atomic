@@ -1,6 +1,6 @@
 /** Durable `ctx.stage` / `ctx.task` replay and checkpoint helpers. */
 
-import type { StageContext, StageOptions, WorkflowChildResult, WorkflowOutputValues, WorkflowTaskOptions, WorkflowTaskResult } from "../shared/types.js";
+import type { StageContext, StageOptions, WorkflowChildResult, WorkflowOutputValues, WorkflowTaskOptions, WorkflowTaskResult, WorkflowUsageRollupPort } from "../shared/types.js";
 import type { StageSnapshot } from "../shared/store-types.js";
 import type { WorkflowSerializableValue } from "../shared/types.js";
 import type { DurableWorkflowBackend } from "./backend.js";
@@ -389,6 +389,7 @@ export function recordCachedStageWithTracker(
   checkpoint: DurableCompletedStageCheckpoint,
   completedStageReplayKeys: Map<string, string>,
   stageFailFastScope?: ParallelFailFastScope,
+  usageRollup?: WorkflowUsageRollupPort,
 ): void {
   const stageId = cachedStageId(runId, replayKey);
   let parentIds = tracker.onSpawn(stageId, name);
@@ -398,6 +399,14 @@ export function recordCachedStageWithTracker(
     parentIds = [...scopeParentIds];
   }
   recordCachedStageIntoStore(store, runId, name, replayKey, checkpoint.output, completedStageReplayKeys, parentIds, checkpoint);
+  if (checkpoint.usage && checkpoint.sessionId) {
+    usageRollup?.emitStageRollup(stageId, checkpoint.usage, {
+      label: name,
+      sessionId: checkpoint.sessionId,
+      sessionFile: checkpoint.sessionFile,
+      settled: checkpoint.usageComplete !== false,
+    });
+  }
   tracker.onSettle(stageId);
 }
 function isWorkflowTaskResult(value: WorkflowSerializableValue): value is WorkflowTaskResult {
