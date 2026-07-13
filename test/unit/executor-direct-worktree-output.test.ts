@@ -6,6 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { WorkflowArtifact, WorkflowDetails } from "../../packages/workflows/src/shared/types.js";
+import { writeDirectOutput } from "../../packages/workflows/src/runs/foreground/executor-direct-output.js";
 import { runGitChecked } from "../../packages/workflows/src/runs/shared/worktree-git.js";
 import { createStore, mockSession, runChain, runParallel, runTask } from "./executor-shared.js";
 
@@ -53,6 +54,52 @@ function assertDurableOutputs(details: WorkflowDetails, expected: readonly strin
 }
 
 const promptAdapter = { prompt: async (text: string) => `saved:${text}` };
+
+test("temporary relative output rejects a linked trusted artifact root", async () => {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "atomic-trusted-output-root-")));
+  const external = join(root, "external");
+  const trustedRoot = join(root, "trusted-root");
+  const externalOutput = join(external, "run", "single", "0", "result.txt");
+  mkdirSync(external);
+  symlinkSync(external, trustedRoot, process.platform === "win32" ? "junction" : "dir");
+  try {
+    await assert.rejects(
+      writeDirectOutput(
+        { output: "result.txt" },
+        { name: "writer", stageName: "writer", text: "payload" },
+        root,
+        { trustedRoot, baseDir: join(trustedRoot, "run", "single", "0") },
+      ),
+      /runner artifact root .* must be a real directory, not a symlink or junction/,
+    );
+    assert.equal(existsSync(externalOutput), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("temporary relative output permits a real trusted root beneath a symlinked parent", async () => {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "atomic-trusted-output-parent-")));
+  const physicalParent = join(root, "physical-parent");
+  const parentAlias = join(root, "parent-alias");
+  const trustedRoot = join(parentAlias, "trusted-root");
+  const baseDir = join(trustedRoot, "run", "single", "0");
+  const physicalOutput = join(physicalParent, "trusted-root", "run", "single", "0", "result.txt");
+  mkdirSync(physicalParent);
+  symlinkSync(physicalParent, parentAlias, process.platform === "win32" ? "junction" : "dir");
+  try {
+    const persisted = await writeDirectOutput(
+      { output: "result.txt" },
+      { name: "writer", stageName: "writer", text: "payload" },
+      root,
+      { trustedRoot, baseDir },
+    );
+    assert.equal(persisted.artifact?.path, join(baseDir, "result.txt"));
+    assert.equal(readFileSync(physicalOutput, "utf8"), "payload");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("temporary direct relative file-only output survives worktree cleanup", async () => {
   const fixture = createRepository();
