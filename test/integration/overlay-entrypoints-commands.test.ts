@@ -1,5 +1,8 @@
 import { beforeEach, afterEach, describe, test } from "bun:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { InMemoryDurableBackend } from "../../packages/workflows/src/durable/backend.js";
 import { setDurableBackend } from "../../packages/workflows/src/durable/factory.js";
 import {
@@ -30,6 +33,21 @@ import {
 } from "./overlay-entrypoints-helpers.js";
 void [buildGraphOverlayAdapter, buildInteractiveHostCustomUi, buildMockPi, buildMockUi, buildOverlayHandle, buildPrintCtx, buildPrintCtxWithRealCustom, attachHostCustomUiState, createCancellationRegistry, createJobTracker, createStore, workflow, delay, factory, runDetached, setupBranchingRun, setupSequentialRun, setupWideFanoutRun, singletonStore, Type, visibleText, waitForRenderCount, waitForRunEnded, waitForStagePendingPrompt];
 
+
+function registerInspectableCompleted(backend: InMemoryDurableBackend, workflowId: string, name: string): () => void {
+  const dir = mkdtempSync(join(tmpdir(), "atomic-completed-overlay-"));
+  const sessionFile = join(dir, "stage.jsonl");
+  writeFileSync(sessionFile, [
+    JSON.stringify({ type: "session", version: 3, id: `${workflowId}-session`, timestamp: new Date().toISOString(), cwd: dir }),
+    JSON.stringify({ type: "message", id: `${workflowId}-message`, parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: "prior context", timestamp: Date.now() } }),
+  ].join("\n") + "\n");
+  backend.registerWorkflow({ workflowId, name, inputs: {}, createdAt: 1, status: "completed" });
+  backend.recordCheckpoint({
+    kind: "stage", workflowId, checkpointId: "stage:1", name: "final",
+    replayKey: "stage:final:1", output: "done", sessionFile, completedAt: 2,
+  });
+  return () => rmSync(dir, { recursive: true, force: true });
+}
 
 describe("/workflow resume — overlay integration", () => {
   beforeEach(() => {
@@ -146,7 +164,7 @@ describe("/workflow resume — overlay integration", () => {
     );
   });
 
-  test("resume with no runId includes live and durable workflows", async () => {
+  test("resume with no runId mixes live and durable entries", async () => {
     singletonStore.clear();
     const liveRunId = `live-run-${Date.now()}`;
     singletonStore.recordRunStart({ id: liveRunId, name: "live-wf", inputs: {}, status: "running", stages: [], startedAt: Date.now() });
@@ -171,29 +189,36 @@ describe("/workflow resume — overlay integration", () => {
     }
   });
 
-  test("resume with known completed runId calls overlay.open", async () => {
+  test("resume with known authoritative completed runId calls overlay.open", async () => {
+    singletonStore.clear();
     const runId = `test-resume-run-${Date.now()}`;
-
+    const backend = new InMemoryDurableBackend();
+    const cleanup = registerInspectableCompleted(backend, runId, "test-wf");
+    setDurableBackend(backend);
     singletonStore.recordRunStart({
       id: runId,
-      name: "test-wf",
+      name: "stale-local",
       inputs: {},
-      status: "running",
+      status: "completed",
       stages: [],
-      startedAt: Date.now(),
+      startedAt: 1,
+      endedAt: 2,
+      resumable: false,
     });
-    singletonStore.recordRunEnd(runId, "completed", {});
+    try {
+      const { pi, commands, customCalls } = buildMockPi();
+      factory(pi);
+      const { ctx } = buildPrintCtx();
 
-    const { pi, commands, customCalls } = buildMockPi();
-    factory(pi);
+      await commands["workflow"]!.options.handler(`resume ${runId}`, ctx);
 
-    const wfCmd = commands["workflow"]!;
-    const { ctx } = buildPrintCtx();
-
-    await wfCmd.options.handler(`resume ${runId}`, ctx);
-
-    assert.ok(customCalls.length >= 1);
-    assert.equal(customCalls[0]!.options.overlay, true);
+      assert.ok(customCalls.length >= 1);
+      assert.equal(customCalls[0]!.options.overlay, true);
+      assert.equal(singletonStore.runs()[0]?.name, "test-wf");
+      assert.equal(singletonStore.runs()[0]?.stages[0]?.name, "final");
+    } finally {
+      cleanup();
+    }
   });
 
   test("resume of an actively-running run is refused (use /workflow connect)", async () => {
@@ -289,25 +314,27 @@ describe("/workflow pause — top-level command", () => {
 });
 
 describe("/workflow resume — paused vs non-paused branching", () => {
-  test("resume <runId> on a non-paused run still reopens the overlay", async () => {
+  beforeEach(() => setDurableBackend(new InMemoryDurableBackend()));
+  afterEach(() => setDurableBackend(undefined));
+  test("resume <runId> refuses a completed local snapshot without authoritative data", async () => {
     singletonStore.clear();
     const runId = `test-non-paused-${Date.now()}`;
     singletonStore.recordRunStart({
       id: runId,
       name: "snap-only-wf",
       inputs: {},
-      status: "running",
+      status: "completed",
       stages: [],
-      startedAt: Date.now(),
+      startedAt: 1,
+      endedAt: 2,
+      resumable: false,
     });
-    singletonStore.recordRunEnd(runId, "completed", {});
     const { pi, commands, customCalls } = buildMockPi();
     factory(pi);
-    const wfCmd = commands["workflow"]!;
-    const { ctx } = buildPrintCtx();
-    await wfCmd.options.handler(`resume ${runId}`, ctx);
-    assert.ok(customCalls.length >= 1);
-    assert.equal(customCalls[0]!.options.overlay, true);
+    const { ctx, messages } = buildPrintCtx();
+    await commands["workflow"]!.options.handler(`resume ${runId}`, ctx);
+    assert.equal(customCalls.length, 0);
+    assert.match(messages.join("\n"), /No durable workflow|No completed durable workflow|stale/);
   });
 });
 
@@ -439,7 +466,7 @@ describe("/workflow attach — top-level command", () => {
   });
 
 
-  test("no-arg resume hydrates durable entries when live runs exist", async () => {
+  test("no-arg resume with live runs includes asynchronously hydrated durable entries", async () => {
     singletonStore.clear();
     const liveRunId = `live-hydrate-${Date.now()}`;
     singletonStore.recordRunStart({ id: liveRunId, name: "live-hydrate-wf", inputs: {}, status: "running", stages: [], startedAt: Date.now() });

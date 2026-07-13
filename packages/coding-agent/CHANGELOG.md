@@ -2,9 +2,86 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the bundled workflows `/workflow resume` experience to mix successful completed workflows into the existing globally newest-first, deduplicated picker with green completed styling, resolve full IDs and prefixes across live, durable, and completed targets, and reopen retained stage chats for follow-up without re-running workflow code or replaying side effects. Completed durable state is retained for authoritative inspection; rows need checkpoints and at least one strictly valid retained conversation, invalid per-stage transcript paths cannot open chat, repeated inspection refreshes changed authoritative chat handles, and selector mount failures close safely. ([#1532](https://github.com/bastani-inc/atomic/issues/1532))
+
+## [0.9.8] - 2026-07-12
+
+### Changed
+
+- Changed builtin `goal` and `ralph` reviewer approval to be deterministic on the reviewer's self-reported `stop_review_loop` boolean: a reviewer approves exactly when it returns `stop_review_loop=true` with no `reviewer_error`, parse failures still count as non-approval, and Goal's reducer completes on quorum of those booleans without recomputing approval from findings arrays, priorities, or `requirements_traceability` statuses. Recomputing approval from those arrays could deadlock runs whose acceptance criteria referenced the review process itself (for example "three reviewers approve" or "an unmerged PR is created"): no individual reviewer can prove such clauses, so traceability never became fully `proven` even when every reviewer explicitly approved, and the loop burned worker/review turns until `needs_human`. Reviewer prompts now state that the boolean is the single authoritative convergence signal, spell out how to derive it (blocking P0/P1/P2 findings and `required_by_objective` findings at any priority mean `false`; in-scope P3 nice-to-haves, `beyond_objective`/`contradicts_objective` observations, the reviewer-quorum process itself, and the authorized post-approval PR/MR/review final action must never hold it at `false`), and keep findings/traceability as required audit evidence.
+- Synchronized the builtin `playwright-cli` skill with microsoft/playwright-cli at `793cfb32572733cbcb401e6f28d05a7a914ce408`, including current installation, snapshot search, mobile emulation, and test generation guidance.
+- Renamed the builtin `effective-liteparse` skill to `liteparse` and synchronized it with run-llama/llamaparse-agent-skills at `2dcef7c62417bd2ec4671fce4621bb1e8cce48d0`; existing `/skill:effective-liteparse` references must migrate to `/skill:liteparse`.
+- Synchronized the complete builtin `impeccable` skill tree with pbakaus/impeccable at `630fc2682a5bd39b25a8e61f74b6b3f14f2b1e21`, including its latest references, detector libraries, live-review scripts, and provider integrations.
+
+### Fixed
+
+- Disabled terminal autowrap while the fullscreen workflow graph overlay is visible on Windows and restored the previous terminal mode when the overlay closes, preventing wrapped graph rows and stale terminal state ([#1760](https://github.com/bastani-inc/atomic/issues/1760)).
+- Hardened synced Impeccable HTML filtering and preview selector escaping against nested sanitizer inputs, permissive script/style closing tags, HTML comment end-bang syntax, and backslash-containing session identifiers; also removed an ineffective CSS property replacement flagged by CodeQL.
+
+## [0.9.8-alpha.1] - 2026-07-12
+
+### Changed
+
+- Changed builtin `goal` and `ralph` reviewer approval to be deterministic on the reviewer's self-reported `stop_review_loop` boolean: a reviewer approves exactly when it returns `stop_review_loop=true` with no `reviewer_error`, parse failures still count as non-approval, and Goal's reducer completes on quorum of those booleans without recomputing approval from findings arrays, priorities, or `requirements_traceability` statuses. Recomputing approval from those arrays could deadlock runs whose acceptance criteria referenced the review process itself (for example "three reviewers approve" or "an unmerged PR is created"): no individual reviewer can prove such clauses, so traceability never became fully `proven` even when every reviewer explicitly approved, and the loop burned worker/review turns until `needs_human`. Reviewer prompts now state that the boolean is the single authoritative convergence signal, spell out how to derive it (blocking P0/P1/P2 findings and `required_by_objective` findings at any priority mean `false`; in-scope P3 nice-to-haves, `beyond_objective`/`contradicts_objective` observations, the reviewer-quorum process itself, and the authorized post-approval PR/MR/review final action must never hold it at `false`), and keep findings/traceability as required audit evidence.
+- Synchronized the builtin `playwright-cli` skill with microsoft/playwright-cli at `793cfb32572733cbcb401e6f28d05a7a914ce408`, including current installation, snapshot search, mobile emulation, and test generation guidance.
+- Renamed the builtin `effective-liteparse` skill to `liteparse` and synchronized it with run-llama/llamaparse-agent-skills at `2dcef7c62417bd2ec4671fce4621bb1e8cce48d0`; existing `/skill:effective-liteparse` references must migrate to `/skill:liteparse`.
+- Synchronized the complete builtin `impeccable` skill tree with pbakaus/impeccable at `630fc2682a5bd39b25a8e61f74b6b3f14f2b1e21`, including its latest references, detector libraries, live-review scripts, and provider integrations.
+
+### Fixed
+
+- Disabled terminal autowrap while the fullscreen workflow graph overlay is visible on Windows and restored the previous terminal mode when the overlay closes, preventing wrapped graph rows and stale terminal state ([#1760](https://github.com/bastani-inc/atomic/issues/1760)).
+- Hardened synced Impeccable HTML filtering and preview selector escaping against nested sanitizer inputs, permissive script/style closing tags, HTML comment end-bang syntax, and backslash-containing session identifiers; also removed an ineffective CSS property replacement flagged by CodeQL.
+
+## [0.9.7] - 2026-07-12
+
+### Added
+
+- Added a shared convergence contract to the bundled `goal` and `ralph` workflows: implementation starts from an observable acceptance/contract matrix derived from the literal objective/acceptance criteria (with explicit state/transition/invariant modeling for stateful work), reviewers independently derive adversarial checks from the literal contract before relying on worker receipts or worker-authored tests, reproduced findings require durable regression evidence before they count as resolved, and each review round persists a deduplicated cross-reviewer `consolidated_findings` batch that the next worker turn repairs together instead of one finding per turn. Literal-contract scope controls are preserved throughout, so nothing beyond the user's requirements is forced.
+- Added a "Choosing an Execution Shape" section to `docs/workflows.md`: an agent-facing decision ladder covering inline work, inline subagent delegation, direct one-off `task`/`tasks`/`chain` shapes, named/builtin workflows, custom TypeScript workflows, and composed/nested workflows; a six-dimension scoring rubric (structure, verifiability, iteration, risk, duration, isolation) with hard-signal overrides; a "Task queues and software factories" playbook for fire-and-forget requests like "address all open issues" (enumerate and dependency-classify first, fan out independent items as separate per-item workflow runs in bounded waves with per-item worktrees/PRs, compose dependent items into one parent graph that nests proven children, and mix both for clustered queues); and a "Prompting the choice" guide listing the user prompt levers (naming the shape, acceptance criteria, loop wording, evidence requests, scope boundaries, and queue policy) that steer the agent's execution-shape decision.
+- Added a "Context-Mode-Aware Prompt Text" section to `docs/workflows.md` documenting that stage prompts must not describe their own context mode, fresh stages must not reference invisible context (prior conversation, sibling stages, graph topology), and forked continuation prompts should send only the delta with a pointer back to guidance already established in the forked history.
+
+### Changed
+
+- Accelerated PR/main CI by running platform-independent validation once on Linux while retaining installed-package Node integration and release-archive smoke coverage on Linux and Windows, and by reusing caller-installed dependencies and package builds during binary assembly. Test suites now have one bounded, observable flake-recovery attempt with preserved logs, environment/resource diagnostics, CI annotations, and no retries for deterministic workflow/release/package/publish gates. Release publication no longer reruns the full PR suite: a protected-default-branch integrity gate proves the release commit is generated from a parent already integrated into `main`, contains exactly the expected version and shrinkwrap material, and pins that immutable SHA across release jobs before preserving all release-specific metadata, docs, native, binary, package, and npm provenance checks.
+- Changed bundled `goal` completion to evidence closure rather than reviewer agreement alone: reviewer quorum can only complete the run when no objective-relevant blocking finding from any reviewer in the current round remains unresolved, unresolved findings are recorded in the inspectable reducer decision reason, and the bounded loop still stops at `max_turns` as `needs_human`. Severity labels alone no longer dismiss objective-relevant findings in Goal or Ralph: `required_by_objective` findings block at any priority (P3 included), while `consistent_with_objective` P3 nice-to-haves stay non-blocking.
+
+### Fixed
+
+- Fixed retryable-failure classification across main-chat retry/fallback, workflow stage fallback, and subagent fallback to treat provider usage-limit exhaustion (for example `Codex error: The usage limit has been reached`, plus `usage_limit_reached`/`insufficient_quota`-style codes) as a retryable quota/rate-limit failure, so configured `fallbackModels` advance to the next candidate provider/model instead of dead-ending the turn, stage, or run. Provider messages that flatten the token into free text (for example `usage_limit_reached` or `usage-limit`, matched with space/underscore/hyphen/joined separators) classify the same as the structured codes across all three paths. Nested cause/diagnostic and session-shaped error payloads classify the same way; cancellations, safety refusals, task/tool failures, and unrelated errors remain non-retryable.
+
+## [0.9.7-alpha.1] - 2026-07-12
+
+### Added
+
+- Added a shared convergence contract to the bundled `goal` and `ralph` workflows: implementation starts from an observable acceptance/contract matrix derived from the literal objective/acceptance criteria (with explicit state/transition/invariant modeling for stateful work), reviewers independently derive adversarial checks from the literal contract before relying on worker receipts or worker-authored tests, reproduced findings require durable regression evidence before they count as resolved, and each review round persists a deduplicated cross-reviewer `consolidated_findings` batch that the next worker turn repairs together instead of one finding per turn. Literal-contract scope controls are preserved throughout, so nothing beyond the user's requirements is forced.
+- Added a "Choosing an Execution Shape" section to `docs/workflows.md`: an agent-facing decision ladder covering inline work, inline subagent delegation, direct one-off `task`/`tasks`/`chain` shapes, named/builtin workflows, custom TypeScript workflows, and composed/nested workflows; a six-dimension scoring rubric (structure, verifiability, iteration, risk, duration, isolation) with hard-signal overrides; a "Task queues and software factories" playbook for fire-and-forget requests like "address all open issues" (enumerate and dependency-classify first, fan out independent items as separate per-item workflow runs in bounded waves with per-item worktrees/PRs, compose dependent items into one parent graph that nests proven children, and mix both for clustered queues); and a "Prompting the choice" guide listing the user prompt levers (naming the shape, acceptance criteria, loop wording, evidence requests, scope boundaries, and queue policy) that steer the agent's execution-shape decision.
+- Added a "Context-Mode-Aware Prompt Text" section to `docs/workflows.md` documenting that stage prompts must not describe their own context mode, fresh stages must not reference invisible context (prior conversation, sibling stages, graph topology), and forked continuation prompts should send only the delta with a pointer back to guidance already established in the forked history.
+
+### Changed
+
+- Changed bundled `goal` completion to evidence closure rather than reviewer agreement alone: reviewer quorum can only complete the run when no objective-relevant blocking finding from any reviewer in the current round remains unresolved, unresolved findings are recorded in the inspectable reducer decision reason, and the bounded loop still stops at `max_turns` as `needs_human`. Severity labels alone no longer dismiss objective-relevant findings in Goal or Ralph: `required_by_objective` findings block at any priority (P3 included), while `consistent_with_objective` P3 nice-to-haves stay non-blocking.
+
+### Fixed
+
+- Fixed retryable-failure classification across main-chat retry/fallback, workflow stage fallback, and subagent fallback to treat provider usage-limit exhaustion (for example `Codex error: The usage limit has been reached`, plus `usage_limit_reached`/`insufficient_quota`-style codes) as a retryable quota/rate-limit failure, so configured `fallbackModels` advance to the next candidate provider/model instead of dead-ending the turn, stage, or run. Provider messages that flatten the token into free text (for example `usage_limit_reached` or `usage-limit`, matched with space/underscore/hyphen/joined separators) classify the same as the structured codes across all three paths. Nested cause/diagnostic and session-shaped error payloads classify the same way; cancellations, safety refusals, task/tool failures, and unrelated errors remain non-retryable.
+
+## [0.9.6] - 2026-07-12
+
 ### Changed
 
 - Restored workflow-first Atomic guidance for non-trivial work with verifiable objectives and synchronized help/docs around rich inline TypeScript workflow authoring, including dynamic branching, fan-out, verification, candidate-selection, human-gate, child-workflow, and bounded-loop patterns.
+- Documented compositional workflow authoring in model prompts and onboarding/help surfaces, including importing bundled workflows from `@bastani/workflows/builtin`, nesting definitions with `ctx.workflow(...)`, and building deeper reusable workflow graphs within `maxDepth`.
+- Restored tool-driven bundled Intercom startup so foreground subagent launches and bridged child session startup no longer connect either session automatically; the model or user must invoke Intercom when coordination is needed.
+
+## [0.9.6-alpha.1] - 2026-07-12
+
+### Changed
+
+- Restored workflow-first Atomic guidance for non-trivial work with verifiable objectives and synchronized help/docs around rich inline TypeScript workflow authoring, including dynamic branching, fan-out, verification, candidate-selection, human-gate, child-workflow, and bounded-loop patterns.
+- Documented compositional workflow authoring in model prompts and onboarding/help surfaces, including importing bundled workflows from `@bastani/workflows/builtin`, nesting definitions with `ctx.workflow(...)`, and building deeper reusable workflow graphs within `maxDepth`.
+- Restored tool-driven bundled Intercom startup so foreground subagent launches and bridged child session startup no longer connect either session automatically; the model or user must invoke Intercom when coordination is needed.
 
 ## [0.9.5] - 2026-07-11
 

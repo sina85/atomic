@@ -2,9 +2,45 @@
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-07-12
+
+### Changed
+
+- Synchronized the builtin `playwright-cli` skill with microsoft/playwright-cli at `793cfb32572733cbcb401e6f28d05a7a914ce408`, including current installation, snapshot search, mobile emulation, and test generation guidance.
+- Renamed the builtin `effective-liteparse` skill to `liteparse` and synchronized it with run-llama/llamaparse-agent-skills at `2dcef7c62417bd2ec4671fce4621bb1e8cce48d0`; existing `/skill:effective-liteparse` references must migrate to `/skill:liteparse`.
+
+## [0.9.8-alpha.1] - 2026-07-12
+
+### Changed
+
+- Synchronized the builtin `playwright-cli` skill with microsoft/playwright-cli at `793cfb32572733cbcb401e6f28d05a7a914ce408`, including current installation, snapshot search, mobile emulation, and test generation guidance.
+- Renamed the builtin `effective-liteparse` skill to `liteparse` and synchronized it with run-llama/llamaparse-agent-skills at `2dcef7c62417bd2ec4671fce4621bb1e8cce48d0`; existing `/skill:effective-liteparse` references must migrate to `/skill:liteparse`.
+
+## [0.9.7] - 2026-07-12
+
+### Fixed
+
+- Fixed subagent model fallback to classify provider usage-limit exhaustion (for example `Codex error: The usage limit has been reached`, plus `usage_limit`/`usage_limit_reached`/`usage_limit_exceeded`/`insufficient_quota` codes) as a retryable quota/rate-limit failure, so configured `fallbackModels` advance to the next candidate provider/model instead of failing the run. The message matcher tolerates the same space/underscore/hyphen/joined separators as the code path, so provider errors that flatten the token into free text (for example `usage_limit_reached` or `usage-limit`) also advance the chain. Nested cause/diagnostic and session-shaped errors classify the same way, while cancellations, safety refusals, task/tool failures, and unrelated errors remain non-retryable; the shared conformance corpus keeps this rule in lockstep with the workflows classifier.
+
+## [0.9.7-alpha.1] - 2026-07-12
+
+### Fixed
+
+- Fixed subagent model fallback to classify provider usage-limit exhaustion (for example `Codex error: The usage limit has been reached`, plus `usage_limit`/`usage_limit_reached`/`usage_limit_exceeded`/`insufficient_quota` codes) as a retryable quota/rate-limit failure, so configured `fallbackModels` advance to the next candidate provider/model instead of failing the run. The message matcher tolerates the same space/underscore/hyphen/joined separators as the code path, so provider errors that flatten the token into free text (for example `usage_limit_reached` or `usage-limit`) also advance the chain. Nested cause/diagnostic and session-shaped errors classify the same way, while cancellations, safety refusals, task/tool failures, and unrelated errors remain non-retryable; the shared conformance corpus keeps this rule in lockstep with the workflows classifier.
+
+## [0.9.6] - 2026-07-12
+
 ### Changed
 
 - Aligned model-facing subagent guidance with workflow-first routing: subagents remain focused specialists inside workflow stages or bounded direct delegation, rather than becoming an ad hoc implementation/review/retry pipeline for workflow-fit work.
+- Changed bundled Intercom coordination back to model-driven connection: launching foreground or background children no longer connects the parent or child session automatically; an Intercom tool or UI action must establish each session's broker connection.
+
+## [0.9.6-alpha.1] - 2026-07-12
+
+### Changed
+
+- Aligned model-facing subagent guidance with workflow-first routing: subagents remain focused specialists inside workflow stages or bounded direct delegation, rather than becoming an ad hoc implementation/review/retry pipeline for workflow-fit work.
+- Changed bundled Intercom coordination back to model-driven connection: launching foreground or background children no longer connects the parent or child session automatically; an Intercom tool or UI action must establish each session's broker connection.
 
 ## [0.9.5] - 2026-07-11
 

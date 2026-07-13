@@ -196,6 +196,7 @@ describe("goal", () => {    type ReviewJsonFinding = {
                     if (name.startsWith("risk-reviewer-")) {
                         return reviewJson("continue", {
                             gaps: ["risk review noted no blocker"],
+                            findings: [],
                         });
                     }
                     return undefined;
@@ -246,6 +247,7 @@ describe("goal", () => {    type ReviewJsonFinding = {
                     if (name.startsWith("risk-reviewer-")) {
                         return reviewJson("continue", {
                             gaps: ["risk reviewer noted no blocker"],
+                            findings: [],
                         });
                     }
                     return undefined;
@@ -274,7 +276,7 @@ describe("goal", () => {    type ReviewJsonFinding = {
         );
         assert.match(
             ctx.calls.prompts["work-turn-2"]?.[0] ?? "",
-            /Continue the same goal-runner worker thread from the previous worker session/i,
+            /Continue the same goal-runner worker thread/i,
         );
         assert.doesNotMatch(
             ctx.calls.prompts["work-turn-2"]?.[0] ?? "",

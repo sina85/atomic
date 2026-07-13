@@ -1,74 +1,95 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { workflowResumeSelectorItems } from "../../packages/workflows/src/tui/workflow-resume-selector.js";
+import {
+  openWorkflowResumeSelector,
+  workflowResumeSelectorItems,
+} from "../../packages/workflows/src/tui/workflow-resume-selector.js";
 import type { ResumableWorkflowEntry } from "../../packages/workflows/src/durable/types.js";
 import type { RunSnapshot, StageSnapshot } from "../../packages/workflows/src/shared/store-types.js";
 
-function stage(id: string, startedAt: number, endedAt: number): StageSnapshot {
+function entry(
+  id: string,
+  status: ResumableWorkflowEntry["status"],
+  updatedAt = status === "completed" ? 300 : 200,
+): ResumableWorkflowEntry {
+  return {
+    workflowId: id,
+    name: `${status}-workflow`,
+    status,
+    completedCheckpoints: 2,
+    pendingPrompts: 0,
+    createdAt: 1,
+    updatedAt,
+  };
+}
+
+function stage(id: string, endedAt: number): StageSnapshot {
   return {
     id,
     name: id,
     status: "completed",
     parentIds: [],
-    startedAt,
+    startedAt: endedAt - 1,
     endedAt,
     toolEvents: [],
   };
 }
 
-function liveRun(id: string, startedAt: number, stages: StageSnapshot[] = []): RunSnapshot {
+function pausedLiveRun(id = "live-paused", activityAt = 100): RunSnapshot {
   return {
     id,
-    name: id,
+    name: "live-workflow",
     inputs: {},
     status: "paused",
-    stages,
-    startedAt,
+    stages: [],
+    startedAt: 1,
+    pausedAt: activityAt,
+    resumable: true,
   };
 }
 
-function durableEntry(id: string, updatedAt: number): ResumableWorkflowEntry {
-  return {
-    workflowId: id,
-    name: id,
-    inputs: {},
-    status: "paused",
-    completedCheckpoints: 1,
-    pendingPrompts: 0,
-    createdAt: updatedAt - 100,
-    updatedAt,
-  };
-}
+describe("workflow resume selector", () => {
+  test("globally orders mixed rows and renders completed rows with a green semantic", () => {
+    const items = workflowResumeSelectorItems(
+      [pausedLiveRun()],
+      [entry("durable-paused", "paused")],
+      [entry("durable-completed", "completed")],
+    );
 
-function itemIds(
-  liveRuns: readonly RunSnapshot[],
-  durableEntries: readonly ResumableWorkflowEntry[],
-): string[] {
-  return workflowResumeSelectorItems(liveRuns, durableEntries).map((item) => item.session.id);
-}
-
-describe("workflowResumeSelectorItems", () => {
-  test("sorts unsorted live runs by their latest run or stage activity", () => {
-    const runs = [
-      liveRun("middle", 200),
-      liveRun("newest-by-stage", 100, [stage("recent-stage", 250, 300)]),
-      liveRun("oldest", 50),
-    ];
-
-    assert.deepEqual(itemIds(runs, []), ["newest-by-stage", "middle", "oldest"]);
+    assert.deepEqual(items.map((item) => item.result.kind), ["completed", "durable", "live"]);
+    const completed = items[0]!;
+    assert.match(completed.session.firstMessage, /✓ completed/);
+    assert.equal(completed.session.messageColor, "success");
+    assert.equal(completed.session.path, "workflow-completed:durable-completed");
   });
 
-  test("sorts unsorted durable backend entries by updatedAt", () => {
-    const entries = [durableEntry("oldest", 100), durableEntry("newest", 300), durableEntry("middle", 200)];
+  test("sorts unsorted live rows by latest activity", () => {
+    const items = workflowResumeSelectorItems([
+      pausedLiveRun("middle", 200),
+      pausedLiveRun("newest", 300),
+      pausedLiveRun("oldest", 100),
+    ], []);
 
-    assert.deepEqual(itemIds([], entries), ["newest", "middle", "oldest"]);
+    assert.deepEqual(items.map((item) => item.session.id), ["newest", "middle", "oldest"]);
   });
 
-  test("globally interleaves live and durable choices by recency", () => {
-    const runs = [liveRun("live-oldest", 100), liveRun("live-newest", 400)];
-    const entries = [durableEntry("durable-middle-new", 300), durableEntry("durable-middle-old", 200)];
+  test("sorts unsorted durable rows by durable update time", () => {
+    const items = workflowResumeSelectorItems([], [
+      entry("oldest", "paused", 100),
+      entry("newest", "paused", 300),
+      entry("middle", "paused", 200),
+    ]);
 
-    assert.deepEqual(itemIds(runs, entries), [
+    assert.deepEqual(items.map((item) => item.session.id), ["newest", "middle", "oldest"]);
+  });
+
+  test("globally interleaves live and durable rows by recency", () => {
+    const items = workflowResumeSelectorItems(
+      [pausedLiveRun("live-oldest", 100), pausedLiveRun("live-newest", 400)],
+      [entry("durable-middle-new", "paused", 300), entry("durable-middle-old", "paused", 200)],
+    );
+
+    assert.deepEqual(items.map((item) => item.session.id), [
       "live-newest",
       "durable-middle-new",
       "durable-middle-old",
@@ -76,23 +97,52 @@ describe("workflowResumeSelectorItems", () => {
     ]);
   });
 
-  test("uses workflow id to break equal-time ties independently of source input order", () => {
-    const runs = [liveRun("alpha-live", 500), liveRun("zulu-live", 500)];
-    const entries = [durableEntry("zulu-durable", 500), durableEntry("alpha-durable", 500)];
-    const expected = ["alpha-durable", "alpha-live", "zulu-durable", "zulu-live"];
-
-    assert.deepEqual(itemIds(runs, entries), expected);
-    assert.deepEqual(itemIds([...runs].reverse(), [...entries].reverse()), expected);
-  });
-
-  test("deduplicates live and durable workflow ids before sorting and keeps the live row", () => {
-    const items = workflowResumeSelectorItems(
-      [liveRun("duplicate", 100)],
-      [durableEntry("duplicate", 1_000), durableEntry("durable-middle", 500)],
+  test("uses latest stage activity and deterministic ids for equal-time ties", () => {
+    const live = pausedLiveRun("zulu-live", 50);
+    live.stages.push(stage("recent", 500));
+    const reversed = workflowResumeSelectorItems(
+      [live, pausedLiveRun("alpha-live", 400)],
+      [entry("zulu-durable", "paused", 400), entry("alpha-durable", "paused", 400)],
+      [entry("middle-completed", "completed", 450)],
     );
 
-    assert.deepEqual(items.map((item) => item.session.id), ["durable-middle", "duplicate"]);
-    assert.deepEqual(items[1]?.result, { kind: "live", runId: "duplicate" });
-    assert.equal(items.filter((item) => item.session.id === "duplicate").length, 1);
+    assert.deepEqual(reversed.map((item) => item.session.id), [
+      "zulu-live",
+      "middle-completed",
+      "alpha-durable",
+      "alpha-live",
+      "zulu-durable",
+    ]);
+    assert.deepEqual(
+      workflowResumeSelectorItems(
+        [pausedLiveRun("alpha-live", 400), live],
+        [entry("alpha-durable", "paused", 400), entry("zulu-durable", "paused", 400)],
+        [entry("middle-completed", "completed", 450)],
+      ).map((item) => item.session.id),
+      reversed.map((item) => item.session.id),
+    );
+  });
+
+  test("deduplicates before sorting and keeps live then durable precedence", () => {
+    const items = workflowResumeSelectorItems(
+      [pausedLiveRun()],
+      [entry("same-id", "paused", 500)],
+      [entry("same-id", "completed", 900), entry("live-paused", "completed", 1_000)],
+    );
+
+    assert.deepEqual(items.map((item) => item.session.id), ["same-id", "live-paused"]);
+    assert.deepEqual(items.map((item) => item.result.kind), ["durable", "live"]);
+  });
+
+  test("closes when the custom selector mount throws or rejects", async () => {
+    const thrown = await openWorkflowResumeSelector({
+      custom: () => { throw new Error("mount failed"); },
+    }, [pausedLiveRun()], []);
+    const rejected = await openWorkflowResumeSelector({
+      custom: async () => { throw new Error("async mount failed"); },
+    }, [pausedLiveRun()], []);
+
+    assert.deepEqual(thrown, { kind: "close" });
+    assert.deepEqual(rejected, { kind: "close" });
   });
 });
