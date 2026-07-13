@@ -1,16 +1,18 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createGitWorktreeSetupCache,
   gitFailureMessage,
+  runGitChecked,
   setupGitWorktree,
   withGitRunnerForTest,
   type GitRunner,
 } from "../../packages/workflows/src/runs/shared/worktree-git.js";
 import type { GitResult } from "../../packages/workflows/src/runs/shared/worktree-types.js";
+import { createGitWorktreeSetupCacheOwner } from "../../packages/workflows/src/runs/shared/worktree-cache-lifecycle.js";
 
 function successfulGit(stdout = ""): GitResult {
   return { stdout, stderr: "", status: 0, signal: null, elapsedMs: 1 };
@@ -31,6 +33,21 @@ function createRepoShape(): { readonly root: string; readonly repo: string; read
   const sourceCwd = join(repo, "packages", "api");
   mkdirSync(sourceCwd, { recursive: true });
   return { root, repo, sourceCwd };
+}
+
+function createGitRepository(): { readonly root: string; readonly repo: string; readonly worktree: string } {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "atomic-worktree-generation-test-")));
+  const repo = join(root, "repo");
+  const worktree = join(root, "worktree");
+  mkdirSync(repo);
+  runGitChecked(repo, ["init", "-b", "main"]);
+  writeFileSync(join(repo, "tracked.txt"), "primary\n");
+  runGitChecked(repo, ["add", "."]);
+  runGitChecked(repo, [
+    "-c", "user.name=Atomic Test", "-c", "user.email=atomic-test@example.com",
+    "commit", "--no-gpg-sign", "-m", "initial",
+  ]);
+  return { root, repo, worktree };
 }
 
 function isArgs(args: readonly string[], expected: readonly string[]): boolean {
@@ -119,13 +136,14 @@ describe("workflow reusable git worktree git runner", () => {
       if (isArgs(args.slice(0, 3), ["worktree", "add", "--detach"])) {
         worktreeAddCalls += 1;
         mkdirSync(worktree);
+        writeFileSync(join(worktree, ".git"), "gitdir: ../cached-wt.git\n");
         return successfulGit();
       }
       return failingGit(args);
     };
 
+    const cache = createGitWorktreeSetupCache();
     try {
-      const cache = createGitWorktreeSetupCache();
       withGitRunnerForTest(runner, () => {
         const options = { cwd: sourceCwd, gitWorktreeDir: "../cached-wt", baseBranch: "main" };
         const setup = cache.get(options);
@@ -135,6 +153,82 @@ describe("workflow reusable git worktree git runner", () => {
       assert.equal(worktreeAddCalls, 1);
       assert.ok(identityProbeCalls > 0, "cache reuse should probe the selected checkout identity");
     } finally {
+      cache.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects cache reuse when a byte-identical .git file replaces the cached checkout generation", () => {
+    const { root, repo, worktree } = createGitRepository();
+    const cache = createGitWorktreeSetupCache();
+    try {
+      cache.get({ cwd: repo, gitWorktreeDir: worktree });
+      const before = statSync(worktree);
+      const gitFile = join(worktree, ".git");
+      const gitFileContents = readFileSync(gitFile);
+
+      renameSync(gitFile, `${gitFile}.replaced`);
+      writeFileSync(gitFile, gitFileContents);
+
+      const after = statSync(worktree);
+      assert.equal(after.dev, before.dev, "replacement should retain the cached root device");
+      assert.equal(after.ino, before.ino, "replacement should retain the cached root inode");
+      assert.throws(
+        () => cache.get({ cwd: repo, gitWorktreeDir: worktree }),
+        /Cached gitWorktreeDir changed before reuse:/,
+      );
+    } finally {
+      cache.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("disposes cached checkout anchors idempotently before worktree cleanup", () => {
+    const { root, repo, worktree } = createGitRepository();
+    const cache = createGitWorktreeSetupCache();
+    try {
+      cache.get({ cwd: repo, gitWorktreeDir: worktree });
+      cache.dispose();
+      assert.doesNotThrow(() => cache.dispose());
+      assert.throws(
+        () => cache.get({ cwd: repo, gitWorktreeDir: worktree }),
+        /cache is already disposed/,
+      );
+      runGitChecked(repo, ["worktree", "remove", "--force", worktree]);
+    } finally {
+      cache.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("leaves a supplied setup cache open when its engine owner is released", () => {
+    const { root, repo, worktree } = createGitRepository();
+    const cache = createGitWorktreeSetupCache();
+    const owner = createGitWorktreeSetupCacheOwner(cache);
+    let finalized = false;
+    try {
+      owner.release(() => { finalized = true; });
+      assert.equal(finalized, true);
+      assert.equal(cache.get({ cwd: repo, gitWorktreeDir: worktree }).worktreeRoot, worktree);
+    } finally {
+      cache.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("supports the main checkout as a reusable target from a linked invocation", () => {
+    const { root, repo } = createGitRepository();
+    const linkedSource = join(root, "linked-source");
+    const cache = createGitWorktreeSetupCache();
+    try {
+      runGitChecked(repo, ["worktree", "add", "--detach", linkedSource]);
+      const options = { cwd: linkedSource, gitWorktreeDir: repo };
+      const setup = cache.get(options);
+      assert.equal(setup.created, false);
+      assert.equal(setup.worktreeRoot, repo);
+      assert.equal(cache.get(options), setup);
+    } finally {
+      cache.dispose();
       rmSync(root, { recursive: true, force: true });
     }
   });

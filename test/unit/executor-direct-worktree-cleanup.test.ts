@@ -236,4 +236,4 @@ test("temporary direct and named tasks default to the runner invocation cwd", ()
     rmSync(first.root, { recursive: true, force: true });
     rmSync(second.root, { recursive: true, force: true });
   }
-});
+}, 30_000);

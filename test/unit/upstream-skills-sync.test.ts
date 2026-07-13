@@ -2,7 +2,7 @@
 
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DefaultResourceLoader } from "../../packages/coding-agent/src/core/resource-loader.js";
@@ -146,6 +146,8 @@ describe("synced upstream skill trees", () => {
       runFixtureGit(primary, ["worktree", "add", "--detach", linked, "--quiet"]);
       const linkedGitDir = runFixtureGit(linked, ["rev-parse", "--absolute-git-dir"]);
       const commonGitDir = runFixtureGit(linked, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+      const primaryContents = readFileSync(join(primary, "tracked.txt"), "utf8");
+      const linkedContents = readFileSync(join(linked, "tracked.txt"), "utf8");
 
       initializeFixtureRepository(target, {
         ...process.env,
@@ -160,9 +162,10 @@ describe("synced upstream skill trees", () => {
         { env: createGitEnvironment() },
       );
       assert.equal(coreWorktree.exitCode, 1, `ambient shared config gained core.worktree=${coreWorktree.stdout.toString().trim()}`);
-      assert.equal(realpathSync(runFixtureGit(primary, ["rev-parse", "--show-toplevel"])), realpathSync(primary));
-      assert.equal(readFileSync(join(primary, "tracked.txt"), "utf8"), "primary\n");
-      assert.equal(readFileSync(join(linked, "tracked.txt"), "utf8"), "primary\n");
+      const resolvedPrimary = runFixtureGit(primary, ["rev-parse", "--show-toplevel"]);
+      assert.equal(lstatSync(join(resolvedPrimary, ".git")).isDirectory(), true, "primary Git commands resolved to a linked worktree");
+      assert.equal(readFileSync(join(primary, "tracked.txt"), "utf8"), primaryContents);
+      assert.equal(readFileSync(join(linked, "tracked.txt"), "utf8"), linkedContents);
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

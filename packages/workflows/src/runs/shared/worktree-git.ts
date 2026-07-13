@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createGitEnvironment } from "@bastani/atomic";
 import type { GitResult, GitWorktreeSetupOptions, GitWorktreeSetupResult } from "./worktree-types.js";
+import { openGitWorktreeGenerationAnchor, type GitWorktreeGenerationAnchor } from "./worktree-generation.js";
 
 const DISABLED_GIT_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
 const GIT_COMMAND_TIMEOUT_MS = 60_000;
@@ -133,6 +134,7 @@ function runGitReadOnlyProbe(cwd: string, args: readonly string[]): GitResult {
 
 export interface GitWorktreeSetupCache {
 	get(options: GitWorktreeSetupOptions): GitWorktreeSetupResult;
+	dispose(): void;
 }
 
 function gitWorktreeSetupCacheKey(options: GitWorktreeSetupOptions): string {
@@ -152,8 +154,10 @@ interface CachedGitWorktreeSetup {
 
 export function createGitWorktreeSetupCache(): GitWorktreeSetupCache {
 	const results = new Map<string, CachedGitWorktreeSetup>();
+	let disposed = false;
 	return {
 		get(options) {
+			if (disposed) throw new Error("Git worktree setup cache is already disposed");
 			const key = gitWorktreeSetupCacheKey(options);
 			const cached = results.get(key);
 			if (cached !== undefined) {
@@ -163,6 +167,20 @@ export function createGitWorktreeSetupCache(): GitWorktreeSetupCache {
 			const result = setupGitWorktree(options);
 			results.set(key, { result, identity: captureGitWorktreeIdentity(result) });
 			return result;
+		},
+		dispose() {
+			if (disposed) return;
+			disposed = true;
+			let firstError: Error | undefined;
+			for (const cached of results.values()) {
+				try {
+					cached.identity.generation.dispose();
+				} catch (error) {
+					firstError ??= error instanceof Error ? error : new Error(String(error));
+				}
+			}
+			results.clear();
+			if (firstError !== undefined) throw firstError;
 		},
 	};
 }
@@ -353,13 +371,17 @@ function validateExistingGitWorktreeRoot(worktreeRoot: string, repoRoot: string)
 	}
 }
 
-interface GitWorktreeIdentity {
+interface GitWorktreeIdentitySnapshot {
 	readonly worktreeRealPath: string;
 	readonly repositoryRealPath: string;
 	readonly gitDirRealPath: string;
 	readonly commonDirRealPath: string;
 	readonly device: number;
 	readonly inode: number;
+}
+
+interface GitWorktreeIdentity extends GitWorktreeIdentitySnapshot {
+	readonly generation: GitWorktreeGenerationAnchor;
 }
 
 function gitDirectoryForWorktree(cwd: string): string {
@@ -371,8 +393,7 @@ function gitDirectoryForWorktree(cwd: string): string {
 	if (gitDir === undefined) throw new Error("git rev-parse --absolute-git-dir returned an empty path");
 	return gitDir;
 }
-
-function captureGitWorktreeIdentity(setup: GitWorktreeSetupResult): GitWorktreeIdentity {
+function captureGitWorktreeIdentitySnapshot(setup: GitWorktreeSetupResult): GitWorktreeIdentitySnapshot {
 	validateWorktreeOutsideInvokingCheckout(setup.worktreeRoot, setup.repositoryRoot);
 	validateExistingGitWorktreeRoot(setup.worktreeRoot, setup.repositoryRoot);
 	const stats = fs.statSync(setup.worktreeRoot);
@@ -386,13 +407,19 @@ function captureGitWorktreeIdentity(setup: GitWorktreeSetupResult): GitWorktreeI
 	};
 }
 
+function captureGitWorktreeIdentity(setup: GitWorktreeSetupResult): GitWorktreeIdentity {
+	const snapshot = captureGitWorktreeIdentitySnapshot(setup);
+	return { ...snapshot, generation: openGitWorktreeGenerationAnchor(setup.worktreeRoot) };
+}
+
 function assertCachedGitWorktreeIdentity(cached: CachedGitWorktreeSetup, options: GitWorktreeSetupOptions): void {
-	let current: GitWorktreeIdentity;
+	let current: GitWorktreeIdentitySnapshot;
 	try {
-		current = captureGitWorktreeIdentity(cached.result);
+		current = captureGitWorktreeIdentitySnapshot(cached.result);
+		cached.identity.generation.assertCurrent();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`gitWorktreeDir changed after setup or became unavailable before reuse: ${message}`);
+		throw new Error(`Cached gitWorktreeDir changed before reuse: ${options.gitWorktreeDir}. Reason: ${message}`);
 	}
 	const expected = cached.identity;
 	if (

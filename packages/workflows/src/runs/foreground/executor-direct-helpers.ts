@@ -33,7 +33,7 @@ import { resolveWorktreeStageCwd } from "../shared/worktree-cwd.js";
 import type { RunOpts, RunResult } from "./executor-types.js";
 import { isWorkflowExitStatus } from "./executor-abort.js";
 import { directTaskWithDefaults, withoutUndefinedProperties } from "./executor-task-prompts.js";
-export { createGitWorktreeSetupCache } from "../shared/worktree.js";
+export { createGitWorktreeSetupCache, createGitWorktreeSetupCacheOwner } from "../shared/worktree.js";
 export type { GitWorktreeSetupCache } from "../shared/worktree.js";
 
 export function directModelRequestsFromChain(
