@@ -243,6 +243,7 @@ export function registerCursorProvider(pi: CursorProviderHost, options: CursorPr
 
 	const scheduleTrackedCatalogDiscovery = (accessToken: string, force = false): Promise<boolean> | undefined => {
 		if (disposed || accessToken.trim().length === 0) return undefined;
+		if (!force && accessToken === lastCatalogAccessToken && isCatalogFresh(lastCatalogFetchedAt, now(), catalogCacheTtlMs)) return undefined;
 		activateCredentialCache(accessToken);
 		const credentialScope = deriveCursorCredentialScope(accessToken);
 		const sameCredential = credentialScope ? credentialScope === lastCatalogCredentialScope : accessToken === lastCatalogAccessToken;

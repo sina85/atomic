@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID, scryptSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -99,7 +99,7 @@ export function deriveCursorCredentialScope(accessToken: string): string | undef
 	try {
 		const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
 		if (!isRecord(claims) || typeof claims.sub !== "string" || claims.sub.length === 0) return undefined;
-		const digest = createHmac("sha256", "atomic-cursor-catalog-scope-v2").update(claims.sub).digest("base64url");
+		const digest = scryptSync(claims.sub, "atomic-cursor-catalog-scope-v2", 32).toString("base64url");
 		return `account-${digest}`;
 	} catch {
 		return undefined;
