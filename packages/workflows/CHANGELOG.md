@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Fixed durable mid-stage workflow resume to refresh pause-adjusted active-stage duration at repeated session checkpoints, preserve it through file and DBOS hydration, and continue accumulating it after a process-boundary resume without resetting the baseline when concurrent tracked stage calls begin, changing replay identity, or re-running completed side effects ([#1713](https://github.com/bastani-inc/atomic/issues/1713)).
+- Fixed durable mid-stage workflow resume to refresh pause-adjusted active stage/task duration at repeated session checkpoints, preserve it through file and DBOS hydration, and continue accumulating it across repeated process-boundary resumes without resetting the baseline when concurrent tracked stage calls begin, double-counting earlier pauses, changing replay identity, or re-running completed side effects ([#1713](https://github.com/bastani-inc/atomic/issues/1713)).
 
 ## [0.9.8] - 2026-07-12
 
