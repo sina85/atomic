@@ -315,8 +315,11 @@ function metadataValue<K extends keyof DurableStageCheckpoint>(
   checkpoints: readonly DurableStageCheckpoint[],
   key: K,
 ): Pick<DurableStageCheckpoint, K> | Record<string, never> {
-  const value = checkpoints.find((checkpoint) => checkpoint[key] !== undefined)?.[key];
-  return value === undefined ? {} : { [key]: value } as Pick<DurableStageCheckpoint, K>;
+  for (let index = checkpoints.length - 1; index >= 0; index -= 1) {
+    const value = checkpoints[index]?.[key];
+    if (value !== undefined) return { [key]: value } as Pick<DurableStageCheckpoint, K>;
+  }
+  return {};
 }
 
 

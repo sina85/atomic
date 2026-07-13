@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { InMemoryDurableBackend } from "../../packages/workflows/src/durable/backend.js";
 import { FileDurableBackend } from "../../packages/workflows/src/durable/file-backend.js";
 import { createCheckpointIdGenerator } from "../../packages/workflows/src/durable/tool-primitive.js";
-import { createDurableStagePrimitive, createDurableTaskPrimitive, createStageReplayKeyGenerator, recordStageCheckpoint, recordStageSessionCheckpoint } from "../../packages/workflows/src/durable/stage-primitive.js";
+import { createDurableStagePrimitive, createDurableTaskPrimitive, createStageReplayKeyGenerator, recordStageCheckpoint, recordStageSessionCheckpoint, stageCheckpointWithOutput } from "../../packages/workflows/src/durable/stage-primitive.js";
 import { RESUME_CONTINUATION_PROMPT } from "../../packages/workflows/src/runs/foreground/executor.js";
 import type { StageSnapshot } from "../../packages/workflows/src/shared/store-types.js";
 import { elapsedStageMs, rebasedStageStartedAt } from "../../packages/workflows/src/shared/timing.js";
@@ -332,6 +332,55 @@ describe("durable stage session resume", () => {
     await recordStageCheckpoint(deps(), makeStage({ status: "completed", replayKey, result: "done", endedAt: 2000 }));
     assert.equal(backend.getStageOutput(WORKFLOW_ID, replayKey), "done");
     assert.deepEqual(backend.getStageSession(WORKFLOW_ID, replayKey), { sessionFile: "/tmp/first.jsonl", startedAt: 1000, durationMs: 1000 });
+  });
+
+  test("hydrates schema-backed replay from the latest timing metadata", async () => {
+    const replayKey = "stage:analyze:1";
+    let clock = 1300;
+    spyOn(Date, "now").mockImplementation(() => clock);
+    const active = makeStage({ replayKey, sessionFile: "/tmp/schema-stage.jsonl" });
+    await recordStageSessionCheckpoint(deps(1111), active);
+    await recordStageSessionCheckpoint(deps(1222), active);
+
+    let liveStageCalls = 0;
+    const stage = createDurableStagePrimitive({
+      workflowId: WORKFLOW_ID,
+      backend,
+      nextReplayKey: () => replayKey,
+      stage: () => {
+        liveStageCalls += 1;
+        return Object.assign(fakeStageContext("") as object, {
+          prompt: async () => ({ answer: "done" }),
+        }) as never;
+      },
+    });
+    const schema = Type.Object({ answer: Type.String() });
+    assert.deepEqual(await stage("analyze", { schema }).prompt("analyze"), { answer: "done" });
+
+    const activeHydration = stageCheckpointWithOutput(backend, WORKFLOW_ID, replayKey);
+    assert.deepEqual(activeHydration?.output, { answer: "done" });
+    assert.equal(activeHydration?.durationMs, 222);
+
+    clock = 1400;
+    await recordStageCheckpoint(deps(), makeStage({
+      replayKey,
+      status: "completed",
+      result: "done",
+      endedAt: clock,
+      durationMs: 333,
+    }));
+    const completedHydration = stageCheckpointWithOutput(backend, WORKFLOW_ID, replayKey);
+    assert.deepEqual(completedHydration?.output, { answer: "done" });
+    assert.equal(completedHydration?.durationMs, 333);
+
+    const replayed = createDurableStagePrimitive({
+      workflowId: WORKFLOW_ID,
+      backend,
+      nextReplayKey: () => replayKey,
+      stage: () => { throw new Error("schema-backed replay must not execute the live stage"); },
+    });
+    assert.deepEqual(await replayed("analyze", { schema }).prompt("ignored"), { answer: "done" });
+    assert.equal(liveStageCalls, 1);
   });
 
   test("file process-boundary completion preserves duration across concurrent tracked calls and replay", async () => {
