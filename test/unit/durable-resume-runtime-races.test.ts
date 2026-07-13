@@ -119,22 +119,50 @@ test("async durable startup failure is reported and cannot strand ownership", as
   assert.equal(store.runs().some((run) => run.id === "wf-async-reject"), false);
 });
 
-test("a failed resume does not roll back when another resume has claimed execution", async () => {
-  // Simulates the rapid double-resume race: the first attempt fails after
-  // another attempt already re-claimed execution. The first attempt's cleanup
-  // must not release the new owner's lease or restore its status.
-  class ContendedBackend extends InMemoryDurableBackend {
+test("a pre-dispatch flush failure releases this process's own resume claim", async () => {
+  // The status/flush before dispatch fails, so the engine never runs and this
+  // process still owns the just-acquired claim. Its own live claim must not
+  // suppress release, or the lease would be stranded for the process lifetime.
+  class PreDispatchFailBackend extends InMemoryDurableBackend {
     releaseCount = 0;
-    isWorkflowExecutionActive(): boolean { return true; }
-    claimWorkflowExecution(): boolean { return true; }
-    releaseWorkflowExecution(): void { this.releaseCount += 1; }
-    async flush(): Promise<void> { throw new Error("injected post-claim failure"); }
+    active = false;
+    isWorkflowExecutionActive(_workflowId: string): boolean { return this.active; }
+    claimWorkflowExecution(): boolean { this.active = true; return true; }
+    releaseWorkflowExecution(): void { this.active = false; this.releaseCount += 1; }
+    async flush(): Promise<void> { throw new Error("injected pre-dispatch flush failure"); }
   }
-  const backend = new ContendedBackend();
+  const backend = new PreDispatchFailBackend();
   const { input } = deps(backend);
-  backend.registerWorkflow({ workflowId: "wf-contended", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "paused", completedCheckpoints: 1 });
-  await assert.rejects(() => resumeDurableWorkflow("wf-contended", input), /injected post-claim failure/);
-  // The new owner's lease is not revoked and its running status is preserved.
-  assert.equal(backend.releaseCount, 0);
-  assert.equal(backend.getWorkflow("wf-contended")?.status, "running");
+  backend.registerWorkflow({ workflowId: "wf-predispatch", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "paused", completedCheckpoints: 1 });
+  await assert.rejects(() => resumeDurableWorkflow("wf-predispatch", input), /injected pre-dispatch flush failure/);
+  assert.equal(backend.releaseCount >= 1, true);
+  assert.equal(backend.isWorkflowExecutionActive("wf-predispatch"), false);
+  assert.equal(backend.getWorkflow("wf-predispatch")?.status, "paused");
+});
+
+test("resume re-validates authoritative state after claiming and refuses a raced completion", async () => {
+  // A racing process completes+prunes the workflow between the initial handle
+  // read and this claim; the post-claim re-read must catch it and refuse
+  // instead of resurrecting a finished run, releasing the just-acquired claim.
+  class RacedCompletionBackend extends InMemoryDurableBackend {
+    released = false;
+    private claimedOnce = false;
+    claimWorkflowExecution(): boolean { return true; }
+    releaseWorkflowExecution(): void { this.released = true; }
+    override getWorkflow(workflowId: string) {
+      const handle = super.getWorkflow(workflowId);
+      // First read (resolution) sees paused; after the claim, the racing owner
+      // has completed it.
+      if (!this.claimedOnce) { this.claimedOnce = true; return handle; }
+      return handle === undefined ? undefined : { ...handle, status: "completed" as const };
+    }
+  }
+  const backend = new RacedCompletionBackend();
+  const { store, input } = deps(backend);
+  backend.registerWorkflow({ workflowId: "wf-raced", name: "resumable-pipeline", inputs: { topic: "a" }, createdAt: 1, status: "paused", completedCheckpoints: 1 });
+  const result = await resumeDurableWorkflow("wf-raced", input);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "not_resumable");
+  assert.equal(backend.released, true);
+  assert.equal(store.runs().some((run) => run.id === "wf-raced"), false);
 });

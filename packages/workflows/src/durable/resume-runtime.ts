@@ -197,6 +197,16 @@ export async function resumeDurableWorkflow(
   if (backend.claimWorkflowExecution !== undefined && !await backend.claimWorkflowExecution(resolved.workflowId)) {
     return alreadyRunningResult(resolved.name, resolved.workflowId, deps.baseRunOpts.store);
   }
+  // Re-read authoritative state AFTER claiming: a racing process may have
+  // completed or pruned the workflow between our earlier handle read and this
+  // claim, in which case dispatching from the stale handle would resurrect a
+  // finished run. Release the just-acquired claim and refuse if so.
+  const claimedHandle = backend.getWorkflow(resolved.workflowId);
+  if (claimedHandle === undefined || !isResumableEntry(claimedHandle)) {
+    await backend.releaseWorkflowExecution?.(resolved.workflowId);
+    return { ok: false, reason: "not_resumable", message: `Workflow ${resolved.workflowId.slice(0, 8)} completed or was removed before resume could start.` };
+  }
+  let dispatched = false;
   try {
     // The execution lease is now held and no live owner exists, so any store
     // snapshot for this id is a crashed-process ghost (including a restored
@@ -224,6 +234,7 @@ export async function resumeDurableWorkflow(
     };
 
     const accepted: DetachedAccepted = runDetached(def, inputs, resumeRunOpts);
+    dispatched = true;
     await published;
 
     return {
@@ -234,13 +245,10 @@ export async function resumeDurableWorkflow(
       message: `Resuming durable workflow "${resolved.name}" (${resolved.workflowId.slice(0, 8)}) — completed checkpoints will be replayed.`,
     };
   } catch (error) {
-    // The engine (run) owns the transferred execution lease once dispatch
-    // starts and releases it in its own finally. Only roll back here when no
-    // other resume has since claimed execution, so this cleanup cannot revoke
-    // a newer rapid-resume owner's lease or clobber its running status. When we
-    // do roll back, release in a finally so a failing status-restore flush
-    // still frees our own pre-dispatch claim.
-    if (backend.isWorkflowExecutionActive?.(resolved.workflowId) !== true) {
+    if (!dispatched) {
+      // Failure BEFORE dispatch (e.g. a status/flush error): the engine never
+      // ran, so this process still owns the just-acquired claim. Restore the
+      // prior durable status and release our own lease unconditionally.
       try {
         backend.setWorkflowStatus(resolved.workflowId, handle.status, handle.pendingPrompts, handle.resumable);
         await backend.flush?.();
@@ -248,6 +256,14 @@ export async function resumeDurableWorkflow(
       } finally {
         await backend.releaseWorkflowExecution?.(resolved.workflowId);
       }
+    } else if (backend.isWorkflowExecutionActive?.(resolved.workflowId) !== true) {
+      // Failure AFTER dispatch: the engine (run) already released the
+      // transferred lease in its own finally, so do NOT release again (that
+      // could revoke a newer rapid-resume owner). Restore prior status only
+      // when no other resume has since claimed execution.
+      backend.setWorkflowStatus(resolved.workflowId, handle.status, handle.pendingPrompts, handle.resumable);
+      await backend.flush?.();
+      removeDurableResumeShadowRuns(deps.baseRunOpts.store, resolved.workflowId);
     }
     throw error;
   }
