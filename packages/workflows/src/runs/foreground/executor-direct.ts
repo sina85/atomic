@@ -83,7 +83,11 @@ export async function runTask(
   try {
     runResult = await run(direct, {}, { ...runOptions, runId, gitWorktreeSetupCache });
   } finally {
-    cleanupPreparedWorktrees(prepared);
+    try {
+      gitWorktreeSetupCache.dispose();
+    } finally {
+      cleanupPreparedWorktrees(prepared);
+    }
   }
   const results = (runResult.result?.["results"] ?? []) as WorkflowTaskResult[];
   return workflowDetailsFromRun("single", runResult, results, options, validationWarnings);
@@ -135,7 +139,11 @@ export async function runParallel(
   try {
     runResult = await run(direct, {}, { ...runOptions, runId, gitWorktreeSetupCache });
   } finally {
-    cleanupPreparedWorktrees(prepared);
+    try {
+      gitWorktreeSetupCache.dispose();
+    } finally {
+      cleanupPreparedWorktrees(prepared);
+    }
   }
   const results = (runResult.result?.["results"] ?? []) as WorkflowTaskResult[];
   return workflowDetailsFromRun("parallel", runResult, results, options, validationWarnings);
@@ -263,7 +271,12 @@ export async function runChain(
     }
     return { results, count: results.length, artifacts };
   });
-  const runResult = await run(direct, {}, { ...runOptions, runId, gitWorktreeSetupCache });
+  let runResult;
+  try {
+    runResult = await run(direct, {}, { ...runOptions, runId, gitWorktreeSetupCache });
+  } finally {
+    gitWorktreeSetupCache.dispose();
+  }
   const results = (runResult.result?.["results"] ?? []) as WorkflowTaskResult[];
   return workflowDetailsFromRun("chain", runResult, results, options, validationWarnings);
 }
