@@ -1,5 +1,8 @@
 import type { BlockerObservation, GoalLedger, ReducerOutcome, ReviewRecord } from "./goal-types.js";
-import { summarizeReviewConvergence, type ReviewNextAction } from "./review-convergence.js";
+import {
+  summarizeReviewConvergence,
+  type ReviewNextAction,
+} from "./review-convergence.js";
 
 function reducerSummary(
   reviews: readonly ReviewRecord[],
@@ -89,8 +92,14 @@ export function reduceGoalDecision(
   const completeVotes = turnReviews.filter(
     (review) => review.decision === "complete",
   ).length;
+  const quorumMet = completeVotes >= options.reviewQuorum;
 
-  if (completeVotes >= options.reviewQuorum) {
+  // Deterministic boolean convergence: each review's `decision` is derived
+  // solely from the reviewer's self-reported `stop_review_loop` flag (plus the
+  // reviewer_error/parse-failure guards). The reducer completes on quorum of
+  // those booleans and does not re-litigate findings arrays or traceability
+  // statuses — reviewer prompts own deriving the flag from that evidence.
+  if (quorumMet) {
     const summary = reducerSummary(turnReviews, true, options.nextActionOnComplete);
     return {
       status: "complete",
@@ -98,7 +107,7 @@ export function reduceGoalDecision(
         ...summary,
         turn: options.turn,
         decision: "complete",
-        reason: `Reviewer quorum met: ${completeVotes}/${options.reviewQuorum} reviewers marked complete.`,
+        reason: `Reviewer quorum met: ${completeVotes}/${options.reviewQuorum} reviewers independently reported stop_review_loop=true with no reviewer execution errors.`,
         complete_votes: completeVotes,
         review_quorum: options.reviewQuorum,
       },

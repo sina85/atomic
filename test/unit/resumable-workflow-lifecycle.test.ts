@@ -68,10 +68,21 @@ describe("restored-session resumable workflow notices", () => {
     const backend = new InMemoryDurableBackend();
     setDurableBackend(backend);
     backend.registerWorkflow({ workflowId: "done-run", name: "ralph", inputs: {}, createdAt: 1, status: "running" });
+    backend.recordCheckpoint({
+      kind: "tool",
+      workflowId: "done-run",
+      checkpointId: "tool:1",
+      name: "prepare",
+      argsHash: "hash",
+      output: "ready",
+      completedAt: 2,
+    });
     backend.setWorkflowStatus("done-run", "completed");
 
     const notifications = await runSessionStart(captureSessionStart(), "resume", [checkpointEntry("done-run")]);
 
+    assert.equal(backend.listCompletedWorkflows().length, 1);
+    assert.equal(backend.listResumableWorkflows().length, 0);
     assert.equal(notifications.some((message) => message.includes("resumable workflows")), false);
   });
 
@@ -95,6 +106,16 @@ describe("restored-session resumable workflow notices", () => {
       const notice = notifications.find((message) => message.includes("resumable workflows"));
       assert.match(notice ?? "", /\/workflow resume resumable-run/);
     }
+  });
+
+  test("does not reject session start when host entries throw", async () => {
+    setDurableBackend(new InMemoryDurableBackend());
+    const handler = captureSessionStart();
+
+    await assert.doesNotReject(async () => handler({ reason: "startup" }, {
+      sessionManager: { getEntries: () => { throw new Error("entries unavailable"); } },
+      ui: { notify: () => undefined },
+    }));
   });
 
   test("does not advertise resumable state for unrelated session-start reasons", async () => {

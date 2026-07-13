@@ -144,19 +144,21 @@ export async function runGoalWorkflow(ctx: GoalRunnerContext, options: GoalWorkf
       excludedTools: ["ask_user_question"],
     };
 
+    // Keep this model list identical to Ralph reviewer-a while preserving an
+    // independent Goal configuration and Goal's richer decision schema.
     const reviewerModelConfig = {
       model: "anthropic/claude-fable-5:high",
       fallbackModels: [
-        "openai-codex/gpt-5.6-sol:max",
-        "github-copilot/gpt-5.6-sol:max",
-        "openai/gpt-5.6-sol:max",
+        "openai-codex/gpt-5.6-sol:xhigh",
+        "github-copilot/gpt-5.6-sol:xhigh",
+        "openai/gpt-5.6-sol:xhigh",
         "openai-codex/gpt-5.5:xhigh",
         "github-copilot/gpt-5.5:xhigh",
         "openai/gpt-5.5:xhigh",
         "github-copilot/claude-opus-4.8 (1m):high",
         "anthropic/claude-opus-4-8:high",
         "cursor/claude-fable-5:high",
-        "cursor/gpt-5.6-sol:max",
+        "cursor/gpt-5.6-sol:xhigh",
         "cursor/gpt-5.5:high",
         "cursor/claude-opus-4-8-thinking:high",
         "cursor/grok-4.5",
@@ -164,7 +166,7 @@ export async function runGoalWorkflow(ctx: GoalRunnerContext, options: GoalWorkf
         "zai-coding-cn/glm-5.2:xhigh",
         "cursor/glm-5.2",
         "openrouter/anthropic/claude-fable-5:high",
-        "openrouter/openai/gpt-5.6-sol:max",
+        "openrouter/openai/gpt-5.6-sol:xhigh",
         "openrouter/sakana/fugu-ultra:high",
         "openrouter/openai/gpt-5.5:xhigh",
         "openrouter/anthropic/claude-opus-4-8:high",
@@ -207,7 +209,6 @@ export async function runGoalWorkflow(ctx: GoalRunnerContext, options: GoalWorkf
         : renderForkedGoalWorkerPrompt(
             ledger,
             ledgerPath,
-            blockerThreshold,
             latestReviewArtifactPaths,
           );
 
@@ -341,11 +342,9 @@ export async function runGoalWorkflow(ctx: GoalRunnerContext, options: GoalWorkf
         );
         return record;
       }));
-      latestReviewArtifactPaths = latestReviews.map((review) => review.artifact_path);
-      latestReviewReportPath = await writeReviewRoundArtifact(
-        artifactDir,
-        latestReviews,
-      );
+      latestReviewReportPath = await writeReviewRoundArtifact(artifactDir, latestReviews);
+      // Consolidated round artifact leads so the next worker turn plans the full findings batch first.
+      latestReviewArtifactPaths = [latestReviewReportPath, ...latestReviews.map((review) => review.artifact_path)];
       ledger.reviews.push(...latestReviews);
       appendLifecycleEvent(
         ledger,

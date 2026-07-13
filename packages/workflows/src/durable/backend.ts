@@ -112,6 +112,8 @@ export interface DurableWorkflowBackend {
    * failed/blocked runs unless explicitly marked non-resumable.
    */
   listResumableWorkflows(): readonly ResumableWorkflowEntry[];
+  /** List successful completed root workflows with durable checkpoint progress. */
+  listCompletedWorkflows(): readonly ResumableWorkflowEntry[];
 
   /** Export a session-cache entry for the given workflow (for JSONL persistence). */
   toCacheEntry(workflowId: string): DurableCheckpointEntry | undefined;
@@ -275,6 +277,12 @@ export class InMemoryDurableBackend implements DurableWorkflowBackend {
       .map((rec) => toResumableEntry(rec.handle));
   }
 
+  listCompletedWorkflows(): readonly ResumableWorkflowEntry[] {
+    return [...this.workflows.values()]
+      .filter((rec) => isRootWorkflow(rec.handle) && isCompletedHandle(rec.handle))
+      .map((rec) => toResumableEntry(rec.handle));
+  }
+
   toCacheEntry(workflowId: string): DurableCheckpointEntry | undefined {
     const rec = this.workflows.get(workflowId);
     if (!rec) return undefined;
@@ -314,6 +322,18 @@ export class InMemoryDurableBackend implements DurableWorkflowBackend {
       for (const cp of rec.checkpoints) this.recordCheckpoint(cp);
     }
   }
+}
+
+function isRootWorkflow(handle: DurableWorkflowHandle): boolean {
+  return handle.rootWorkflowId === undefined || handle.rootWorkflowId === handle.workflowId;
+}
+
+function hasResumeProgress(handle: DurableWorkflowHandle): boolean {
+  return handle.completedCheckpoints > 0 || handle.pendingPrompts > 0;
+}
+
+function isCompletedHandle(handle: DurableWorkflowHandle): boolean {
+  return handle.status === "completed" && hasResumeProgress(handle);
 }
 
 function toResumableEntry(handle: DurableWorkflowHandle): ResumableWorkflowEntry {

@@ -4,7 +4,6 @@ import {
   finalActionRemaining,
   parseFailureDiagnostics,
   summarizeReviewConvergence,
-  traceabilityProvenExceptFinalAction,
   type ParsedReviewDecision,
 } from "./review-convergence.js";
 
@@ -28,43 +27,22 @@ export function parsedReviewDecisionFromResult(
   };
 }
 
-const NON_BLOCKING_ALIGNMENTS = new Set([
-  "beyond_objective",
-  "contradicts_objective",
-]);
-
-function findingBlocksApproval(finding: ReviewDecision["findings"][number]): boolean {
-  const alignment = finding.objective_alignment;
-  if (NON_BLOCKING_ALIGNMENTS.has(alignment)) return false;
-  if (alignment !== "required_by_objective" && alignment !== "consistent_with_objective") {
-    return true;
-  }
-  return finding.priority !== 3;
-}
-
-function traceabilityApproves(
-  decision: ReviewDecision,
-  allowFinalActionRemaining: boolean,
-): boolean {
-  return traceabilityProvenExceptFinalAction({
-    traceability: decision.requirements_traceability,
-    allowFinalActionRemaining,
-  });
-}
-
-export function reviewApproved(
-  decision: ReviewDecision,
-  options: { readonly allowFinalActionRemaining?: boolean } = {},
-): boolean {
-  const hasBlockingFindings = decision.findings.some(findingBlocksApproval);
-  return (
-    decision.stop_review_loop === true &&
-    decision.overall_correctness === "patch is correct" &&
-    decision.goal_oracle_satisfied === true &&
-    traceabilityApproves(decision, options.allowFinalActionRemaining === true) &&
-    !hasBlockingFindings &&
-    decision.reviewer_error == null
-  );
+/**
+ * Deterministic single-reviewer approval gate.
+ *
+ * The reviewer's self-reported `stop_review_loop` boolean is the single
+ * authoritative convergence signal: the harness does not recompute approval
+ * from findings arrays, priorities, or requirements_traceability statuses.
+ * Those fields remain required audit evidence for humans and later stages,
+ * and the reviewer prompt instructs the model how to derive the flag from
+ * them — but the gate itself trusts the boolean.
+ *
+ * Two hard guards remain: a reviewer execution failure (`reviewer_error`)
+ * never approves, and unparsed reviewer output is synthesized upstream as a
+ * `stop_review_loop: false` decision, so parse failures never approve either.
+ */
+export function reviewApproved(decision: ReviewDecision): boolean {
+  return decision.stop_review_loop === true && decision.reviewer_error == null;
 }
 
 export function reviewerErrorDecision(message: string): ReviewDecision {
@@ -112,9 +90,7 @@ export function reviewDecisionToRecord(args: {
   readonly allowFinalActionRemaining: boolean;
 }): ReviewRecord {
   const blocker = blockerFromReviewDecision(args.decision);
-  const approved = reviewApproved(args.decision, {
-    allowFinalActionRemaining: args.allowFinalActionRemaining,
-  });
+  const approved = reviewApproved(args.decision);
   const hasFinalActionRemaining = args.allowFinalActionRemaining &&
     finalActionRemaining(args.decision.requirements_traceability);
   const verificationGap = args.decision.verification_remaining.trim();

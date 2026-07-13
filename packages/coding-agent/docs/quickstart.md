@@ -84,7 +84,7 @@ On a fresh install with no prior Atomic startup state, Atomic shows a one-time f
 
 Once Atomic starts, default to a workflow for non-trivial work and for requests with inherent structure plus a verifiable objective. Implementation, build, debugging, bug fixes, migrations, features, scoped multi-file edits, validation/review work, and loop-shaped requests are workflow candidates; reserve direct chat for tiny deterministic low-risk answers or edits where tracking clearly adds more overhead than value.
 
-Workflow-first is not builtin-only. Atomic can discover named builtin, project, user, and package workflows; run direct `task`, `tasks`, and `chain` shapes; or author a rich custom TypeScript `workflow({...})` inline using the documented starter patterns. Custom graphs can classify and branch, dynamically fan out and synthesize artifacts, run adversarial worker/reviewer repair cycles, generate and filter or tournament-rank candidates, and loop until checks pass with explicit bounds.
+Workflow-first is not builtin-only or monolithic. Atomic can discover named builtin, project, user, and package workflows; run direct `task`, `tasks`, and `chain` shapes; author a rich custom TypeScript `workflow({...})` inline; and compositionally import reusable workflow definitions—including builtins from `@bastani/workflows/builtin`—into parent workflows with `ctx.workflow(...)`. Nested children can nest again within `maxDepth`, so custom graphs can combine proven research, implementation, design, verification, and approval workflows instead of copying them. They can also classify and branch, dynamically fan out and synthesize artifacts, run adversarial repair cycles, tournament-rank candidates, and loop until checks pass with explicit bounds.
 
 Atomic turns repeatable engineering loops into executable stages with inspectable evidence instead of relying on a markdown checklist the model may or may not follow.
 
@@ -151,7 +151,7 @@ Skills are reusable expert instructions. Trigger one with `/skill:<name>` follow
 | `tdd` | Test-first feature or bug work. | `/skill:tdd` |
 | `impeccable` | Critique or refine web/native frontend and product UI; includes detector hooks. | `/skill:impeccable` |
 | `playwright-cli` | Drive a real browser for end-to-end UI checks, screenshots, and reviewable proof videos. | `/skill:playwright-cli` |
-| `effective-liteparse` | Pull text, tables, or values out of PDF, DOCX, PPTX, XLSX, and image files locally. | `/skill:effective-liteparse` |
+| `liteparse` | Pull text, tables, or values out of PDF, DOCX, PPTX, XLSX, and image files locally. | `/skill:liteparse` |
 
 Use `/skill:research-codebase` for a focused area and `/workflow deep-research-codebase` when a clearly delegated repo-wide research job benefits from durable stages and artifacts. Keep conversation-led planning and implementation inline, or use bounded subagents while the parent remains in control. When an autonomous implementation job needs durable execution, use `/workflow goal` for a goal ledger, bounded worker turns, and reviewer-gated completion, or `/workflow ralph` for a research-first pipeline with delegated implementation and iterative review. Task size alone does not select either workflow. Add `create_pr=true` only when you want the workflow's final pull-request stage after approval.
 

@@ -86,14 +86,18 @@ export function registerWorkflowLifecycleHandlers(
     if (sessionManager) {
       const cfg = runtimeState.configLoadRef.current?.config;
       withWorkflowLifecycleNotificationsSuppressed(runtimeState.lifecycleNotificationState, () => {
-        restoreOnSessionStart(
-          sessionManager,
-          {
-            resumeInFlight: cfg?.resumeInFlight ?? "ask",
-            persistRuns: cfg?.persistRuns ?? true,
-          },
-          store,
-        );
+        try {
+          restoreOnSessionStart(
+            sessionManager,
+            {
+              resumeInFlight: cfg?.resumeInFlight ?? "ask",
+              persistRuns: cfg?.persistRuns ?? true,
+            },
+            store,
+          );
+        } catch {
+          // Host session-entry failures must not prevent the session from starting.
+        }
         seedWorkflowLifecycleNotificationState(runtimeState.lifecycleNotificationState, store.snapshot());
       });
       const reason = typeof event === "object" && event !== null && "reason" in event
@@ -108,12 +112,16 @@ export function registerWorkflowLifecycleHandlers(
           } catch {
             // A resume-catalog failure must not prevent the host session from starting.
           }
-          const resumable = findResumableWorkflowNotices(getEntries.call(sessionManager), authoritativeCatalog);
-          if (resumable.length > 0) {
-            const commands = resumable
-              .map((workflow) => `\`${workflow.name}\` (${workflow.workflowId.slice(0, 8)}): /workflow resume ${workflow.workflowId}`)
-              .join("\n");
-            ctx?.ui?.notify?.(`This session has resumable workflows:\n${commands}`, "info");
+          try {
+            const resumable = findResumableWorkflowNotices(getEntries.call(sessionManager), authoritativeCatalog);
+            if (resumable.length > 0) {
+              const commands = resumable
+                .map((workflow) => `\`${workflow.name}\` (${workflow.workflowId.slice(0, 8)}): /workflow resume ${workflow.workflowId}`)
+                .join("\n");
+              ctx?.ui?.notify?.(`This session has resumable workflows:\n${commands}`, "info");
+            }
+          } catch {
+            // Host session-entry failures must not prevent the session from starting.
           }
         }
       }

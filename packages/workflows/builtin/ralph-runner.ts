@@ -4,11 +4,20 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WorkflowRunContext, WorkflowTaskResult } from "../src/shared/types.js";
 import {
+  ACCEPTANCE_MATRIX_CONTRACT,
+  CONTRACT_FIDELITY_AUDIT,
   E2E_VERIFICATION_GUIDANCE,
+  FINDINGS_CONSOLIDATION_CONTRACT,
   LITERAL_OBJECTIVE_CONTRACT,
+  REGRESSION_EVIDENCE_CONTRACT,
   WORKER_PREFLIGHT_CONTRACT,
 } from "./shared-prompts.js";
 import { renderRalphReviewerPrompt } from "./ralph-reviewer-prompt.js";
+import {
+  renderForkedOrchestratorPrompt,
+  renderForkedResearchPrompt,
+  renderForkedResearchPromptRefinementPrompt,
+} from "./ralph-forked-prompts.js";
 import {
   REVIEWER_COUNT,
   artifactSafeName,
@@ -17,7 +26,6 @@ import {
   createQaEvidenceVideoPath,
   defaultResearchPath,
   forkContinuationOptions,
-  renderForkedOrchestratorPrompt,
   renderResearchPromptRefinementPrompt,
   renderQaE2eVideoGuidance,
   renderResearchPrompt,
@@ -31,7 +39,7 @@ import {
   type RalphWorkflowOptions,
   type RalphWorkflowResult,
 } from "./ralph-core.js";
-import { summarizeReviewConvergence } from "./review-convergence.js";
+import { consolidateFindingsBatch, summarizeReviewConvergence } from "./review-convergence.js";
 import {
   orchestratorModelConfig,
   promptEngineerModelConfig,
@@ -66,12 +74,14 @@ export async function runRalphWorkflow(
     iterationsCompleted = iteration;
     const researchPromptRefinementForkOptions = forkContinuationOptions(previousResearchPromptRefinementSessionFile);
     const researchPromptRefinement = await ctx.task(`research-prompt-refinement-${iteration}`, {
-      prompt: renderResearchPromptRefinementPrompt({
-        request: workflowPrompt,
-        acceptanceCriteria,
-        workflowCwdContext,
-        latestReviewReportPath,
-      }),
+      prompt: researchPromptRefinementForkOptions.forkFromSessionFile === undefined
+        ? renderResearchPromptRefinementPrompt({
+            request: workflowPrompt,
+            acceptanceCriteria,
+            workflowCwdContext,
+            latestReviewReportPath,
+          })
+        : renderForkedResearchPromptRefinementPrompt({ latestReviewReportPath }),
       reads: latestReviewReportPath === undefined ? [] : [latestReviewReportPath],
       ...promptEngineerModelConfig,
       ...researchPromptRefinementForkOptions,
@@ -80,14 +90,20 @@ export async function runRalphWorkflow(
     finalPlan = researchPromptRefinement.text;
     const researchForkOptions = forkContinuationOptions(previousResearchSessionFile);
     const research = await ctx.task(`research-${iteration}`, {
-      prompt: renderResearchPrompt({
-        transformedResearchQuestion: researchPromptRefinement.text,
-        prompt: workflowPrompt,
-        acceptanceCriteria,
-        workflowCwdContext,
-        latestReviewReportPath,
-        researchPath: workflowResearchPath,
-      }),
+      prompt: researchForkOptions.forkFromSessionFile === undefined
+        ? renderResearchPrompt({
+            transformedResearchQuestion: researchPromptRefinement.text,
+            prompt: workflowPrompt,
+            acceptanceCriteria,
+            workflowCwdContext,
+            latestReviewReportPath,
+            researchPath: workflowResearchPath,
+          })
+        : renderForkedResearchPrompt({
+            transformedResearchQuestion: researchPromptRefinement.text,
+            latestReviewReportPath,
+            researchPath: workflowResearchPath,
+          }),
       reads: latestReviewReportPath === undefined ? [] : [latestReviewReportPath],
       output: workflowResearchPath,
       outputMode: "file-only",
@@ -113,6 +129,10 @@ export async function runRalphWorkflow(
         ],
         ["acceptance_criteria", acceptanceCriteria],
         ["literal_contract", LITERAL_OBJECTIVE_CONTRACT],
+        ["acceptance_matrix", ACCEPTANCE_MATRIX_CONTRACT],
+        ["divergence_audit", CONTRACT_FIDELITY_AUDIT],
+        ["findings_batch", FINDINGS_CONSOLIDATION_CONTRACT],
+        ["regression_evidence", REGRESSION_EVIDENCE_CONTRACT],
         workflowCwdContext,
         [
           "research",
@@ -199,12 +219,8 @@ export async function runRalphWorkflow(
         ],
       ])
       : renderForkedOrchestratorPrompt({
-          prompt: workflowPrompt,
-          acceptanceCriteria,
-          workflowCwdContext,
           researchPath,
           implementationNotesPath,
-          qaVideoPath,
         });
     const orchestrator = await ctx.task(`orchestrator-${iteration}`, {
       prompt: orchestratorPrompt,
@@ -305,7 +321,19 @@ export async function runRalphWorkflow(
     });
     latestReviewReportPath = await writeJsonArtifact(
       join(artifactDir, "review-round-latest.json"),
-      { convergence_decision: roundConvergenceDecision, reviews: reviewEntries },
+      {
+        convergence_decision: roundConvergenceDecision,
+        // Deduplicated cross-reviewer findings batch so the next research and
+        // orchestrator passes repair the round's findings together instead of
+        // one at a time.
+        consolidated_findings: consolidateFindingsBatch(
+          reviewEntries.map((review) => ({
+            reviewer: review.reviewer,
+            findings: review.decision.findings,
+          })),
+        ),
+        reviews: reviewEntries,
+      },
     );
     if (approved) break;
   }

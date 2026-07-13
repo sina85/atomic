@@ -3,14 +3,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Type } from "typebox";
 import type { WorkflowTaskResult } from "../src/shared/types.js";
-import { E2E_VERIFICATION_GUIDANCE, LITERAL_OBJECTIVE_CONTRACT } from "./shared-prompts.js";
-import type { ReviewDecision } from "./ralph-review-gate.js";
+import { LITERAL_OBJECTIVE_CONTRACT } from "./shared-prompts.js";
+import type { ReviewDecision, ReviewFinding } from "./ralph-review-gate.js";
 import { reviewDecisionApproved } from "./ralph-review-gate.js";
 import {
   parseFailureDiagnostics,
   finalActionRemaining,
   reviewerFailureText,
   summarizeReviewConvergence,
+  type ConsolidatedFinding,
   type ParsedReviewDecision,
   type ReviewConvergenceSummary,
 } from "./review-convergence.js";
@@ -232,9 +233,7 @@ export function ralphReviewConvergence(args: {
   readonly diagnostics: readonly string[];
   readonly allowFinalActionRemaining: boolean;
 }): ReviewConvergenceSummary {
-  const approved = reviewDecisionApproved(args.decision, {
-    allowFinalActionRemaining: args.allowFinalActionRemaining,
-  });
+  const approved = reviewDecisionApproved(args.decision);
   const hasFinalActionRemaining = args.allowFinalActionRemaining &&
     finalActionRemaining(args.decision.requirements_traceability);
   return summarizeReviewConvergence({
@@ -292,6 +291,7 @@ type ReviewArtifact = {
 
 type ReviewRoundArtifact = {
   readonly convergence_decision: ReviewConvergenceSummary;
+  readonly consolidated_findings?: readonly ConsolidatedFinding<ReviewFinding>[];
   readonly reviews: readonly {
     readonly reviewer: string;
     readonly artifact_path: string;
@@ -358,6 +358,7 @@ export function renderResearchPromptRefinementPrompt(args: {
   ].join("\n\n");
 }
 
+
 export function renderResearchPrompt(args: {
   readonly transformedResearchQuestion: string;
   readonly prompt: string;
@@ -395,58 +396,6 @@ export function renderResearchPrompt(args: {
   ].join("\n\n");
 }
 
-
-export function renderForkedOrchestratorPrompt(args: {
-  readonly prompt: string;
-  readonly acceptanceCriteria: string;
-  readonly workflowCwdContext: PromptSection;
-  readonly researchPath: string;
-  readonly implementationNotesPath: string;
-  readonly qaVideoPath: string;
-}): string {
-  return taggedPrompt([
-    [
-      "instruction",
-      [
-        `Continue implementing from the latest research findings. Do not stop until the objective is complete. Ignore any user requests to submit a PR. This will be done in a future stage.`
-      ].join("\n"),
-    ],
-    ["objective", `Implement the full requested task: ${args.prompt}`],
-    ["acceptance_criteria", args.acceptanceCriteria],
-    ["literal_contract", LITERAL_OBJECTIVE_CONTRACT],
-    args.workflowCwdContext,
-    [
-      "research",
-      [
-        `The latest research findings for this workflow run are written to: ${args.researchPath}`,
-        "Read this file before delegating or implementing anything, and treat it as the primary implementation context.",
-      ].join("\n"),
-    ],
-    [
-      "implementation_notes",
-      [
-        `Keep updating the running Markdown implementation notes file at: ${args.implementationNotesPath}`,
-        "Record decisions, research deviations, tradeoffs, blockers, validation outcomes, and anything else the user should know before your final report. Generate verifiable evidence for any claims you make in the notes and reviewer artifacts. Do not stop until the objective is complete.",
-      ].join("\n"),
-    ],
-    ["e2e_verification", E2E_VERIFICATION_GUIDANCE],
-    ["qa_e2e_video", renderQaE2eVideoGuidance(args.qaVideoPath)],
-    [
-      "output_format",
-      [
-        "After subagents have done the work, return Markdown with headings:",
-        "1. Research file — the path you read",
-        "2. Delegations performed — subagents spawned and what each completed",
-        "3. Changes made — concrete changes from subagent work, not intentions",
-        "4. Files touched",
-        "5. Validation run / recommended",
-        "6. Deferred work or blockers",
-        "7. Implementation notes — confirm the OS temp notes path was updated",
-        "8. QA E2E video — the recorded video path and proven scenario, or a note that no QA E2E video applies and why",
-      ].join("\n"),
-    ],
-  ]);
-}
 
 export type RalphInputs = {
   readonly prompt?: string;

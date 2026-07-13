@@ -6,6 +6,7 @@ import { InlineMessageComponent } from "./ui/inline-message.js";
 import { loadConfig, type IntercomConfig } from "./config.js";
 import type { SessionInfo, Message } from "./types.js";
 import { ReplyTracker } from "./reply-tracker.js";
+import { ReplyWaiterSlot } from "./reply-waiter.js";
 import { registerContactSupervisorTool } from "./contact-supervisor-tool.js";
 import { registerIntercomTool } from "./intercom-tool.js";
 import { registerIntercomOverlay } from "./overlay.js";
@@ -37,7 +38,6 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
   let reconnectTimer: NodeJS.Timeout | null = null;
   let reconnectPromise: Promise<IntercomClient> | null = null;
   let reconnectPromiseGeneration: number | null = null;
-  let startupConnectTimer: NodeJS.Timeout | null = null;
   let reconnectAttempt = 0;
   let shuttingDown = false;
   let disposed = true;
@@ -46,62 +46,16 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
   let agentRunning = false;
   const activeTools = new Map<string, string>();
   const replyTracker = new ReplyTracker();
+  const replyWaiters = new ReplyWaiterSlot();
   const foregroundDetachHandoff = new ForegroundDetachHandoff(pi);
   const pendingIdleMessages: InboundMessageEntry[] = [];
   let inboundFlushTimer: NodeJS.Timeout | null = null;
-  let replyWaiter: {
-    from: string;
-    replyTo: string;
-    resolve: (message: Message) => void;
-    reject: (error: Error) => void;
-  } | null = null;
-  function waitForReply(from: string, replyTo: string, signal?: AbortSignal): Promise<Message> {
-    if (replyWaiter) {
-      return Promise.reject(new Error("Already waiting for a reply"));
-    }
-    if (signal?.aborted) {
-      return Promise.reject(new Error("Cancelled"));
-    }
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        rejectReplyWaiter(new Error(`No reply from "${from}" within 10 minutes`));
-      }, 10 * 60 * 1000);
-      const cleanup = () => {
-        clearTimeout(timeout);
-        signal?.removeEventListener("abort", onAbort);
-        if (replyWaiter?.replyTo === replyTo) {
-          replyWaiter = null;
-        }
-      };
-      const onAbort = () => {
-        cleanup();
-        reject(new Error("Cancelled"));
-      };
-      signal?.addEventListener("abort", onAbort, { once: true });
-      replyWaiter = {
-        from,
-        replyTo,
-        resolve: (message) => {
-          cleanup();
-          resolve(message);
-        },
-        reject: (error) => {
-          cleanup();
-          reject(error);
-        },
-      };
-    });
-  }
   function rejectReplyWaiter(error: Error): void {
-    replyWaiter?.reject(error);
+    replyWaiters.rejectCurrent(error);
   }
   function clearReconnectTimer(): void {
     if (reconnectTimer) clearTimeout(reconnectTimer);
     reconnectTimer = null;
-  }
-  function clearStartupConnectTimer(): void {
-    if (startupConnectTimer) clearTimeout(startupConnectTimer);
-    startupConnectTimer = null;
   }
   function clearInboundFlushTimer(): void {
     if (inboundFlushTimer) clearTimeout(inboundFlushTimer);
@@ -244,7 +198,7 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
     if (!liveContext) {
       return;
     }
-    if (routeIncomingReply(replyWaiter, from, message)) return;
+    if (routeIncomingReply(replyWaiters.current(), from, message)) return;
     const attachmentText = message.content.attachments?.length
       ? formatAttachments(message.content.attachments)
       : "";
@@ -425,17 +379,13 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
     incrementRuntimeGeneration: () => { runtimeGeneration += 1; foregroundDetachHandoff.reset(); return runtimeGeneration; },
     resetReconnectAttempt: () => { reconnectAttempt = 0; },
     clearReconnectTimer,
-    clearStartupConnectTimer,
     setRuntimeContext: (value) => { runtimeContext = value; },
     setCurrentSessionId: (value) => { currentSessionId = value; },
     setCurrentModel: (value) => { currentModel = value; },
     setSessionStartedAt: (value) => { sessionStartedAt = value; },
     setAgentRunning: (value) => { agentRunning = value; },
     activeTools,
-    setStartupConnectTimer: (value) => { startupConnectTimer = value; },
     getLiveContext,
-    ensureConnected,
-    scheduleReconnect,
     rejectReplyWaiter,
     replyTracker,
     pendingIdleMessages,
@@ -459,19 +409,17 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
     ensureConnected,
     syncPresenceIdentity,
     resolveSessionTarget,
-    waitForReply,
-    hasReplyWaiter: () => Boolean(replyWaiter),
-    rejectReplyWaiter,
+    beginReplyWait: (from, replyTo, signal) => replyWaiters.begin(from, replyTo, signal),
+    hasReplyWaiter: () => replyWaiters.has(),
   });
   registerIntercomTool(pi, {
     ensureConnected,
     syncPresenceIdentity,
     resolveSessionTarget,
-    waitForReply,
+    beginReplyWait: (from, replyTo, signal) => replyWaiters.begin(from, replyTo, signal),
     confirmSend: config.confirmSend,
     replyTracker,
-    hasReplyWaiter: () => Boolean(replyWaiter),
-    rejectReplyWaiter,
+    hasReplyWaiter: () => replyWaiters.has(),
   });
   registerIntercomOverlay(pi, {
     runtimeGeneration: () => runtimeGeneration,
@@ -480,12 +428,4 @@ export default function piIntercomExtension(pi: ExtensionAPI) {
     ensureConnected,
     syncPresenceIdentity,
   });
-  return { enabled: config.enabled,
-    async awaitAutomaticBrokerReady(): Promise<void> {
-      if (config.enabled) await ensureConnected("startup");
-    },
-    async awaitForegroundBrokerReady(): Promise<void> {
-      if (config.enabled) await ensureConnected("tool");
-    },
-  };
 }

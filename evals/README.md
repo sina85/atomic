@@ -11,6 +11,7 @@ Common options:
 - `--agent-kwarg version=next` installs `@bastani/atomic@next` inside the sandbox. Omit it for `@latest`, or pass a concrete npm version/tag without the leading `@` (for example `--agent-kwarg version=0.9.3-alpha.1`).
 - `--force-build` rebuilds the task image so the `npm install -g @bastani/atomic@...` layer re-runs. Without it, Docker layer caching reuses a previously installed Atomic even after a new version is published to the tag, so benchmark runs can silently test a stale build. All commands below include it.
 - `--agent-kwarg thinking=xhigh` configures Atomic's reasoning level for models that support it.
+- `--agent-kwarg disallowed_subscriptions=github-copilot` excludes matching providers from copied local subscription auth. The default is empty: every valid local entry remains eligible unless explicitly denied, with no known-provider allowlist. Pass multiple names as a comma-separated string or JSON list.
 - `--n-tasks` and `--include-task-name` control which Deep SWE tasks run.
 
 ## Timeouts
@@ -30,6 +31,7 @@ uv run pier run \
   --model MODEL_NAME \
   --agent-kwarg thinking=THINKING_LEVEL \
   --agent-kwarg version=VERSION \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-smoke \
   --n-tasks 1 \
@@ -63,6 +65,7 @@ uv run pier run \
   --model openai-codex/gpt-5.6-sol \
   --agent-kwarg thinking=xhigh \
   --agent-kwarg version=0.9.5 \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-deep-swe \
   --sample-seed 0 \
@@ -82,6 +85,7 @@ uv run pier run \
   --agent-import-path atomic_pier:Atomic \
   --model github-copilot/gpt-5.6-sol \
   --agent-kwarg thinking=xhigh \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-deep-swe \
   --sample-seed 0 \
@@ -110,6 +114,7 @@ uv run pier run \
   --agent-import-path atomic_pier:Atomic \
   --model github-copilot/gpt-5.6-sol \
   --agent-kwarg thinking=xhigh \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --agent-env COPILOT_API_TARGET=api.githubcopilot.com \
   --job-name atomic-deep-swe \
@@ -133,6 +138,7 @@ uv run pier run \
   --agent-import-path atomic_pier:Atomic \
   --model anthropic/claude-fable-5 \
   --agent-kwarg thinking=high \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-deep-swe \
   --sample-seed 0 \
@@ -144,7 +150,7 @@ The native Anthropic provider uses dash-form model ids such as `claude-opus-4-8`
 
 ### OpenAI Codex subscription with OpenRouter fallback
 
-For `openai-codex/...` models, Atomic uses OAuth credentials stored in the agent auth file rather than an environment variable. Log in on the host so `~/.atomic/agent/auth.json` (or legacy `~/.pi/agent/auth.json`) contains an `openai-codex` entry. The Pier and Harbor adapters copy only that provider entry into the sandbox user's `~/.atomic/agent/auth.json` with `0600` permissions before launching Atomic. Export `OPENROUTER_API_KEY` if you want missing Codex subscription auth to fall back to the equivalent `openrouter/openai/...` model.
+For `openai-codex/...` models, Atomic uses OAuth credentials stored in the agent auth file rather than an environment variable. Log in on the host so `~/.atomic/agent/auth.json` (or legacy `~/.pi/agent/auth.json`) contains an `openai-codex` entry. The Pier and Harbor adapters merge valid local entries with Atomic taking precedence over legacy Pi, remove denied providers and providers shadowed by explicit environment credentials, then write the remainder to the sandbox user's `~/.atomic/agent/auth.json` with `0600` permissions. Export `OPENROUTER_API_KEY` if you want missing Codex subscription auth to fall back to the equivalent `openrouter/openai/...` model.
 
 ```bash
 export OPENROUTER_API_KEY="..."  # optional fallback
@@ -154,6 +160,7 @@ uv run pier run \
   --agent-import-path atomic_pier:Atomic \
   --model openai-codex/gpt-5.6-sol \
   --agent-kwarg thinking=xhigh \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-deep-swe \
   --sample-seed 0 \
@@ -161,7 +168,7 @@ uv run pier run \
   --force-build
 ```
 
-The adapters do not introduce Codex-specific auth environment variables and do not print the OAuth credential contents.
+The adapters do not introduce Codex-specific auth environment variables and do not print copied credential contents.
 
 ### OpenRouter
 
@@ -175,6 +182,7 @@ uv run pier run \
   --agent-import-path atomic_pier:Atomic \
   --model openrouter/openai/gpt-5.6-sol \
   --agent-kwarg thinking=xhigh \
+  --agent-kwarg disallowed_subscriptions=github-copilot \
   --agent-timeout-multiplier 16 \
   --job-name atomic-deep-swe \
   --sample-seed 0 \
@@ -185,15 +193,3 @@ uv run pier run \
 The Atomic Pier adapter reads `OPENROUTER_API_KEY` from the Pier process environment and passes it into the sandbox for Atomic. If your launcher does not inherit shell exports, pass it explicitly with `--agent-env OPENROUTER_API_KEY=...` instead.
 
 The Pier network allowlist automatically includes `openrouter.ai` when the model provider is `openrouter`. To use a custom OpenRouter-compatible endpoint, pass it with `--agent-env OPENROUTER_BASE_URL=...`.
-
-## Adapter behavior
-
-The adapter is self-contained; it does not require patching Pier or Harbor. It follows the installed-agent pattern:
-
-1. Install Atomic and required local search tools (`rg` and `fd`) during setup.
-2. Run the Atomic CLI in JSON mode.
-3. Keep Atomic's mutable agent state under the sandbox user's `~/.atomic/agent` directory by setting Atomic's existing agent-dir environment override, passing `--session-dir ~/.atomic/agent/atomic-sessions`, and exporting `ATOMIC_TODO_PATH=$HOME/.atomic/agent/todos` inside the sandbox so the default todo tool cannot create `.atomic/todos` in the benchmark repository.
-4. Tee Atomic's JSON stream to `/logs/agent/atomic.txt` and continuously mirror session transcripts to `/logs/agent/atomic-sessions/` during the run, with a final exit-trap sync to preserve transcripts on normal exits and SIGTERM-based timeouts. Mirrored transcript permissions are normalized after every copy so job artifacts remain readable and removable by the host user even when the sandbox agent runs as root.
-5. Collect usage and trajectory data from the main chat plus workflow-stage and nested child transcripts, de-duplicating copied parent context and reporting the combined agent-step count (`n_agent_steps` in Pier and Harbor context metadata).
-
-Like the built-in Pier agents, it does not auto-commit work. Deep SWE tasks rely on the agent following the task instruction to commit.
