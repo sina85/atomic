@@ -2,9 +2,29 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Replaced deletion-target context compaction with durable verbatim line compaction. Legacy `context_compaction` entries are now inert archival records, so content they previously hid may re-enter context when old sessions resume; start a new conversation or compact again to establish a new boundary.
+- Removed the deprecated `contextCompact()` SDK method, `context_compact` RPC command, and `context_compaction_start`/`context_compaction_end` events. Use `compact()` and `compaction_start`/`compaction_end`.
+- Changed extension compaction hooks: `session_before_compact` now accepts `cancel` or a complete non-empty `compactedText` override instead of `deletionRequest`; `session_compact` exposes `VerbatimCompactionResult` and the saved `compactionEntry`.
+
+### Added
+
+- Added one-pass contextual line-ranking compaction: Atomic asks the active session model at its active reasoning level, through the normal session stream/provider wrapper, for one whole-region compact `{"d":[[start,end],...]}` deletion plan, then safety-normalizes ranges and mechanically reconstructs verbatim text with cumulative `(filtered N lines)` markers.
+- Added strict pi-style compaction failure semantics: oversized prompts, provider/API errors or overflow, aborts, malformed JSON, and empty/unusable ranges fail without persistence or continuation and without semantic retries, chunking, critical replans, deterministic fallback, or deterministic target correction.
+- Added durable pi-style `CompactionEntry` boundaries discriminated by `details.strategy: "verbatim-lines"`, plus resumable custom-role boundary messages and a collapsible TUI card showing retained-line and token-reduction statistics.
+
+### Changed
+
+- Changed `compression_ratio` to explicitly represent the fraction of compactable lines to keep. `preserve_recent` is enforced client-side, widens the tail to a user-turn start, and always protects the final logical turn. Role headers are now ordinary ranked lines; only explicit protected spans are split out of model-selected deletion ranges.
+- Simplified resume reconstruction to load the persisted compacted string followed by original messages from `firstKeptEntryId`; no deletion filters, signed-thinking repair pass, or tool dependency repair is re-derived.
+- Retuned the one-pass compaction classifier's retention guidance to surgically thin long tool results, preserve compact diagnostic/code/state anchors, prune repeated retry and superseded bodies, and treat formatting, stack position, markers, and query matches as contextual rather than hard categories.
+
+
 ### Fixed
 
 - Fixed resumed sessions resurrecting records hidden by earlier Verbatim Compaction entries after later compactions changed signed-thinking turn or tool-call/result dependencies. Persisted logical deletions are now an authoritative lower bound during every context rebuild: Atomic closes unsafe replay structures by adding transient omissions instead of restoring compacted calls/results, pairs each result with its concrete call occurrence so independent exchanges may reuse an opaque call ID, leaves unrelated retained history unchanged, and keeps the append-only session file intact.
+- Fixed successful manual and automatic compaction UI refreshes to render the compacted transcript with exactly one visible `✻ Context compacted` boundary, while aborted and failed compactions remain unchanged.
 - Fixed the bundled workflows `/workflow resume` experience to mix successful completed workflows into the existing globally newest-first, deduplicated picker with green completed styling, resolve full IDs and prefixes across live, durable, and completed targets, and reopen retained stage chats for follow-up without re-running workflow code or replaying side effects. Completed durable state is retained for authoritative inspection; rows need checkpoints and at least one strictly valid retained conversation, invalid per-stage transcript paths cannot open chat, repeated inspection refreshes changed authoritative chat handles, and selector mount failures close safely. ([#1532](https://github.com/bastani-inc/atomic/issues/1532))
 
 ## [0.9.8] - 2026-07-12

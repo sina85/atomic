@@ -1,138 +1,212 @@
-import { describe, expect, test, vi } from "vitest";
+import { Container, Text } from "@earendil-works/pi-tui";
+import { stripVTControlCharacters } from "node:util";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { VerbatimCompactionResult } from "../src/core/compaction/index.ts";
+import { createVerbatimCompactionMessage, VERBATIM_COMPACTION_PREFIX } from "../src/core/messages.ts";
+import { CompactionBoundaryMessageComponent } from "../src/modes/interactive/components/compaction-boundary-message.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
-import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+import { getMarkdownTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
+
+beforeAll(() => initTheme("dark"));
+
+const result: VerbatimCompactionResult = {
+	compactedText: "[User]: retained\n(filtered 1 lines)",
+	firstKeptEntryId: "m2",
+	tokensBefore: 100,
+	parameters: { compression_ratio: 0.5, preserve_recent: 2, query: "task" },
+	promptVersion: 3,
+	rung: "planned",
+	stats: {
+		linesBefore: 4,
+		linesDeleted: 1,
+		linesKept: 3,
+		rangeCount: 1,
+		tokensBefore: 100,
+		tokensAfter: 50,
+		percentReduction: 50,
+	},
+};
+
+const persistedBoundary = createVerbatimCompactionMessage(
+	result.compactedText,
+	result.tokensBefore,
+	new Date(1).toISOString(),
+	{
+		strategy: "verbatim-lines",
+		parameters: result.parameters,
+		promptVersion: result.promptVersion,
+		rung: result.rung,
+		stats: result.stats,
+	},
+) as AgentMessage;
+
+type CompactionEndEvent = {
+	type: "compaction_end";
+	reason: "manual" | "threshold" | "overflow";
+	result?: VerbatimCompactionResult;
+	aborted: boolean;
+	willRetry: boolean;
+	errorMessage?: string;
+};
+
+const persistedContextMessages = [
+	persistedBoundary,
+	{ role: "user", content: "retained context message", timestamp: 0 } as AgentMessage,
+];
+
+function makeMode(messages: AgentMessage[] = persistedContextMessages) {
+	const chatContainer = new Container();
+	const startupNoticesContainer = new Container();
+	startupNoticesContainer.addChild(new Text("startup notice", 0, 0));
+	const mode = {
+		isInitialized: true,
+		footer: { invalidate: vi.fn() },
+		autoCompactionEscapeHandler: undefined,
+		autoCompactionLoader: undefined,
+		defaultEditor: {},
+		statusContainer: new Container(),
+		chatContainer,
+		startupNoticesContainer,
+		pendingTools: new Map(),
+		deferredRenderedUserInputs: [],
+		deferredRenderedUserInputComponents: new Map(),
+		toolOutputExpanded: false,
+		hideThinkingBlock: false,
+		hiddenThinkingLabel: "thinking",
+		outputPad: 0,
+		sessionManager: {
+			getCwd: () => process.cwd(),
+			buildSessionContext: () => ({ messages, thinkingLevel: "off", model: null }),
+		},
+		session: { extensionRunner: { getMessageRenderer: () => undefined } },
+		settingsManager: {
+			getShowTerminalProgress: () => false,
+			getShowImages: () => false,
+			getImageWidthCells: () => 80,
+		},
+		getMarkdownThemeWithSettings: () => getMarkdownTheme(),
+		getRegisteredToolDefinition: () => undefined,
+		updateEditorBorderColor: vi.fn(),
+		flushCompactionQueue: vi.fn().mockResolvedValue(undefined),
+		showError: vi.fn(),
+		showStatus: vi.fn(),
+		ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
+		attachStartupNoticesContainer: Reflect.get(InteractiveMode.prototype, "attachStartupNoticesContainer"),
+		renderSessionContext: vi.fn(Reflect.get(InteractiveMode.prototype, "renderSessionContext")),
+		addRenderedChatEntry: Reflect.get(InteractiveMode.prototype, "addRenderedChatEntry"),
+		chatMessageRenderOptions: Reflect.get(InteractiveMode.prototype, "chatMessageRenderOptions"),
+		renderDeferredUserInput: Reflect.get(InteractiveMode.prototype, "renderDeferredUserInput"),
+		rebuildChatFromMessages: Reflect.get(InteractiveMode.prototype, "rebuildChatFromMessages"),
+		addCompactionBoundaryToChat: vi.fn(Reflect.get(InteractiveMode.prototype, "addCompactionBoundaryToChat")),
+	};
+	return { mode, chatContainer };
+}
+
+async function emit(mode: object, event: CompactionEndEvent): Promise<void> {
+	const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
+		this: object,
+		event: CompactionEndEvent,
+	) => Promise<void>;
+	await handleEvent.call(mode, event);
+}
+
+function visibleBoundaries(container: Container): CompactionBoundaryMessageComponent[] {
+	return container.children.filter(
+		(child): child is CompactionBoundaryMessageComponent => child instanceof CompactionBoundaryMessageComponent,
+	);
+}
+
+function renderedText(container: Container): string {
+	return stripVTControlCharacters(container.render(200).join("\n"));
+}
 
 describe("InteractiveMode compaction events", () => {
-	test("routes exact /compact and rejects trailing text", async () => {
-		const submitHost = {
-			defaultEditor: {} as { onSubmit?: (text: string) => Promise<void> },
-			editor: { setText: vi.fn() },
-			session: { isCompacting: false, isStreaming: false, isBashRunning: false, prompt: vi.fn() },
-			isBashMode: false,
-			onInputCallback: undefined,
-			flushPendingBashComponents: vi.fn(),
-			updateEditorBorderColor: vi.fn(),
-			showWarning: vi.fn(),
-			handleCompactCommand: vi.fn().mockResolvedValue(undefined),
-		};
-		const setupEditorSubmitHandler = Reflect.get(InteractiveMode.prototype, "setupEditorSubmitHandler") as (
-			this: typeof submitHost,
-		) => void;
-		setupEditorSubmitHandler.call(submitHost);
+	for (const reason of ["manual", "threshold", "overflow"] as const) {
+		it(`renders exactly one live boundary after successful ${reason} compaction`, async () => {
+			const { mode, chatContainer } = makeMode();
 
-		await submitHost.defaultEditor.onSubmit?.("/compact preserve exact stack traces");
-		expect(submitHost.handleCompactCommand).not.toHaveBeenCalled();
-		expect(submitHost.showWarning).toHaveBeenCalledWith("Usage: /compact");
+			await emit(mode, { type: "compaction_end", reason, result, aborted: false, willRetry: false });
+			expect(mode.addCompactionBoundaryToChat).toHaveBeenCalledOnce();
+			expect(mode.addCompactionBoundaryToChat).toHaveBeenCalledWith(result);
 
-		await submitHost.defaultEditor.onSubmit?.("/compact\tkeep this");
-		expect(submitHost.handleCompactCommand).not.toHaveBeenCalled();
-		expect(submitHost.showWarning).toHaveBeenCalledWith("Usage: /compact");
+			expect(visibleBoundaries(chatContainer)).toHaveLength(1);
+			expect(renderedText(chatContainer).match(/✻ Context compacted/g)).toHaveLength(1);
+			expect(renderedText(chatContainer)).toContain("startup notice");
+			expect(renderedText(chatContainer)).toContain("retained context message");
+		});
+	}
 
-		await submitHost.defaultEditor.onSubmit?.("/compact");
-		expect(submitHost.handleCompactCommand).toHaveBeenCalledTimes(1);
-		expect(submitHost.handleCompactCommand).toHaveBeenCalledWith();
+	it("does not render a boundary for aborted or failed compaction", async () => {
+		for (const event of [
+			{ type: "compaction_end", reason: "manual", result, aborted: true, willRetry: false },
+			{ type: "compaction_end", reason: "overflow", result, aborted: false, willRetry: false, errorMessage: "failed" },
+		] satisfies CompactionEndEvent[]) {
+			const { mode, chatContainer } = makeMode([]);
+
+			await emit(mode, event);
+			expect(visibleBoundaries(chatContainer)).toHaveLength(0);
+			expect(mode.addCompactionBoundaryToChat).not.toHaveBeenCalled();
+			expect(renderedText(chatContainer)).not.toContain("✻ Context compacted");
+		}
 	});
 
-	test("shows overflow auto-compaction as a yellow warning", async () => {
-		initTheme(undefined, false);
-		const addedChildren: Array<{ render(width: number): string[]; stop(): void }> = [];
-		const fakeThis = {
-			isInitialized: true,
-			footer: { invalidate: vi.fn() },
-			autoCompactionEscapeHandler: undefined as (() => void) | undefined,
-			autoCompactionLoader: undefined,
-			defaultEditor: {} as { onEscape?: () => void },
-			statusContainer: {
-				clear: vi.fn(),
-				addChild: vi.fn((child: { render(width: number): string[]; stop(): void }) => {
-					addedChildren.push(child);
-				}),
-			},
-			session: { abortCompaction: vi.fn() },
-			settingsManager: { getShowTerminalProgress: () => false },
-			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
-		};
+	it("suppresses the synthesized leading boundary without removing a retained same-name custom message", async () => {
+		const retainedAlias = {
+			role: "custom",
+			customType: "compaction",
+			content: [{ type: "text", text: `${VERBATIM_COMPACTION_PREFIX}extension-owned state` }],
+			display: true,
+			details: { strategy: "verbatim-lines", rung: result.rung, stats: result.stats },
+			timestamp: 2,
+		} as AgentMessage;
+		const hiddenAlias = {
+			role: "custom",
+			customType: "compaction",
+			content: "hidden extension-owned state",
+			display: false,
+			timestamp: 3,
+		} as AgentMessage;
+		const { mode, chatContainer } = makeMode([persistedBoundary, retainedAlias, hiddenAlias]);
 
-		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
-			this: typeof fakeThis,
-			event: { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" },
-		) => Promise<void>;
+		await emit(mode, { type: "compaction_end", reason: "threshold", result, aborted: false, willRetry: false });
 
-		await handleEvent.call(fakeThis, {
-			type: "compaction_start",
-			reason: "overflow",
-		});
-
-		expect(fakeThis.statusContainer.clear).toHaveBeenCalledTimes(1);
-		expect(fakeThis.statusContainer.addChild).toHaveBeenCalledTimes(1);
-		const [loader] = addedChildren;
-		expect(loader).toBeDefined();
-		const rendered = loader.render(120).join("\n");
-		const warningPrefix = theme.fg("warning", "").replace("\x1b[39m", "");
-		const errorPrefix = theme.fg("error", "").replace("\x1b[39m", "");
-		expect(rendered).toContain(`${warningPrefix}Context overflow detected. Auto-compacting...`);
-		expect(rendered).not.toContain(`${errorPrefix}Context overflow detected. Auto-compacting...`);
-		loader.stop();
+		const renderedContext = mode.renderSessionContext.mock.calls[0]?.[0];
+		expect(renderedContext?.messages).toEqual([retainedAlias, hiddenAlias]);
+		expect(visibleBoundaries(chatContainer)).toHaveLength(1);
+		expect(renderedText(chatContainer).match(/✻ Context compacted/g)).toHaveLength(1);
+		expect(renderedText(chatContainer)).toContain("extension-owned state");
 	});
 
-	test("rebuilds chat and appends a context compaction summary card at the bottom", async () => {
-		const fakeThis = {
-			isInitialized: true,
-			footer: { invalidate: vi.fn() },
-			autoCompactionEscapeHandler: undefined as (() => void) | undefined,
-			autoCompactionLoader: undefined,
-			defaultEditor: {},
-			statusContainer: { clear: vi.fn() },
-			chatContainer: { clear: vi.fn() },
-			rebuildChatFromMessages: vi.fn(),
-			addContextCompactionSummaryToChat: vi.fn(),
-			addMessageToChat: vi.fn(),
-			showError: vi.fn(),
-			showStatus: vi.fn(),
-			flushCompactionQueue: vi.fn().mockResolvedValue(undefined),
-			settingsManager: { getShowTerminalProgress: () => false },
-			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
-		};
+	it("renders one persisted boundary during a normal resume rebuild", () => {
+		const { mode, chatContainer } = makeMode();
+		const rebuild = Reflect.get(InteractiveMode.prototype, "rebuildChatFromMessages") as (this: object) => void;
 
-		const result = {
-			deletedTargets: [{ kind: "entry" as const, entryId: "entry-1" }],
-			protectedEntryIds: ["entry-2"],
-			stats: {
-				objectsBefore: 2,
-				objectsAfter: 1,
-				objectsDeleted: 1,
-				tokensBefore: 123,
-				tokensAfter: 45,
-				percentReduction: 63.4,
-			},
-			promptVersion: 1 as const,
-		};
+		rebuild.call(mode);
 
-		const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
-			this: typeof fakeThis,
-			event: {
-				type: "compaction_end";
-				reason: "manual" | "threshold" | "overflow";
-				result: typeof result | undefined;
-				aborted: boolean;
-				willRetry: boolean;
-				errorMessage?: string;
-			},
-		) => Promise<void>;
+		expect(visibleBoundaries(chatContainer)).toHaveLength(1);
+		expect(renderedText(chatContainer).match(/✻ Context compacted/g)).toHaveLength(1);
+	});
+});
 
-		await handleEvent.call(fakeThis, {
-			type: "compaction_end",
-			reason: "manual",
-			result,
-			aborted: false,
-			willRetry: false,
-		});
+describe("compaction boundary component", () => {
+	it("matches pi's collapsed style and expands the verbatim marker text", () => {
+		const component = new CompactionBoundaryMessageComponent(result);
+		const collapsedRaw = component.render(200).join("\n");
+		const collapsed = stripVTControlCharacters(collapsedRaw);
+		expect(collapsedRaw).toContain(theme.fg("customMessageLabel", theme.bold("✻ Context compacted")));
+		expect(collapsed).toContain("✻ Context compacted");
+		expect(collapsed).toContain("Compacted from 100 tokens (");
+		expect(collapsed).toContain(" to expand)");
+		expect(collapsed).not.toContain("retained");
+		expect(collapsed).not.toContain("planned");
 
-		expect(fakeThis.chatContainer.clear).toHaveBeenCalledTimes(1);
-		expect(fakeThis.rebuildChatFromMessages).toHaveBeenCalledTimes(1);
-		expect(fakeThis.addContextCompactionSummaryToChat).toHaveBeenCalledWith(result);
-		expect(fakeThis.addMessageToChat).not.toHaveBeenCalled();
-		expect(fakeThis.showStatus).not.toHaveBeenCalled();
-		expect(fakeThis.flushCompactionQueue).toHaveBeenCalledWith({ willRetry: false });
+		component.setExpanded(true);
+		const expandedRaw = component.render(200).join("\n");
+		const expanded = stripVTControlCharacters(expandedRaw).split("\n").map((line) => line.trimEnd()).join("\n");
+		expect(expanded).toContain("✻ Context compacted");
+		expect(expanded).toContain("Compacted from 100 tokens");
+		expect(expanded).toContain("[User]: retained\n (filtered 1 lines)");
+		expect(expandedRaw).toContain(theme.fg("dim", "(filtered 1 lines)"));
 	});
 });

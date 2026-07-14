@@ -170,6 +170,32 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 	return text;
 }
 
+export const VERBATIM_COMPACTION_PREFIX =
+	'The earlier conversation was compacted. Below is the verbatim transcript of the retained lines; elided spans are marked "(filtered N lines)".\n\n';
+const verbatimCompactionMessages = new WeakSet<CustomMessage>();
+
+export function isVerbatimCompactionMessage(message: CustomMessage): boolean {
+	return verbatimCompactionMessages.has(message);
+}
+
+/** Create the visible custom-role boundary used to replay a verbatim compaction. */
+export function createVerbatimCompactionMessage(
+	compactedText: string,
+	tokensBefore: number,
+	timestamp: string,
+	details?: unknown,
+): CustomMessage {
+	const message = createCustomMessage(
+		"compaction",
+		[{ type: "text", text: VERBATIM_COMPACTION_PREFIX + compactedText }],
+		true,
+		details ?? { tokensBefore },
+		timestamp,
+	);
+	verbatimCompactionMessages.add(message);
+	return message;
+}
+
 export function createBranchSummaryMessage(summary: string, fromId: string, timestamp: string): BranchSummaryMessage {
 	return {
 		role: "branchSummary",
