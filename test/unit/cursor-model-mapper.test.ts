@@ -53,7 +53,7 @@ describe("Cursor model metadata mapping", () => {
 		assert.deepEqual(cached?.models[0]?.parameterDefinitions, authenticatedFable5Model().parameterDefinitions);
 	});
 	const cases = [
-		{ family: "Claude thinking", id: "claude-sonnet-5", params: [parameter("thinking", "true")], expected: "claude-sonnet-5-thinking", reasoning: true },
+		{ family: "Claude thinking", id: "claude-sonnet-5", params: [parameter("thinking", "true")], expected: "claude-sonnet-5-thinking", reasoning: false },
 		{ family: "GPT effort", id: "gpt-5.5", params: [parameter("reasoning", "high")], expected: "gpt-5.5", reasoning: true, high: "gpt-5.5-high" },
 		{ family: "Gemini non-reasoning", id: "gemini-3-pro", params: [parameter("temperature", "balanced")], expected: "gemini-3-pro-temperature-balanced", reasoning: false },
 		{ family: "Composer fast", id: "composer-2", params: [parameter("fast", "true")], expected: "composer-2-fast", reasoning: false },
@@ -99,6 +99,22 @@ describe("Cursor model metadata mapping", () => {
 		assert.equal(resolveCursorModelVariant(model?.id ?? "gpt-5.5-low", model?.thinkingLevelMap, "xhigh"), "gpt-5.5-extra-high");
 	});
 
+	test("does not synthesize a primary route when no parameterized variant is marked default", () => {
+		const [model] = mapCursorCatalogToProviderModels(liveCatalog([
+			availableModel({
+				id: "no-default",
+				variants: [
+					variant([parameter("reasoning", "low")]),
+					variant([parameter("reasoning", "high")]),
+				],
+			}),
+		]));
+		assert.equal(model?.id, "no-default");
+		assert.equal(model?.compat?.cursorRouting?.["no-default-low"]?.parameters?.[0]?.value, "low");
+		assert.equal(model?.compat?.cursorRouting?.["no-default-high"]?.parameters?.[0]?.value, "high");
+		assert.equal(model?.compat?.cursorRouting?.[model.id], undefined);
+	});
+
 	test("makes all authenticated GPT-5.6 Sol tuples reachable through public rows and levels", () => {
 		const models = mapCursorCatalogToProviderModels(liveCatalog([authenticatedGpt56SolModel()]));
 		assert.deepEqual(models.map(({ id, name }) => ({ id, name })), [
@@ -113,8 +129,13 @@ describe("Cursor model metadata mapping", () => {
 		const reached = new Set<string>();
 		for (const model of models) {
 			assert.equal(resolveCursorModelVariant(model.id, model.thinkingLevelMap, undefined, true), model.id);
-			const defaultEffort = model.id.endsWith("-fast") ? "none" : "medium";
-			assert.equal(model.compat?.cursorRouting?.[model.id]?.parameters?.find(({ id }) => id === "reasoning")?.value, defaultEffort);
+			const primaryEffort = model.compat?.cursorRouting?.[model.id]?.parameters?.find(({ id }) => id === "reasoning")?.value;
+			assert.equal(primaryEffort, model.id.endsWith("-fast") ? undefined : "medium");
+			if (!model.id.endsWith("-fast")) assert.equal(model.thinkingLevelMap?.medium, model.id);
+			const lowRoute = model.thinkingLevelMap?.low;
+			if (typeof lowRoute === "string" && lowRoute !== model.id) {
+				assert.equal(model.compat?.cursorModelAliasThinkingLevels?.[lowRoute], "low");
+			}
 			for (const [level, effort] of levels) {
 				const routeId = resolveCursorModelVariant(model.id, model.thinkingLevelMap, level);
 				const route: CursorModelRouting | undefined = model.compat?.cursorRouting?.[routeId];
@@ -139,10 +160,10 @@ describe("Cursor model metadata mapping", () => {
 			}),
 			availableModel({ id: "max-only-model", supportsNonMaxMode: false, variants: [variant([], true)] }),
 		]));
-		assert.deepEqual(mapped.map((model) => model.id), ["gpt-5.5", "gpt-5.5-fast", "gpt-5.5-max", "max-only-model-max"]);
+		assert.deepEqual(mapped.map((model) => model.id), ["gpt-5.5", "gpt-5.5-fast", "gpt-5.5-max", "max-only-model-max-mode"]);
 		assert.equal(mapped.find((model) => model.id === "gpt-5.5")?.contextWindow, 200_000);
 		assert.equal(mapped.find((model) => model.id === "gpt-5.5-max")?.contextWindow, 1_000_000);
-		assert.equal(mapped.find((model) => model.id === "max-only-model-max")?.reasoning, false);
+		assert.equal(mapped.find((model) => model.id === "max-only-model-max-mode")?.reasoning, false);
 		assert.deepEqual(mapped.find((model) => model.id === "gpt-5.5")?.input, ["text", "image"]);
 	});
 
@@ -199,6 +220,38 @@ describe("Cursor model metadata mapping", () => {
 		assert.deepEqual(routes.map(([, routing]) => routing.parameters?.[0]?.value).sort(), ["a+b", "a-b"]);
 	});
 
+	test("keeps an unmarked fixed preset on its exact route without reasoning controls", () => {
+		const [model] = mapCursorCatalogToProviderModels(liveCatalog([
+			availableModel({
+				id: "fixed-preset",
+				variants: [variant([parameter("thinking", "true"), parameter("context", "200k")])],
+			}),
+		]));
+		assert.equal(model?.id, "fixed-preset-context-200k-thinking");
+		assert.equal(model?.reasoning, false);
+		assert.equal(model?.thinkingLevelMap, undefined);
+		assert.deepEqual(model?.compat?.cursorRouting?.[model.id]?.parameters, [
+			parameter("thinking", "true"),
+			parameter("context", "200k"),
+		]);
+	});
+
+	test("preserves exact routes when fixed-preset public IDs collide", () => {
+		const models = mapCursorCatalogToProviderModels(liveCatalog([
+			availableModel({
+				id: "collision",
+				serverModelName: "fixed-backend",
+				variants: [variant([parameter("context", "200k")])],
+			}),
+			{ id: "collision-context-200k", requestedModelId: "raw-backend" },
+		]));
+		assert.equal(models.length, 2);
+		assert.ok(models.every((model) => model.id.startsWith("collision-context-200k-")));
+		const routes = models.map((model) => model.compat?.cursorRouting?.[model.id]);
+		assert.ok(routes.every(Boolean));
+		assert.deepEqual(routes.map((route) => route?.modelId).sort(), ["fixed-backend", "raw-backend"]);
+	});
+
 	test("resolves concise selectable-id collisions deterministically", () => {
 		const colliding = [
 			availableModel({ id: "collision-1m", variants: [variant([parameter("effort", "low")])] }),
@@ -217,7 +270,7 @@ describe("Cursor model metadata mapping", () => {
 		]));
 		assert.equal(models.find((model) => model.id === "claude-sonnet")?.contextWindow, 180_000);
 		assert.equal(models.find((model) => model.id === "claude-sonnet")?.maxTokens, 32_000);
-		assert.equal(models.find((model) => model.id === "claude-sonnet-max")?.contextWindow, 900_000);
+		assert.equal(models.find((model) => model.id === "claude-sonnet-max-mode")?.contextWindow, 900_000);
 	});
 
 	test("keeps context and output evidence attached to one corresponding variant", () => {
@@ -271,8 +324,8 @@ describe("Cursor model metadata mapping", () => {
 			availableModel({ id: "future-reasoning", variants: [variant([parameter("reasoning", "adaptive-v2")])] }),
 		]));
 		assert.equal(model?.id, "future-reasoning-reasoning-adaptive_2dv2");
-		assert.equal(model?.reasoning, true);
-		assert.deepEqual(model?.thinkingLevelMap, { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null });
+		assert.equal(model?.reasoning, false);
+		assert.equal(model?.thinkingLevelMap, undefined);
 		assert.deepEqual(model?.compat?.cursorRouting?.[model.id]?.parameters, [parameter("reasoning", "adaptive-v2")]);
 	});
 
@@ -326,12 +379,12 @@ describe("Cursor model metadata mapping", () => {
 	test("table-driven live/cache parity and fallback degradation covers representative semantics", () => {
 		const scenarios = [
 			{ name: "Claude", model: availableModel({ id: "claude", maxTokens: 32_000, variants: [variant([parameter("reasoning", "high")])] }), ids: ["claude"], reasoning: true, level: ["high", "claude-high"] as const, context: 200_000, output: 32_000 },
-			{ name: "GPT", model: availableModel({ id: "gpt", variants: [{ ...variant([parameter("reasoning", "low")]), isDefaultNonMaxConfig: true }] }), ids: ["gpt"], reasoning: true, level: ["low", "gpt-low"] as const, off: null, context: 200_000, output: 64_000 },
-			{ name: "Gemini", model: availableModel({ id: "gemini", variants: [variant([parameter("thinking", "true")])] }), ids: ["gemini-thinking"], reasoning: true, context: 200_000, output: 64_000 },
+			{ name: "GPT", model: availableModel({ id: "gpt", variants: [{ ...variant([parameter("reasoning", "low")]), isDefaultNonMaxConfig: true }] }), ids: ["gpt"], reasoning: true, level: ["low", "gpt"] as const, off: null, context: 200_000, output: 64_000 },
+			{ name: "Gemini", model: availableModel({ id: "gemini", variants: [variant([parameter("thinking", "true")])] }), ids: ["gemini-thinking"], reasoning: false, context: 200_000, output: 64_000 },
 			{ name: "Composer", model: availableModel({ id: "composer", variants: [variant([])] }), ids: ["composer"], reasoning: false, context: 200_000, output: 64_000 },
 			{ name: "fast", model: availableModel({ id: "fast-model", variants: [variant([parameter("fast", "true")])] }), ids: ["fast-model-fast"], reasoning: false, context: 200_000, output: 64_000 },
-			{ name: "thinking", model: availableModel({ id: "thinking-model", variants: [variant([parameter("thinking", "true")])] }), ids: ["thinking-model-thinking"], reasoning: true, context: 200_000, output: 64_000 },
-			{ name: "Max", model: availableModel({ id: "max-model", variants: [variant([], true)] }), ids: ["max-model-max"], reasoning: false, context: 1_000_000, output: 64_000, maxMode: true },
+			{ name: "thinking", model: availableModel({ id: "thinking-model", variants: [variant([parameter("thinking", "true")])] }), ids: ["thinking-model-thinking"], reasoning: false, context: 200_000, output: 64_000 },
+			{ name: "Max", model: availableModel({ id: "max-model", variants: [{ ...variant([], true), isDefaultMaxConfig: true }] }), ids: ["max-model-max"], reasoning: false, context: 1_000_000, output: 64_000, maxMode: true },
 			{ name: "Max-only", model: availableModel({ id: "max-only", supportsNonMaxMode: false, variants: [] }), ids: ["max-only-max-mode"], reasoning: false, context: 1_000_000, output: 64_000, maxMode: true },
 			{ name: "non-reasoning", model: availableModel({ id: "plain", variants: [variant([parameter("temperature", "balanced")])] }), ids: ["plain-temperature-balanced"], reasoning: false, context: 200_000, output: 64_000 },
 		] as const;

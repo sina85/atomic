@@ -78,6 +78,7 @@ export interface CursorProviderModelDefinition {
 	readonly compat?: {
 		readonly cursorRouting?: Readonly<Record<string, CursorModelRouting>>;
 		readonly cursorModelAliases?: readonly string[];
+		readonly cursorModelAliasThinkingLevels?: Readonly<Record<string, ModelThinkingLevel>>;
 		readonly cursorMetadataProvenance?: CursorProviderModelDefinition["metadataProvenance"];
 	};
 }
@@ -133,16 +134,14 @@ export function mapCursorCatalogToProviderModels(catalog: CursorModelCatalog): C
 	const groups = groupCursorModels(groupedModels.map(parseCursorVariant));
 	return groups.map((group) => {
 		const effortVariants = collectEffortVariants(group.variants);
-		const supportsReasoning = catalog.source === "live" && (effortVariants.size > 0 || group.variants.some((variant) => variant.supportsReasoning === true || variant.supportsThinking === true || variant.thinking));
+		const supportsReasoning = catalog.source === "live" && effortVariants.size > 0;
 		const limitVariant = selectDefaultVariant(group.variants);
 		const explicitContext = positiveIntOrUndefined(limitVariant?.contextWindow);
 		const explicitMaxContext = positiveIntOrUndefined(limitVariant?.maxModeContextWindow);
 		const explicitOutput = positiveIntOrUndefined(limitVariant?.maxTokens);
 		const contextWindow = positiveIntLimit(explicitContext, ESTIMATED_CONTEXT_WINDOW);
 		const maxTokens = positiveIntLimit(explicitOutput, ESTIMATED_MAX_TOKENS);
-		const thinkingLevelMap = supportsReasoning && effortVariants.size > 0
-			? buildCursorThinkingLevelMap(effortVariants)
-			: supportsReasoning ? unsupportedCursorThinkingLevelMap() : undefined;
+		const thinkingLevelMap = supportsReasoning ? buildCursorThinkingLevelMap(effortVariants, group) : undefined;
 		const capabilities = capabilityProvenance(group.variants, catalog.source);
 		const contextProvenance = limitFieldProvenance(limitVariant, explicitContext, "context");
 		const outputProvenance = limitFieldProvenance(limitVariant, explicitOutput, "output");
@@ -173,6 +172,7 @@ export function mapCursorCatalogToProviderModels(catalog: CursorModelCatalog): C
 					contextWindow: contextProvenance,
 					maxTokens: outputProvenance,
 				},
+				cursorModelAliasThinkingLevels: buildAliasThinkingLevelMap(group),
 			},
 		};
 	});
@@ -260,8 +260,11 @@ function collectEffortVariants(variants: readonly CursorVariant[]): ReadonlyMap<
 	return byEffort;
 }
 
-function buildCursorThinkingLevelMap(effortVariants: ReadonlyMap<CursorEffort, string>): ThinkingLevelMap {
-	return {
+function buildCursorThinkingLevelMap(
+	effortVariants: ReadonlyMap<CursorEffort, string>,
+	group: CursorVariantGroup,
+): ThinkingLevelMap {
+	const map: ThinkingLevelMap = {
 		off: effortVariants.get("none") ?? null,
 		minimal: effortVariants.get("minimal") ?? null,
 		low: effortVariants.get("low") ?? null,
@@ -270,17 +273,44 @@ function buildCursorThinkingLevelMap(effortVariants: ReadonlyMap<CursorEffort, s
 		xhigh: effortVariants.get("xhigh") ?? effortVariants.get("extra-high") ?? null,
 		max: effortVariants.get("max") ?? null,
 	};
+	const defaultVariant = group.variants.find((variant) => variant.isDefaultVariant && variant.effort);
+	if (!defaultVariant) return map;
+	for (const level of Object.keys(map) as (keyof ThinkingLevelMap)[]) {
+		if (map[level] === defaultVariant.id) map[level] = group.primaryId;
+	}
+	return map;
 }
 
-function unsupportedCursorThinkingLevelMap(): ThinkingLevelMap {
-	return { off: null, minimal: null, low: null, medium: null, high: null, xhigh: null, max: null };
+
+function buildAliasThinkingLevelMap(group: CursorVariantGroup): Readonly<Record<string, ModelThinkingLevel>> {
+	const levels: Record<string, ModelThinkingLevel> = {};
+	for (const variant of group.variants) {
+		if (variant.id === group.primaryId || !variant.effort) continue;
+		const level = thinkingLevelForCursorEffort(variant.effort);
+		if (level) levels[variant.id] = level;
+	}
+	return levels;
+}
+
+function thinkingLevelForCursorEffort(effort: CursorEffort): ModelThinkingLevel | undefined {
+	if (effort === "none") return "off";
+	if (effort === "extra-high") return "xhigh";
+	if (effort === "default") return undefined;
+	return effort;
 }
 
 function buildRoutingMap(group: CursorVariantGroup): Readonly<Record<string, CursorModelRouting>> {
 	const routing: Record<string, CursorModelRouting> = {};
 	for (const variant of group.variants) routing[variant.id] = variant.routing;
-	if (group.variants.some((variant) => variant.parameterized)) routing[group.primaryId] = selectDefaultVariant(group.variants).routing;
-	else routing[group.primaryId] ??= { modelId: group.primaryId };
+	const defaultVariant = group.variants.find((variant) => variant.isDefaultVariant);
+	const soleFixedVariant = group.variants.length === 1 && group.variants[0]?.effort === undefined
+		? group.variants[0]
+		: undefined;
+	if (defaultVariant) routing[group.primaryId] = defaultVariant.routing;
+	else if (soleFixedVariant && group.primaryId !== soleFixedVariant.id) routing[group.primaryId] = soleFixedVariant.routing;
+	else if (!group.variants.some((variant) => variant.parameterized)) {
+		routing[group.primaryId] ??= selectDefaultVariant(group.variants).routing;
+	}
 	return routing;
 }
 

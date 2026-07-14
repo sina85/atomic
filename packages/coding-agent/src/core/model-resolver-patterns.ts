@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { isValidThinkingLevel } from "../cli/args.ts";
-import { findUniqueModelAlias, hasModelAlias } from "./model-id-aliases.ts";
+import { findModelAliasThinkingLevel, findUniqueModelAlias, hasModelAlias } from "./model-id-aliases.ts";
 import { defaultModelPerProvider } from "./model-resolver-defaults.ts";
 import type { ParsedModelResult } from "./model-resolver-types.ts";
 
@@ -155,7 +155,9 @@ export function parseModelPattern(
 ): ParsedModelResult {
   const exactMatch = tryMatchModel(pattern, availableModels);
   if (exactMatch) {
-    return { model: exactMatch, thinkingLevel: undefined, warning: undefined };
+    const slashIndex = pattern.indexOf("/");
+    const aliasId = slashIndex >= 0 ? pattern.slice(slashIndex + 1) : pattern;
+    return { model: exactMatch, thinkingLevel: findModelAliasThinkingLevel(exactMatch, aliasId), warning: undefined };
   }
 
   const lastColonIndex = pattern.lastIndexOf(":");

@@ -92,7 +92,7 @@ function parameterizedGroupPresentation(variants: readonly CursorVariant[]): Cur
 	const effortParameter = representative.effort
 		? parameters.find((parameter) => parameter.id === "reasoning" || parameter.id === "effort")
 		: undefined;
-	return cursorGroupPresentation({
+	const presentation = cursorGroupPresentation({
 		sourceModelId: representative.sourceModelId,
 		displayName: representative.displayName,
 		isMaxMode: representative.routing.maxMode === true,
@@ -100,6 +100,11 @@ function parameterizedGroupPresentation(variants: readonly CursorVariant[]): Cur
 		effortParameter,
 		definitions: representative.parameterDefinitions,
 	});
+	const hasSelectableEffort = variants.some((variant) => variant.effort !== undefined);
+	const hasExplicitDefault = variants.some((variant) => variant.isDefaultVariant);
+	return !hasSelectableEffort && !hasExplicitDefault
+		? { ...presentation, desiredId: representative.id }
+		: presentation;
 }
 
 function cursorVariantGroupKey(variant: CursorVariant): string {

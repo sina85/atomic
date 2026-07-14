@@ -21,6 +21,7 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { type AppMode, isPlainRuntimeMetadataCommand, isReadOnlyRuntimeMetadataCommand, prepareInitialMessage, resolveAppMode, resolveCliPaths, resolveExcludedToolsForAppMode, toPrintOutputMode } from "./main-app-mode.ts";
 import { type EarlyInputCapture, startEarlyInputCapture } from "./main-early-input.ts";
 import { computeDeferExtensions, computeStartupInputCaptureEnabled, formatScopedModelList } from "./main-deferred-startup.ts";
+import { recoverCursorCliModelAfterExtensionStartup } from "./main-cursor-model-recovery.ts";
 import { createSessionManager, promptForMissingSessionCwd, validateForkFlags, validateSessionIdFlags } from "./main-session.ts";
 import { buildSessionOptions } from "./main-session-options.ts";
 import { collectSettingsDiagnostics, drainProcessStdio, isTruthyEnvFlag, listModelsAfterExtensionStartup, readPipedStdin, reportDiagnostics } from "./main-stdio.ts";
@@ -328,8 +329,8 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionStartEvent,
 			model: sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,
-			contextWindow: sessionOptions.contextWindow,
-			contextWindowStrict: sessionOptions.contextWindowStrict,
+			contextWindow: parsed.model && !sessionOptions.model ? undefined : sessionOptions.contextWindow,
+			contextWindowStrict: parsed.model && !sessionOptions.model ? undefined : sessionOptions.contextWindowStrict,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			excludedTools: resolveExcludedToolsForAppMode(appMode, sessionOptions.excludedTools),
@@ -395,7 +396,7 @@ export async function main(args: string[], options?: MainOptions) {
 		await listModelsAfterExtensionStartup(runtime, modelRegistry, searchPattern);
 		process.exit(0);
 	}
-
+	const startupDiagnostics = await recoverCursorCliModelAfterExtensionStartup(parsed, runtime, appMode);
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
 	let stdinContent: string | undefined;
 	if (appMode !== "rpc") {
@@ -422,8 +423,8 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const scopedModels = [...session.scopedModels];
 	time("resolveModelScope");
-	reportDiagnostics(runtime.diagnostics);
-	if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
+	reportDiagnostics(startupDiagnostics);
+	if (startupDiagnostics.some((diagnostic) => diagnostic.type === "error")) {
 		startupEarlyInputCapture?.consume();
 		process.exit(1);
 	}

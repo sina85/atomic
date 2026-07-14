@@ -1,7 +1,9 @@
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 
 interface CursorAliasCompat {
 	readonly cursorModelAliases?: readonly string[];
+	readonly cursorModelAliasThinkingLevels?: Readonly<Record<string, ThinkingLevel>>;
 }
 export function hasModelAlias(
 	models: readonly Model<Api>[],
@@ -19,6 +21,18 @@ export function findUniqueModelAlias(
 ): Model<Api> | undefined {
 	const matches = matchingModelAliases(models, modelId, provider, caseSensitive);
 	return matches.length === 1 ? matches[0] : undefined;
+}
+
+export function findModelAliasThinkingLevel(
+	model: Model<Api>,
+	modelId: string,
+	caseSensitive = false,
+): ThinkingLevel | undefined {
+	const compat = model.compat as CursorAliasCompat | undefined;
+	const entries = Object.entries(compat?.cursorModelAliasThinkingLevels ?? {});
+	const normalize = caseSensitive ? (value: string) => value : (value: string) => value.toLowerCase();
+	const expected = normalize(modelId);
+	return entries.find(([alias]) => normalize(alias) === expected)?.[1];
 }
 
 function matchingModelAliases(

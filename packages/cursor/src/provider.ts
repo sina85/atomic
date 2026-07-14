@@ -55,7 +55,7 @@ export interface CursorProviderConfig {
 }
 
 export type CursorSessionLifecycleEvent = "session_before_switch" | "session_before_fork" | "session_before_tree" | "session_shutdown";
-export type CursorProviderEvent = "session_start" | CursorSessionLifecycleEvent;
+export type CursorProviderEvent = "model_catalog_discover" | "session_start" | CursorSessionLifecycleEvent;
 
 export interface CursorProviderContext {
 	readonly mode?: "tui" | "rpc" | "json" | "print";
@@ -101,6 +101,12 @@ function isCatalogFresh(fetchedAt: number | undefined, now: number, ttlMs: numbe
 	if (fetchedAt === undefined) return false;
 	const age = now - fetchedAt;
 	return age >= 0 && age < ttlMs;
+}
+
+function isModelCatalogDiscovery(event: unknown): boolean {
+	return typeof event === "object" && event !== null
+		&& "type" in event
+		&& event.type === "model_catalog_discover";
 }
 
 export function registerCursorProvider(pi: CursorProviderHost, options: CursorProviderRegistrationOptions = {}): CursorProviderRuntime {
@@ -297,7 +303,7 @@ export function registerCursorProvider(pi: CursorProviderHost, options: CursorPr
 		context?.ui?.notify(diagnostic, "warning");
 	};
 
-	const discoverCatalogFromStoredCredentials = async (_event?: unknown, context?: CursorProviderContext): Promise<void> => {
+	const discoverCatalogFromStoredCredentials = async (event?: unknown, context?: CursorProviderContext): Promise<void> => {
 		if (disposed) return;
 		let accessToken: string | undefined;
 		try { accessToken = await context?.modelRegistry?.getApiKeyForProvider?.(CURSOR_PROVIDER_ID) } catch { return }
@@ -307,7 +313,8 @@ export function registerCursorProvider(pi: CursorProviderHost, options: CursorPr
 			if (context?.mode === "print" && catalogRefreshStatus.error) reportPrintCatalogWarning(context);
 			return;
 		}
-		if (context?.mode !== "print") {
+		const shouldAwaitDiscovery = context?.mode === "print" || isModelCatalogDiscovery(event);
+		if (!shouldAwaitDiscovery) {
 			void task.then((success) => {
 				if (!success || catalogRefreshStatus.error) {
 					context?.ui?.notify(`Cursor model refresh warning: ${catalogRefreshStatus.error ?? "retained the previous catalog"}`, "warning");
@@ -349,6 +356,7 @@ export function registerCursorProvider(pi: CursorProviderHost, options: CursorPr
 		}
 	};
 
+	pi.on("model_catalog_discover", discoverCatalogFromStoredCredentials);
 	pi.on("session_start", discoverCatalogFromStoredCredentials);
 	pi.on("session_before_switch", cleanupCurrentSession);
 	pi.on("session_before_fork", cleanupCurrentSession);

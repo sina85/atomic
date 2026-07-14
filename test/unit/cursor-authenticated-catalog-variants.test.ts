@@ -82,12 +82,26 @@ test("reasoning cycles expose every and only advertised effort", () => {
 	}
 });
 
-test("bare selection preserves Cursor default separately from explicit reasoning", () => {
+test("bare selection routes only rows with an exact Cursor default", () => {
+	const defaultRows: string[] = [];
 	for (const model of mappedModels()) {
 		const routes = model.compat?.cursorRouting ?? {};
 		assert.equal(resolveCursorModelVariant(model.id, model.thinkingLevelMap, undefined, true), model.id);
-		assert.ok(routes[model.id], model.id);
+		if (routes[model.id]) defaultRows.push(model.id);
 	}
+	assert.deepEqual(defaultRows, [
+		"claude-fable-5-1m-max-thinking",
+		"claude-fable-5-300k-thinking",
+		"claude-opus-4-8-1m-max-thinking",
+		"claude-opus-4-8-300k-thinking",
+		"claude-sonnet-5-1m-max-thinking",
+		"claude-sonnet-5-300k-thinking",
+		"composer-2.5",
+		"composer-2.5-fast",
+		"gpt-5.1",
+		"gpt-5.6-sol-1m-max",
+		"gpt-5.6-sol-272k",
+	]);
 });
 
 test("all public row and reasoning routes forward exact complete advertised tuples", async () => {
@@ -95,8 +109,11 @@ test("all public row and reasoning routes forward exact complete advertised tupl
 	const reached = new Set<string>();
 	for (const definition of mappedModels()) {
 		const model = { ...definition, provider: "cursor" } as Model<Api>;
+		const primaryRouting = (model.compat as { cursorRouting?: Readonly<Record<string, CursorModelRouting>> } | undefined)?.cursorRouting?.[model.id];
+		const defaultSelection: ReadonlyArray<{ readonly useProviderDefault: true; readonly label: "default" }> =
+			primaryRouting ? [{ useProviderDefault: true, label: "default" }] : [];
 		const selections: ReadonlyArray<{ readonly reasoning?: ThinkingLevel; readonly useProviderDefault: boolean; readonly label: string }> = [
-			{ useProviderDefault: true, label: "default" },
+			...defaultSelection,
 			...THINKING_LEVELS
 				.filter((level) => typeof model.thinkingLevelMap?.[level] === "string")
 				.map((level) => ({

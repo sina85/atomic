@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { listModels } from "./cli/list-models.ts";
 import type { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "./core/agent-session-services.ts";
+import type { ExtensionMode } from "./core/extensions/index.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import type { SettingsManager } from "./core/settings-manager.ts";
 
@@ -88,7 +89,15 @@ export async function drainProcessStdio(): Promise<void> {
 	await Promise.all([drainWritable(process.stdout), drainWritable(process.stderr)]);
 }
 
-/** Run extension startup before a metadata-only model listing without entering a UI mode. */
+/** Ask dynamic providers to install authenticated catalogs without consuming session_start. */
+export async function bindExtensionsForModelDiscovery(
+	runtime: AgentSessionRuntime,
+	mode: ExtensionMode = "print",
+): Promise<void> {
+	await runtime.session.discoverExtensionModels(mode);
+}
+
+
 async function bindExtensionsForModelListing(runtime: AgentSessionRuntime): Promise<void> {
 	const { session } = runtime;
 	await session.bindExtensions({
@@ -104,7 +113,6 @@ async function bindExtensionsForModelListing(runtime: AgentSessionRuntime): Prom
 		onError: (error) => console.error(chalk.yellow(`Extension error (${error.extensionPath}): ${error.error}`)),
 	});
 }
-
 export async function listModelsAfterExtensionStartup(
 	runtime: AgentSessionRuntime,
 	modelRegistry: ModelRegistry,

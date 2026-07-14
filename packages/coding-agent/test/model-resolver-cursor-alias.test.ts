@@ -22,7 +22,10 @@ function cursorModel(id: string, name: string, aliases: readonly string[]): Mode
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 1_000_000,
 		maxTokens: 64_000,
-		compat: { cursorModelAliases: aliases } as Model<Api>["compat"],
+		compat: {
+			cursorModelAliases: aliases,
+			cursorModelAliasThinkingLevels: Object.fromEntries(aliases.map((alias, index) => [alias, index === 0 ? "low" : "medium"])),
+		} as Model<Api>["compat"],
 	};
 }
 
@@ -80,6 +83,7 @@ describe("Cursor model compatibility aliases", () => {
 			});
 			expect(result.error).toBeUndefined();
 			expect(result.model?.id).toBe(cursorFableModel.id);
+			expect(result.thinkingLevel).toBe("low");
 		});
 	}
 
