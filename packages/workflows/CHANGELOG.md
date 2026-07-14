@@ -104,6 +104,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Restored Ralph's builtin implementation-stage prompts to require subagent-led investigation, editing, and validation, reversing the selective direct-implementation wording introduced with intent-first routing.
 - Expanded model-facing workflow guidance to treat composition as a first-class design option: custom parents can import reusable project/package workflows or bundled builtin definitions, invoke them through `ctx.workflow(...)`, and nest further child workflows within `maxDepth` while preserving expanded graph visibility, HIL, durability, controls, and declared output contracts.
 
+### Fixed
+
+- Fixed workflow stage session classification so fresh and fork-context stages persist complete ownership metadata before their transcripts can enter normal resume history, including custom session directories.
+
 ## [0.9.5] - 2026-07-11
 
 ### Breaking Changes
@@ -137,7 +141,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Fixed workflow stage session classification so fresh and fork-context stages persist complete ownership metadata before their transcripts can enter normal resume history, including custom session directories.
 - Fixed archived/read-only workflow transcript views to use the standard responsive footer and Ctrl+T copy-mode toggle/status, enabling normal terminal or tmux text selection while preserving Escape and Ctrl+D navigation ([#1706](https://github.com/bastani-inc/atomic/issues/1706)).
 - Fixed workflow tool validation coercing `output: false` into the literal file path `false`, so disabled output remains disabled across direct task, parallel task, and chain execution.
 - Hardened the bundled `impeccable` skill's local detector/live scripts against CodeQL-reported sanitization and command-injection patterns by tightening HTML block stripping, avoiding shell interpolation for `git check-ignore`, escaping Svelte preview CSS selectors correctly, and fixing the `ms*` JSX style prefix conversion.

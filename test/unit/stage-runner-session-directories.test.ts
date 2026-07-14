@@ -77,6 +77,7 @@ describe("createStageContext — inherited session directories", () => {
         }
     });
 
+
     test("does not force a sessionManager when defaultSessionDir is absent", async () => {
         const dir = await mkdtemp(join(tmpdir(), "pi-workflows-default-session-dir-"));
         try {

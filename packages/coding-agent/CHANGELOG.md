@@ -104,6 +104,10 @@
 - Documented compositional workflow authoring in model prompts and onboarding/help surfaces, including importing bundled workflows from `@bastani/workflows/builtin`, nesting definitions with `ctx.workflow(...)`, and building deeper reusable workflow graphs within `maxDepth`.
 - Restored tool-driven bundled Intercom startup so foreground subagent launches and bridged child session startup no longer connect either session automatically; the model or user must invoke Intercom when coordination is needed.
 
+### Fixed
+
+- Fixed workflow-owned transcripts leaking into normal `/resume`, `-r`, `-c`, and `--continue` history by requiring complete workflow ownership markers, persisting classification in initial fork headers, inheriting it across branches, and keeping malformed legacy markers and ordinary user forks visible.
+
 ## [0.9.5] - 2026-07-11
 
 ### Breaking Changes
@@ -136,7 +140,6 @@
 
 ### Fixed
 
-- Fixed workflow-owned transcripts leaking into normal `/resume`, `-r`, `-c`, and `--continue` history by requiring complete workflow ownership markers, persisting classification in initial fork headers, inheriting it across branches, and keeping malformed legacy markers and ordinary user forks visible.
 - Fixed CLI resolution of unknown/custom model IDs with a recognized `:<thinking>` suffix so the suffix is applied as the thinking level instead of leaking into the synthesized model ID, while preserving registered and unrecognized colon-bearing model IDs.
 - Fixed bundled MCP readiness so failed background initialization is retryable and single-flight within the active session, stale retries cannot publish after shutdown, replacement startup waits for retired initializer/state/OAuth cleanup, and proxy/direct readiness plus lazy-connection and OAuth waits use caller-local cancellation without stopping shared producers. Direct executors reject old-state work on success and failure paths after replacement and close stale newly opened Apps views, SDK resource/tool requests receive the invocation signal, and UI-backed MCP Apps calls emit one terminal cancellation before teardown while preserving the exact host reason over SDK/notification failures.
 - Fixed bundled web-access and Intercom lazy wrappers to retire session-scoped candidates on shutdown, reject calls spanning teardown, and initialize fresh state after restart; host cancellation after web provider/curator execution now preserves its exact abort reason while explicit curator user cancellation remains a normal result.

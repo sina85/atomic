@@ -73,6 +73,8 @@ export interface RunSyncOptions {
 	index?: number;
 	sessionDir?: string;
 	sessionFile?: string;
+	/** Override the Atomic CLI entrypoint used by foreground child processes. */
+	piArgv1?: string;
 	share?: boolean;
 	outputPath?: string;
 	outputMode?: OutputMode;
