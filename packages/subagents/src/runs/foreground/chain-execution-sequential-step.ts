@@ -13,6 +13,7 @@ import {
 import { getSingleResultOutput, resolveChildCwd } from "../../shared/utils.ts";
 import { normalizeSkillInput } from "../../agents/skills.ts";
 import { resolveChildMaxSubagentDepth } from "../../shared/types.ts";
+import { workflowSessionMetadataFromContext } from "../../shared/types-depth.ts";
 import { outputEntryFromResult, resolveOutputReferences } from "../shared/chain-outputs.ts";
 import { currentModelFullId, resolveModelCandidate } from "../shared/model-fallback.ts";
 import { recordRun } from "../shared/run-history.ts";
@@ -116,6 +117,7 @@ export async function runSequentialChainStep(input: {
 		outputMode: behavior.outputMode,
 		maxSubagentDepth,
 		workflowStageSubagentGuard: context.params.workflowStageSubagentGuard,
+		workflowSessionMetadata: workflowSessionMetadataFromContext(context.params.ctx),
 		controlConfig: context.controlConfig,
 		onControlEvent: context.onControlEvent,
 		intercomSessionName: context.childIntercomTarget?.(seqStep.agent, flatIndex),

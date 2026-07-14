@@ -7,6 +7,7 @@ import {
 	formatMissingSessionCwdPrompt,
 	type SessionCwdIssue,
 } from "./core/session-cwd.ts";
+import { workflowSessionMetadataFromEnv } from "./core/session-manager-classification.ts";
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
 import { KeybindingsManager } from "./core/keybindings.ts";
 import type { SettingsManager } from "./core/settings-manager.ts";
@@ -133,6 +134,15 @@ function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
 		console.error(chalk.red(`Error: ${message}`));
 		process.exit(1);
 	}
+}
+
+export function applyInheritedWorkflowSessionClassification(
+	sessionManager: SessionManager,
+	env: Record<string, string | undefined> = process.env,
+): SessionManager {
+	const metadata = workflowSessionMetadataFromEnv(env);
+	if (metadata) sessionManager.markSessionInternal(metadata);
+	return sessionManager;
 }
 
 export async function createSessionManager(

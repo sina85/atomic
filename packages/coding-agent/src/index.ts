@@ -196,6 +196,10 @@ export {
 	type StructuredOutputToolOptions,
 } from "./core/sdk.ts";
 export {
+	WORKFLOW_SESSION_METADATA_ENV,
+	workflowSessionMetadataFromEnv,
+} from "./core/session-manager-classification.ts";
+export {
 	type BranchSummaryEntry,
 	buildSessionContext,
 	CURRENT_SESSION_VERSION,
@@ -215,6 +219,7 @@ export {
 	type SessionInfoEntry,
 	SessionManager,
 	type SessionMessageEntry,
+	type SessionWorkflowMetadata,
 	type SessionTreeNode,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.ts";

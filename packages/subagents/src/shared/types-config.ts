@@ -3,6 +3,7 @@
  */
 
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { SessionWorkflowMetadata } from "@bastani/atomic";
 import type { NestedRouteInfo } from "./types-async.ts";
 import type {
 	ArtifactConfig,
@@ -77,6 +78,7 @@ export interface RunSyncOptions {
 	outputMode?: OutputMode;
 	maxSubagentDepth?: number;
 	workflowStageSubagentGuard?: boolean;
+	workflowSessionMetadata?: SessionWorkflowMetadata;
 	nestedRoute?: NestedRouteInfo;
 	/** Override the agent's default model (format: "provider/id" or just "id") */
 	modelOverride?: string;

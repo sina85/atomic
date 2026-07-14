@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@bastani/atomic";
+import { WORKFLOW_SESSION_METADATA_ENV } from "../../packages/coding-agent/src/core/session-manager-classification.js";
 import type { AgentConfig } from "../../packages/subagents/src/agents/agent-types.js";
 import { executeAsyncSingle } from "../../packages/subagents/src/runs/background/async-execution-single.js";
 import { ASYNC_DIR } from "../../packages/subagents/src/shared/types.js";
@@ -43,6 +44,7 @@ test("executeAsyncSingle initializes progress in isolated async storage", () => 
 	writeFileSync(cwdProgressPath, "project sentinel");
 	const runId = `progress-${crypto.randomUUID()}`;
 	let captured: CapturedRunnerConfig | undefined;
+	let capturedEnv: Record<string, string> | undefined;
 	try {
 		const result = executeAsyncSingle(runId, {
 			agent: "worker",
@@ -52,6 +54,7 @@ test("executeAsyncSingle initializes progress in isolated async storage", () => 
 				pi: { events: { emit: () => {} } } as unknown as ExtensionAPI,
 				cwd: parentCwd,
 				currentSessionId: "parent",
+				workflowSessionMetadata: { runId: "run-1", stageId: "stage-1", stageName: "build" },
 			},
 			cwd: "child",
 			artifactsDir,
@@ -59,8 +62,9 @@ test("executeAsyncSingle initializes progress in isolated async storage", () => 
 			shareEnabled: false,
 			progress: true,
 			maxSubagentDepth: 1,
-			spawnRunner: (config) => {
+			spawnRunner: (config, _suffix, _cwd, env) => {
 				captured = config as CapturedRunnerConfig;
+				capturedEnv = env;
 				return { pid: 1234 };
 			},
 		});
@@ -74,6 +78,10 @@ test("executeAsyncSingle initializes progress in isolated async storage", () => 
 		assert.match(readFileSync(progressPath, "utf8"), /# Progress/);
 		assert.equal(captured?.steps[0]?.cwd, childCwd);
 		assert.ok((captured?.steps[0]?.task ?? "").includes(`Create and maintain progress at: ${progressPath}`));
+		assert.equal(
+			capturedEnv?.[WORKFLOW_SESSION_METADATA_ENV],
+			JSON.stringify({ runId: "run-1", stageId: "stage-1", stageName: "build" }),
+		);
 	} finally {
 		rmSync(join(ASYNC_DIR, runId), { recursive: true, force: true });
 		rmSync(parentCwd, { recursive: true, force: true });

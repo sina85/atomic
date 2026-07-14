@@ -190,11 +190,13 @@ For sessions with a parent (created via `/fork`, `/clone`, or `newSession({ pare
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","parentSession":"/path/to/original/session.jsonl"}
 ```
 
-Sessions created by automated machinery (notably workflow stage sessions) carry an `internal` flag and optional `workflow` linkage so they can be excluded from the standard `/resume` history while remaining resumable through their owning workflow:
+Workflow-owned sessions carry both `internal: true` and complete `workflow` linkage. Atomic writes this classification before the transcript becomes visible wherever possible, including workflow stage forks and fresh/forked subagents. A session is excluded from normal resume history only when `internal` is the exact boolean `true` and `workflow.runId`, `workflow.stageId`, and `workflow.stageName` are all non-empty strings:
 
 ```json
 {"type":"session","version":3,"id":"uuid","timestamp":"2024-12-03T14:00:00.000Z","cwd":"/path/to/project","internal":true,"workflow":{"runId":"run-1","stageId":"stage-build","stageName":"build"}}
 ```
+
+Malformed, incomplete, workflow-only, or truthy non-boolean legacy markers remain visible in normal history. Atomic does not infer workflow ownership from `parentSession`, so ordinary user-created forks are unaffected. Valid workflow classification is inherited when an internal workflow transcript is branched or forked.
 
 ### SessionMessageEntry
 
@@ -391,11 +393,11 @@ Key methods for working with sessions programmatically.
 
 ### Static Creation Methods
 
-- `SessionManager.create(cwd, sessionDir?, options?)` - New session. `options` may include `internal: true` and `workflow: { runId, stageId, stageName }` for workflow-owned sessions.
+- `SessionManager.create(cwd, sessionDir?, options?)` - New session. Workflow-owned sessions require the pair `internal: true` and `workflow: { runId, stageId, stageName }`.
 - `SessionManager.open(path, sessionDir?)` - Open a specific session file directly, including an internal session.
 - `SessionManager.continueRecent(cwd, sessionDir?, options?)` - Continue the most recent regular session or create a new one. Pass `{ includeInternal: true }` only for workflow-specific recovery or diagnostics.
 - `SessionManager.inMemory(cwd?, options?)` - No file persistence
-- `SessionManager.forkFrom(sourcePath, targetCwd, sessionDir?, options?)` - Fork session from another project
+- `SessionManager.forkFrom(sourcePath, targetCwd, sessionDir?, options?)` - Fork a session from another project. Relevant `NewSessionOptions`, including valid workflow classification, are written in the initial header.
 
 ### Static Listing Methods
 
@@ -413,8 +415,8 @@ for (const stage of stages.filter((session) => session.internal)) {
 
 ### Instance Methods - Session Management
 
-- `newSession(options?)` - Start a new session. Options include `parentSession`, `internal`, and workflow run/stage linkage.
-- `markSessionInternal(workflow?)` - Mark the current session as internal and optionally persist its workflow run/stage linkage.
+- `newSession(options?)` - Start a new session. Options include `parentSession`, `internal`, and workflow run/stage linkage; classification requires a complete marker pair.
+- `markSessionInternal(workflow?)` - Apply valid workflow ownership to the current session, repairing malformed markers while preserving an existing valid marker.
 - `setSessionFile(path)` - Switch to a different session file
 - `createBranchedSession(leafId)` - Extract branch to new session file
 

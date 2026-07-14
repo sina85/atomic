@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@bastani/atomic";
+import type { ExtensionAPI, SessionWorkflowMetadata } from "@bastani/atomic";
 import type { AgentConfig } from "../../agents/agents.ts";
 import type { ChainStep } from "../../shared/settings.ts";
 import type { AvailableModelInfo } from "../shared/model-fallback.ts";
@@ -17,6 +17,7 @@ export interface AsyncExecutionContext {
 	currentSessionId: string;
 	currentModelProvider?: string;
 	currentModel?: string;
+	workflowSessionMetadata?: SessionWorkflowMetadata;
 }
 
 export interface AsyncChainParams {
@@ -74,7 +75,12 @@ export interface AsyncSingleParams {
 	childIntercomTarget?: (agent: string, index: number) => string | undefined;
 	nestedRoute?: NestedRouteInfo;
 	/** Internal launch seam used by focused runtime tests. */
-	spawnRunner?: (config: object, suffix: string, cwd: string) => AsyncSpawnResult;
+	spawnRunner?: (
+		config: object,
+		suffix: string,
+		cwd: string,
+		env?: Record<string, string>,
+	) => AsyncSpawnResult;
 }
 
 export interface AsyncExecutionResult {

@@ -137,6 +137,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Fixed workflow stage session classification so fresh and fork-context stages persist complete ownership metadata before their transcripts can enter normal resume history, including custom session directories.
 - Fixed archived/read-only workflow transcript views to use the standard responsive footer and Ctrl+T copy-mode toggle/status, enabling normal terminal or tmux text selection while preserving Escape and Ctrl+D navigation ([#1706](https://github.com/bastani-inc/atomic/issues/1706)).
 - Fixed workflow tool validation coercing `output: false` into the literal file path `false`, so disabled output remains disabled across direct task, parallel task, and chain execution.
 - Hardened the bundled `impeccable` skill's local detector/live scripts against CodeQL-reported sanitization and command-injection patterns by tightening HTML block stripping, avoiding shell interpolation for `git check-ignore`, escaping Svelte preview CSS selectors correctly, and fixing the `ms*` JSX style prefix conversion.

@@ -75,6 +75,7 @@ export async function runSingleAttempt(
 		parentCapabilityToken: options.nestedRoute?.capabilityToken,
 		codexFastModeSettings: shared.fastModeSettings,
 		codexFastModeScope: shared.fastModeScope,
+		workflowSessionMetadata: options.workflowSessionMetadata,
 		structuredOutput: options.structuredOutput,
 	});
 	const result: SingleResult = {

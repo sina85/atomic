@@ -10,6 +10,10 @@ import {
 	forkSessionFromFile,
 } from "./session-manager-archive.ts";
 import {
+	classifiedWorkflowMetadata,
+	validSessionWorkflowMetadata,
+} from "./session-manager-classification.ts";
+import {
 	createBranchSummaryEntry,
 	createCompactionEntry,
 	createContextWindowChangeEntry,
@@ -149,12 +153,14 @@ export class SessionManager {
 		return this.sessionFile;
 	}
 
-	/** Mark the session header as internal (e.g. workflow stage). Preserves an existing full marker on reattach. */
+	/** Mark the session as workflow-owned, repairing malformed markers while preserving valid ownership. */
 	markSessionInternal(workflow?: SessionWorkflowMetadata): void {
 		const header = this.fileEntries.find((entry) => entry.type === "session") as SessionHeader | undefined;
-		if (!header || (header.internal && header.workflow)) return;
+		if (!header || classifiedWorkflowMetadata(header)) return;
+		const validWorkflow = validSessionWorkflowMetadata(workflow);
+		if (!validWorkflow) return;
 		header.internal = true;
-		if (workflow) header.workflow = workflow;
+		header.workflow = validWorkflow;
 		if (this.flushed) this._rewriteFile();
 	}
 
@@ -394,6 +400,7 @@ export class SessionManager {
 			sessionDir: this.getSessionDir(),
 			cwd: this.cwd,
 			previousSessionFile: this.sessionFile,
+			workflow: classifiedWorkflowMetadata(this.getHeader()),
 			path: this.getBranch(leafId),
 			labelsById: this.labelsById,
 			labelTimestampsById: this.labelTimestampsById,

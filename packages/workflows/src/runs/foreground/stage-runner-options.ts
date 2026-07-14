@@ -1,15 +1,38 @@
 import { SessionManager, type CreateAgentSessionOptions } from "@bastani/atomic";
-import type { StageOptions } from "../../shared/types.js";
+import type { StageExecutionMeta, StageOptions } from "../../shared/types.js";
 import type { AgentSessionConsumer } from "./stage-runner-types.js";
+
+function workflowSessionOptions(meta: StageExecutionMeta) {
+  return {
+    internal: true as const,
+    workflow: { runId: meta.runId, stageId: meta.stageId, stageName: meta.stageName },
+  };
+}
+
+function workflowOrchestrationContext(meta: StageExecutionMeta): NonNullable<CreateAgentSessionOptions["orchestrationContext"]> {
+  return {
+    kind: "workflow-stage",
+    workflowRunId: meta.runId,
+    workflowStageId: meta.stageId,
+    workflowStageName: meta.stageName,
+    constraints: { disableWorkflowTool: true, maxSubagentDepth: 5 },
+  };
+}
 
 export function stripWorkflowOnlyOptions(
   options: StageOptions | undefined,
-  defaultSessionDir?: string,
+  defaultSessionDir: string | undefined,
+  meta: StageExecutionMeta,
 ): CreateAgentSessionOptions {
+  const classification = workflowSessionOptions(meta);
+  const orchestrationContext = workflowOrchestrationContext(meta);
   if (!options) {
     return defaultSessionDir === undefined
-      ? {}
-      : { sessionManager: SessionManager.create(process.cwd(), defaultSessionDir) };
+      ? { orchestrationContext }
+      : {
+          orchestrationContext,
+          sessionManager: SessionManager.create(process.cwd(), defaultSessionDir, classification),
+        };
   }
   const {
     schema: _schema,
@@ -32,12 +55,17 @@ export function stripWorkflowOnlyOptions(
     if (resumeFromSessionFile !== undefined) {
       sessionOptions.sessionManager = SessionManager.open(resumeFromSessionFile, effectiveSessionDir, cwd);
     } else if (context === "fork" && forkFromSessionFile !== undefined) {
-      sessionOptions.sessionManager = SessionManager.forkFrom(forkFromSessionFile, cwd, effectiveSessionDir);
+      sessionOptions.sessionManager = SessionManager.forkFrom(
+        forkFromSessionFile,
+        cwd,
+        effectiveSessionDir,
+        classification,
+      );
     } else if (effectiveSessionDir !== undefined) {
-      sessionOptions.sessionManager = SessionManager.create(cwd, effectiveSessionDir);
+      sessionOptions.sessionManager = SessionManager.create(cwd, effectiveSessionDir, classification);
     }
   }
-  return sessionOptions as CreateAgentSessionOptions;
+  return { ...sessionOptions, orchestrationContext } as CreateAgentSessionOptions;
 }
 
 export function missingAdapter(consumer: AgentSessionConsumer): never {

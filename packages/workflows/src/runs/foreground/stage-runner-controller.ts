@@ -306,7 +306,7 @@ export class StageSessionController {
     const stageOptions = this.stageOptionsForCandidate(candidate, resumeOptions);
     const created = this.opts.adapters.agentSession
       ? await this.opts.adapters.agentSession.create(
-          stripWorkflowOnlyOptions(stageOptions, this.opts.defaultSessionDir) as StageSessionCreateOptions,
+          stripWorkflowOnlyOptions(stageOptions, this.opts.defaultSessionDir, this.meta) as StageSessionCreateOptions,
           { ...this.meta, stageOptions },
         )
       : missingAdapter(consumer);

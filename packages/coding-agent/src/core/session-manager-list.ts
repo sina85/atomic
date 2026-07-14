@@ -5,6 +5,7 @@ import { readdir, readFile, stat } from "fs/promises";
 import { join } from "path";
 import { getSessionsDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
+import { classifiedWorkflowMetadata } from "./session-manager-classification.ts";
 import { parseSessionEntries } from "./session-manager-migrations.ts";
 import { getDefaultSessionDir, getDefaultSessionDirPath } from "./session-manager-paths.ts";
 import {
@@ -20,7 +21,6 @@ import type {
 	SessionInfoEntry,
 	SessionListProgress,
 	SessionMessageEntry,
-	SessionWorkflowMetadata,
 } from "./session-manager-types.ts";
 
 function isMessageWithContent(message: AgentMessage): message is Message {
@@ -116,10 +116,8 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 
 		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
 		const parentSessionPath = (header as SessionHeader).parentSession;
-		const internal = (header as SessionHeader).internal === true ? true : undefined;
-		const workflowHeader = (header as SessionHeader).workflow as SessionWorkflowMetadata | undefined;
-		const workflow =
-			workflowHeader && typeof workflowHeader.runId === "string" ? workflowHeader : undefined;
+		const workflow = classifiedWorkflowMetadata(header as SessionHeader);
+		const internal = workflow ? true : undefined;
 
 		const modified = getSessionModifiedDate(entries, header as SessionHeader, stats.mtime);
 
