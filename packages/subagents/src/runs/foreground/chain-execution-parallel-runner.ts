@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { INTERCOM_BRIDGE_MARKER } from "../../intercom/intercom-bridge.ts";
 import { mapConcurrent, resolveChildCwd } from "../../shared/utils.ts";
 import { MAX_CONCURRENCY, resolveChildMaxSubagentDepth, type SingleResult } from "../../shared/types.ts";
+import { workflowSessionMetadataFromContext } from "../../shared/types-depth.ts";
 import {
 	buildChainInstructions,
 	suppressProgressForReadOnlyTask,
@@ -118,6 +119,7 @@ export async function runParallelChainTasks(input: ParallelChainRunInput): Promi
 			outputMode: behavior.outputMode,
 			maxSubagentDepth,
 			workflowStageSubagentGuard: input.workflowStageSubagentGuard,
+			workflowSessionMetadata: workflowSessionMetadataFromContext(input.ctx),
 			controlConfig: input.controlConfig,
 			onControlEvent: input.onControlEvent,
 			intercomSessionName: input.childIntercomTarget?.(task.agent, input.globalTaskIndex + taskIndex),

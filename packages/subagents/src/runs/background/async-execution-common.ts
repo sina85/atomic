@@ -85,7 +85,12 @@ export function writeAsyncRunnerConfig(cfg: object, suffix: string): string {
 	return cfgPath;
 }
 
-export function spawnRunner(cfg: object, suffix: string, cwd: string): AsyncSpawnResult {
+export function spawnRunner(
+	cfg: object,
+	suffix: string,
+	cwd: string,
+	env?: Record<string, string>,
+): AsyncSpawnResult {
 	const cwdValidation = validatePiSpawnCwd(cwd);
 	if (!cwdValidation.ok) return { error: cwdValidation.error };
 
@@ -101,6 +106,7 @@ export function spawnRunner(cfg: object, suffix: string, cwd: string): AsyncSpaw
 	try {
 		proc = spawn(spawnSpec.command, spawnSpec.args, {
 			cwd,
+			env: { ...process.env, ...env },
 			detached: true,
 			stdio: "ignore",
 			windowsHide: true,

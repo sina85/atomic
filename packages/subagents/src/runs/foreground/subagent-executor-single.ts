@@ -21,6 +21,7 @@ import {
 import {
 	resolveChildMaxSubagentDepth,
 	resolveSubagentDepthPolicy,
+	workflowSessionMetadataFromContext,
 	wrapForkTask,
 	type AgentProgress,
 	type ArtifactPaths,
@@ -179,6 +180,7 @@ export async function runSinglePath(data: ExecutionContextData, deps: ResolvedEx
 			outputMode: effectiveOutputMode,
 			maxSubagentDepth,
 			workflowStageSubagentGuard,
+			workflowSessionMetadata: workflowSessionMetadataFromContext(ctx),
 			onUpdate: forwardSingleUpdate,
 			controlConfig,
 			onControlEvent,

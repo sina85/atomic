@@ -6,6 +6,7 @@ import { getSubagentCodexFastModeSettings, resolveSubagentCodexFastModeScope, re
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { buildChainInstructions, isDynamicParallelStep, isParallelStep, resolveStepBehavior, suppressProgressForReadOnlyTask, writeInitialProgressFile, type ResolvedStepBehavior, type SequentialStep, type StepOverrides } from "../../shared/settings.ts";
 import { ASYNC_DIR, RESULTS_DIR, SUBAGENT_ASYNC_STARTED_EVENT, resolveChildMaxSubagentDepth } from "../../shared/types.ts";
+import { workflowSessionEnv } from "../../shared/types-depth.ts";
 import { resolveChildCwd } from "../../shared/utils.ts";
 import { applyThinkingSuffix, SUBAGENT_INTERCOM_SESSION_NAME_ENV } from "../shared/pi-args.ts";
 import type { RunnerStep } from "../shared/parallel-utils.ts";
@@ -305,6 +306,7 @@ export function executeAsyncChain(
 			},
 			id,
 			runnerCwd,
+			workflowSessionEnv(ctx.workflowSessionMetadata),
 		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

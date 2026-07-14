@@ -6,6 +6,7 @@ import { getSubagentCodexFastModeSettings, resolveSubagentCodexFastModeScope, re
 import { resolveEffectiveThinking } from "../../shared/model-info.ts";
 import { injectSingleProgressInstruction, writeInitialProgressFile } from "../../shared/settings.ts";
 import { ASYNC_DIR, RESULTS_DIR, SUBAGENT_ASYNC_STARTED_EVENT, resolveChildMaxSubagentDepth } from "../../shared/types.ts";
+import { workflowSessionEnv } from "../../shared/types-depth.ts";
 import { resolveChildCwd } from "../../shared/utils.ts";
 import { applyThinkingSuffix, SUBAGENT_INTERCOM_SESSION_NAME_ENV } from "../shared/pi-args.ts";
 import { injectSingleOutputInstruction, normalizeSingleOutputOverride, resolveSingleOutputPath, validateFileOnlyOutputMode } from "../shared/single-output.ts";
@@ -170,6 +171,7 @@ export function executeAsyncSingle(
 			},
 			id,
 			runnerCwd,
+			workflowSessionEnv(ctx.workflowSessionMetadata),
 		);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

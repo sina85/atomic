@@ -3,6 +3,7 @@
  */
 
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { SessionWorkflowMetadata } from "@bastani/atomic";
 import type { NestedRouteInfo } from "./types-async.ts";
 import type {
 	ArtifactConfig,
@@ -72,11 +73,14 @@ export interface RunSyncOptions {
 	index?: number;
 	sessionDir?: string;
 	sessionFile?: string;
+	/** Override the Atomic CLI entrypoint used by foreground child processes. */
+	piArgv1?: string;
 	share?: boolean;
 	outputPath?: string;
 	outputMode?: OutputMode;
 	maxSubagentDepth?: number;
 	workflowStageSubagentGuard?: boolean;
+	workflowSessionMetadata?: SessionWorkflowMetadata;
 	nestedRoute?: NestedRouteInfo;
 	/** Override the agent's default model (format: "provider/id" or just "id") */
 	modelOverride?: string;

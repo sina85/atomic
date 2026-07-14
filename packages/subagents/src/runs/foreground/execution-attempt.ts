@@ -75,6 +75,7 @@ export async function runSingleAttempt(
 		parentCapabilityToken: options.nestedRoute?.capabilityToken,
 		codexFastModeSettings: shared.fastModeSettings,
 		codexFastModeScope: shared.fastModeScope,
+		workflowSessionMetadata: options.workflowSessionMetadata,
 		structuredOutput: options.structuredOutput,
 	});
 	const result: SingleResult = {
@@ -129,7 +130,7 @@ export async function runSingleAttempt(
 		});
 	}
 	const exitCode = await new Promise<number>((resolve) => {
-		const spawnSpec = getPiSpawnCommand(args);
+		const spawnSpec = getPiSpawnCommand(args, options.piArgv1 ? { argv1: options.piArgv1 } : {});
 		const proc = spawn(spawnSpec.command, spawnSpec.args, {
 			cwd: runCwd,
 			env: spawnEnv,

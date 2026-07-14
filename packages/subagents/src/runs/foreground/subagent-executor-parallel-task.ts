@@ -6,6 +6,7 @@ import { INTERCOM_BRIDGE_MARKER } from "../../intercom/intercom-bridge.ts";
 import type { AgentConfig } from "../../agents/agents.ts";
 import type { ModelInfo } from "../../shared/model-info.ts";
 import type { WorktreeSetup } from "../shared/worktree.ts";
+import { workflowSessionMetadataFromContext } from "../../shared/types-depth.ts";
 import {
 	type AgentProgress,
 	type ArtifactConfig,
@@ -105,6 +106,7 @@ export async function runForegroundParallelTasks(input: ForegroundParallelRunInp
 			outputMode: behavior?.outputMode,
 			maxSubagentDepth: input.maxSubagentDepths[index],
 			workflowStageSubagentGuard: input.workflowStageSubagentGuard,
+			workflowSessionMetadata: workflowSessionMetadataFromContext(input.ctx),
 			controlConfig: input.controlConfig,
 			onControlEvent: input.onControlEvent,
 			intercomSessionName: input.childIntercomTarget?.(task.agent, index),

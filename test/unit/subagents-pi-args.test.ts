@@ -1,6 +1,7 @@
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
 import { ENV_CODEX_FAST_MODE } from "../../packages/coding-agent/src/config.js";
+import { WORKFLOW_SESSION_METADATA_ENV } from "../../packages/coding-agent/src/core/session-manager-classification.js";
 import {
   buildPiArgs,
   FANOUT_CHILD_EXTENSION_PATH,
@@ -222,5 +223,20 @@ describe("subagent child CLI args", () => {
     assert.equal(chatScoped.env[ENV_CODEX_FAST_MODE], "chat=1;workflow=0");
     assert.equal(workflowScoped.env[ENV_CODEX_FAST_MODE], "chat=1;workflow=1");
     assert.equal(workflowDisabled.env[ENV_CODEX_FAST_MODE], "chat=0;workflow=0");
+  });
+
+  test("passes workflow ownership metadata to fresh child sessions", () => {
+    const workflow = { runId: "run-1", stageId: "stage-1", stageName: "build" };
+    const result = buildPiArgs({
+      baseArgs: [],
+      task: "hello",
+      sessionEnabled: true,
+      sessionFile: "/tmp/fresh-subagent.jsonl",
+      inheritProjectContext: true,
+      inheritSkills: true,
+      workflowSessionMetadata: workflow,
+    });
+
+    assert.equal(result.env[WORKFLOW_SESSION_METADATA_ENV], JSON.stringify(workflow));
   });
 });

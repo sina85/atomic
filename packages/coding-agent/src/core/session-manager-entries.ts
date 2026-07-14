@@ -2,6 +2,7 @@ import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai/c
 import { join } from "path";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { VerbatimCompactionDetails } from "./compaction/compaction-types.js";
+import { validSessionWorkflowMetadata } from "./session-manager-classification.ts";
 import {
 	CURRENT_SESSION_VERSION,
 	type BranchSummaryEntry,
@@ -46,8 +47,11 @@ export function createSessionHeader(
 		cwd,
 	};
 	if (parentSession !== undefined) header.parentSession = parentSession;
-	if (internal) header.internal = true;
-	if (workflow) header.workflow = workflow;
+	const validWorkflow = internal === true ? validSessionWorkflowMetadata(workflow) : undefined;
+	if (validWorkflow) {
+		header.internal = true;
+		header.workflow = validWorkflow;
+	}
 	return header;
 }
 

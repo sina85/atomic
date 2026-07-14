@@ -9,6 +9,7 @@ import {
 	resolveSubagentDepthPolicy,
 	resolveTopLevelParallelConcurrency,
 	resolveTopLevelParallelMaxTasks,
+	workflowSessionMetadataFromContext,
 	wrapForkTask,
 } from "../../shared/types.ts";
 import { resolveSingleProgress, type ChainStep } from "../../shared/settings.ts";
@@ -74,6 +75,7 @@ export function runAsyncPath(data: ExecutionContextData, deps: ResolvedExecutorD
 		currentSessionId: deps.state.currentSessionId!,
 		currentModelProvider: ctx.model?.provider,
 		currentModel: currentModelFullId(ctx.model),
+		workflowSessionMetadata: workflowSessionMetadataFromContext(ctx),
 	};
 	const availableModels: ModelInfo[] = ctx.modelRegistry.getAvailable().map(toModelInfo);
 	const knownModelProviders = collectKnownModelProviders(ctx.modelRegistry);

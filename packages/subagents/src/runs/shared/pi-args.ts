@@ -8,6 +8,8 @@ import {
 	getEnvValue,
 	type CodexFastModeResolvedSettings,
 	type CodexFastModeScope,
+	type SessionWorkflowMetadata,
+	WORKFLOW_SESSION_METADATA_ENV,
 } from "@bastani/atomic";
 import { encodeNestedPathEnv, parseNestedPathEnv, type NestedPathEntry } from "./nested-path.ts";
 import { resolveMcpDirectToolNames } from "./mcp-direct-tool-allowlist.ts";
@@ -72,6 +74,7 @@ interface BuildPiArgsInput {
 	parentCapabilityToken?: string;
 	codexFastModeSettings?: CodexFastModeResolvedSettings;
 	codexFastModeScope?: CodexFastModeScope;
+	workflowSessionMetadata?: SessionWorkflowMetadata;
 	structuredOutput?: {
 		schema: JsonSchemaObject;
 		schemaPath: string;
@@ -201,6 +204,9 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	const env: Record<string, string | undefined> = {};
 	env[SUBAGENT_CHILD_ENV] = "1";
 	env[SUBAGENT_FANOUT_CHILD_ENV] = fanoutAuthorized ? "1" : "0";
+	if (input.workflowSessionMetadata) {
+		env[WORKFLOW_SESSION_METADATA_ENV] = JSON.stringify(input.workflowSessionMetadata);
+	}
 	if (input.codexFastModeSettings) {
 		env[ENV_CODEX_FAST_MODE] = serializeChildCodexFastModeSettings(
 			mapChildCodexFastModeSettings(input.codexFastModeSettings, input.codexFastModeScope ?? "chat"),
