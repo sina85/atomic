@@ -233,6 +233,20 @@ describe("publish-release PR reconciliation", () => {
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.disposition, "merge-required");
 
+    const changedTargetPending = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [
+          { context: "external-status", targetUrl: "https://example.test/external-required", state: "SUCCESS" },
+          { context: "external-status", targetUrl: "https://example.test/external-rerun", state: "PENDING" },
+        ],
+      }),
+    ]);
+    assert.equal(changedTargetPending.ok, false);
+    assert.match(changedTargetPending.summary, /pending or failing rerun/u);
+
     const wrongTarget = await verify([
       response(openPr),
       response(requiredChecks),
