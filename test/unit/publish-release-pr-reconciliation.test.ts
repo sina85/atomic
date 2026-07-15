@@ -258,7 +258,7 @@ describe("publish-release PR reconciliation", () => {
     assert.equal(wrongTarget.ok, false);
   });
 
-  test("uses StatusContext identity for external required checks without target links", async () => {
+  test("infers one rollup kind for required checks with empty workflow and no target link", async () => {
     const requiredChecks: JsonValue = [{
       name: "external-status",
       workflow: "",
@@ -266,20 +266,21 @@ describe("publish-release PR reconciliation", () => {
       bucket: "pass",
       state: "SUCCESS",
     }];
-    const optionalOnly = await verify([
+    const checkRunOnly = await verify([
       response(openPr),
       response(requiredChecks),
       response({
         ...openPr,
         statusCheckRollup: [{
+          __typename: "CheckRun",
           name: "external-status",
-          workflowName: "Optional Actions",
+          workflowName: "",
           status: "COMPLETED",
           conclusion: "SUCCESS",
         }],
       }),
     ]);
-    assert.equal(optionalOnly.ok, false);
+    assert.equal(checkRunOnly.ok, true);
 
     const externalSuccess = await verify([
       response(openPr),
@@ -303,6 +304,57 @@ describe("publish-release PR reconciliation", () => {
     assert.match(externalPending.summary, /pending or failing rerun/u);
   });
 
+
+  test("accepts a required GitHub App CheckRun whose gh checks workflow is empty", async () => {
+    const requiredChecks: JsonValue = [{
+      name: "Greptile Review",
+      workflow: "",
+      link: "https://greptile.com/",
+      bucket: "pass",
+      state: "SUCCESS",
+    }];
+    const passingCheckRun = {
+      __typename: "CheckRun",
+      name: "Greptile Review",
+      workflowName: "",
+      detailsUrl: "https://greptile.com/",
+      status: "COMPLETED",
+      conclusion: "SUCCESS",
+    };
+    const accepted = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [
+          passingCheckRun,
+          { __typename: "StatusContext", context: "Greptile Review", state: "FAILURE" },
+        ],
+      }),
+    ]);
+    assert.equal(accepted.ok, true);
+
+    const pendingRerun = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [
+          passingCheckRun,
+          {
+            __typename: "CheckRun",
+            name: "Greptile Review",
+            workflowName: "",
+            detailsUrl: "https://greptile.com/rerun",
+            status: "IN_PROGRESS",
+            conclusion: null,
+          },
+        ],
+      }),
+    ]);
+    assert.equal(pendingRerun.ok, false);
+    assert.match(pendingRerun.summary, /pending or failing rerun/u);
+  });
   test("rejects a pending rerun from the same workflow-qualified required context", async () => {
     const requiredChecks: JsonValue = [{
       name: "test",

@@ -122,20 +122,28 @@ function rollupCheckWorkflow(value: JsonValue): string | undefined {
   if (!isJsonObject(value)) return undefined;
   return stringField(value, "workflowName");
 }
-function isStatusContext(value: JsonValue): boolean {
-  if (!isJsonObject(value)) return false;
-  return stringField(value, "__typename") === "StatusContext"
-    || stringField(value, "context") !== undefined;
+type RollupCheckKind = "check-run" | "status-context";
+
+function rollupCheckKind(value: JsonValue): RollupCheckKind | undefined {
+  if (!isJsonObject(value)) return undefined;
+  if (stringField(value, "__typename") === "StatusContext" || stringField(value, "context") !== undefined) {
+    return "status-context";
+  }
+  if (stringField(value, "__typename") === "CheckRun" || stringField(value, "name") !== undefined) {
+    return "check-run";
+  }
+  return undefined;
 }
+
 function isRequiredContext(
   value: JsonValue,
   name: string,
   workflow: string | undefined,
-  externalStatus: boolean,
+  inferredKind: RollupCheckKind | undefined,
 ): boolean {
   if (rollupCheckName(value) !== name) return false;
   if (workflow !== undefined) return rollupCheckWorkflow(value) === workflow;
-  return !externalStatus || isStatusContext(value);
+  return inferredKind === undefined || rollupCheckKind(value) === inferredKind;
 }
 
 function isExactRequiredResult(
@@ -143,10 +151,26 @@ function isExactRequiredResult(
   name: string,
   workflow: string | undefined,
   link: string | undefined,
-  externalStatus: boolean,
+  inferredKind: RollupCheckKind | undefined,
 ): boolean {
-  return isRequiredContext(value, name, workflow, externalStatus)
+  return isRequiredContext(value, name, workflow, inferredKind)
     && (link === undefined || rollupCheckLink(value) === link);
+}
+
+function inferEmptyWorkflowKind(
+  available: readonly { check: JsonValue }[],
+  name: string,
+  link: string | undefined,
+): RollupCheckKind | undefined {
+  const exactCandidates = available.filter((candidate) => rollupCheckName(candidate.check) === name
+    && (link === undefined || rollupCheckLink(candidate.check) === link));
+  const kindsFor = (candidates: readonly { check: JsonValue }[]): Set<RollupCheckKind> => new Set(candidates
+    .map((candidate) => rollupCheckKind(candidate.check))
+    .filter((kind): kind is RollupCheckKind => kind !== undefined));
+  const passingKinds = kindsFor(exactCandidates.filter((candidate) => rollupCheckPassed(candidate.check)));
+  if (passingKinds.size === 1) return [...passingKinds][0];
+  const candidateKinds = kindsFor(exactCandidates);
+  return passingKinds.size === 0 && candidateKinds.size === 1 ? [...candidateKinds][0] : undefined;
 }
 
 function rollupCheckPassed(value: JsonValue): boolean {
@@ -178,18 +202,23 @@ export function verifyPullRequestChecksForHeadJson(
       : undefined;
     const link = isJsonObject(required) ? stringField(required, "link") : undefined;
     const workflow = isJsonObject(required) ? stringField(required, "workflow") : undefined;
-    const externalStatus = isJsonObject(required) && required.workflow === "";
+    const emptyWorkflow = isJsonObject(required) && required.workflow === "";
     if (name === undefined) {
       failures.push(`required check[${index}] had no name`);
       continue;
     }
-    const sameContext = available.filter((candidate) => isRequiredContext(candidate.check, name, workflow, externalStatus));
+    const inferredKind = emptyWorkflow ? inferEmptyWorkflowKind(available, name, link) : undefined;
+    if (emptyWorkflow && inferredKind === undefined) {
+      failures.push(`required check ${name} could not be tied to one exact rollup result kind`);
+      continue;
+    }
+    const sameContext = available.filter((candidate) => isRequiredContext(candidate.check, name, workflow, inferredKind));
     if (sameContext.some((candidate) => !rollupCheckPassed(candidate.check))) {
       failures.push(`required check ${name} had a pending or failing rerun in the captured head status rollup`);
       continue;
     }
     const match = available.find((candidate) => !candidate.used
-      && isExactRequiredResult(candidate.check, name, workflow, link, externalStatus)
+      && isExactRequiredResult(candidate.check, name, workflow, link, inferredKind)
       && rollupCheckPassed(candidate.check));
     if (match === undefined) failures.push(`required check ${name} was not passing in the captured head status rollup`);
     else match.used = true;
