@@ -4,6 +4,7 @@ import { clampThinkingLevel, isContextOverflow, modelsAreEqual } from "@earendil
 import { sleep } from "../utils/sleep.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { isCopilotGeminiModel } from "./copilot-gemini-payload-sanitizer.ts";
+import { isExactCursorProvider, parseExactCursorProviderReference } from "./cursor-model-reference.ts";
 import { normalizeToolArgumentsForModel } from "./copilot-gemini-tool-arguments.ts";
 import type { AgentSessionInternalSurface as AgentSession } from "./agent-session-methods.ts";
 
@@ -24,10 +25,18 @@ function splitFallbackModel(value: string): { modelId: string; thinkingLevel?: T
 	return { modelId: trimmed.slice(0, index), thinkingLevel: suffix as ThinkingLevel };
 }
 
-function resolveFallbackModel(this: AgentSession, value: string): { model: Model<Api>; thinkingLevel?: ThinkingLevel } | undefined {
+export function resolveFallbackModel(this: AgentSession, value: string): { model: Model<Api>; thinkingLevel?: ThinkingLevel } | undefined {
+	const allAvailable = this._modelRegistry.getAvailable();
+	const exactCursorId = parseExactCursorProviderReference(value);
+	if (exactCursorId !== undefined) {
+		const model = allAvailable.find((candidate) => isExactCursorProvider(candidate.provider) && candidate.id === exactCursorId);
+		return model && this._modelRegistry.hasConfiguredAuth(model) ? { model, thinkingLevel: undefined } : undefined;
+	}
+
+	const availableModels = allAvailable.filter((model) => !isExactCursorProvider(model.provider));
 	const parsed = splitFallbackModel(value);
 	if (!parsed.modelId.includes("/")) {
-		const available = this._modelRegistry.getAvailable().filter((model) => model.id === parsed.modelId);
+		const available = availableModels.filter((model) => model.id === parsed.modelId);
 		const preferredProvider = this.model?.provider ?? this.settingsManager.getDefaultProvider();
 		const model = available.find((candidate) => candidate.provider === preferredProvider) ?? (available.length === 1 ? available[0] : undefined);
 		return model ? { model, thinkingLevel: parsed.thinkingLevel } : undefined;
@@ -35,7 +44,7 @@ function resolveFallbackModel(this: AgentSession, value: string): { model: Model
 	const slash = parsed.modelId.indexOf("/");
 	const provider = parsed.modelId.slice(0, slash);
 	const modelId = parsed.modelId.slice(slash + 1);
-	const model = this._modelRegistry.find(provider, modelId);
+	const model = availableModels.find((candidate) => candidate.provider === provider && candidate.id === modelId);
 	if (!model || !this._modelRegistry.hasConfiguredAuth(model)) return undefined;
 	return { model, thinkingLevel: parsed.thinkingLevel };
 }

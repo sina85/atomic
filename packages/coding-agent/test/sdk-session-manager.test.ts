@@ -241,6 +241,35 @@ describe("createAgentSession session manager defaults", () => {
 		session.dispose();
 	});
 
+	it("does not activate Cursor discovery for a case-variant saved provider", async () => {
+		let discoveries = 0;
+		const extensionFactory: ExtensionFactory = (pi) => {
+			pi.on("model_catalog_discover", () => { discoveries += 1; });
+		};
+		const authStorage = AuthStorage.inMemory();
+		const modelRegistry = ModelRegistry.inMemory(authStorage);
+		const fallback = getModel("anthropic", "claude-sonnet-4-5")!;
+		modelRegistry.registerProvider("anthropic", {
+			baseUrl: fallback.baseUrl, apiKey: "test-key", api: fallback.api, models: [fallback],
+		});
+		const settingsManager = SettingsManager.inMemory();
+		settingsManager.setDefaultModelAndProvider("Cursor", "missing-route");
+		const resourceLoader = new DefaultResourceLoader({
+			cwd, agentDir, settingsManager, extensionFactories: [extensionFactory],
+			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+		});
+		await resourceLoader.reload();
+		const { session, modelFallbackMessage } = await createAgentSession({
+			cwd, agentDir, authStorage, modelRegistry, settingsManager,
+			sessionManager: SessionManager.inMemory(cwd), resourceLoader,
+		});
+		expect(discoveries).toBe(0);
+		expect(session.model?.provider).toBe("anthropic");
+		expect(session.model?.id).toBe(fallback.id);
+		expect(modelFallbackMessage).toBeUndefined();
+		session.dispose();
+	});
+
 	it("keeps a stale resumed Cursor reference fatal through real extension binding", async () => {
 		let discoveries = 0;
 		let runCalls = 0;

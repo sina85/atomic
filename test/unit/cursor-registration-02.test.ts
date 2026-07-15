@@ -139,11 +139,13 @@ function deterministicCursorConversationIdForSession(sessionId: string): string 
 }
 describe("Cursor provider registration", () => {
 	test("login and refresh use the production UUID generator, re-register live catalogs, and write the cache", async () => {
+		const accessLive = jwtForSubject("login-live", "access-live");
+		const accessRefreshed = jwtForSubject("login-live", "access-refreshed");
 		const { host, registrations } = makeHost();
 		const cache = new MemoryCursorCatalogCache();
 		const fakeAuth = authService(
-			async () => ({ access: "access-live", refresh: "refresh-live", expires: 123 }),
-			async (credentials) => ({ access: "access-refreshed", refresh: credentials.refresh, expires: 456 }),
+			async () => ({ access: accessLive, refresh: "refresh-live", expires: 123 }),
+			async (credentials) => ({ access: accessRefreshed, refresh: credentials.refresh, expires: 456 }),
 		);
 		const discoveryRequests: { readonly accessToken: string; readonly requestId: string; readonly signal?: AbortSignal }[] = [];
 		const fakeDiscovery = discoveryService(async (accessToken, requestId, signal) => {
@@ -166,9 +168,9 @@ describe("Cursor provider registration", () => {
 		const refreshCredentials = await registrations.at(-1)?.config.oauth.refreshToken(loginCredentials ?? { access: "", refresh: "", expires: 0 });
 		await nextTick();
 
-		assert.deepEqual(loginCredentials, { access: "access-live", refresh: "refresh-live", expires: 123 });
-		assert.deepEqual(refreshCredentials, { access: "access-refreshed", refresh: "refresh-live", expires: 456 });
-		assert.deepEqual(discoveryRequests.map((request) => request.accessToken), ["access-live", "access-refreshed"]);
+		assert.deepEqual(loginCredentials, { access: accessLive, refresh: "refresh-live", expires: 123 });
+		assert.deepEqual(refreshCredentials, { access: accessRefreshed, refresh: "refresh-live", expires: 456 });
+		assert.deepEqual(discoveryRequests.map((request) => request.accessToken), [accessLive, accessRefreshed]);
 		assert.equal(discoveryRequests[0]?.signal?.aborted, false);
 		for (const request of discoveryRequests) {
 			assert.match(request.requestId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
@@ -185,8 +187,9 @@ describe("Cursor provider registration", () => {
 		await runtime.dispose();
 	});
 	test("login registers live-only models even when catalog cache persistence fails", async () => {
+		const accessLive = jwtForSubject("login-cache-failure", "access-live");
 		const { host, registrations } = makeHost();
-		const fakeAuth = authService(async () => ({ access: "access-live", refresh: "refresh-live", expires: 123 }));
+		const fakeAuth = authService(async () => ({ access: accessLive, refresh: "refresh-live", expires: 123 }));
 		const fakeDiscovery = discoveryService(async () => (
 			{ source: "live", fetchedAt: 43, models: [{ id: "composer-2.5", displayName: "Composer 2.5" }] }
 		));
@@ -200,15 +203,15 @@ describe("Cursor provider registration", () => {
 			onCatalogRefreshError: (error) => refreshErrors.push(error),
 		});
 
-		assert.deepEqual(await registrations[0]!.config.oauth.login(callbacks()), { access: "access-live", refresh: "refresh-live", expires: 123 });
+		assert.deepEqual(await registrations[0]!.config.oauth.login(callbacks()), { access: accessLive, refresh: "refresh-live", expires: 123 });
 		assert.equal(registrations.filter((registration) => registration.config.models.length > 0).length, 1);
 		assert.equal(registrations.at(-1)?.config.models.some((model) => model.id === "composer-2.5"), true);
 		assert.deepEqual(runtime.getCatalogRefreshStatus(), {
 			state: "fresh",
 			fetchedAt: 43,
-			error: "Cursor model catalog cache persistence failed: cursor catalog cache write failed",
+			error: "Cursor model catalog cache persistence failed.",
 		});
-		assert.deepEqual(refreshErrors.map((error) => error.message), ["Cursor model catalog cache persistence failed: cursor catalog cache write failed"]);
+		assert.deepEqual(refreshErrors.map((error) => error.message), ["Cursor model catalog cache persistence failed."]);
 		await runtime.dispose();
 	});
 	test("refresh returns rotated credentials when best-effort catalog discovery rejects", async () => {
@@ -237,6 +240,7 @@ describe("Cursor provider registration", () => {
 		await runtime.dispose();
 	});
 	test("surfaces cache persistence warnings during background and print refresh", async () => {
+		const accessToken = jwtForSubject("cache-warning", "token");
 		const notifications: string[] = [];
 		const diagnostics: string[] = [];
 		const discovery = discoveryService(async () => (
@@ -246,11 +250,12 @@ describe("Cursor provider registration", () => {
 		const runtime = registerCursorProvider(host, {
 			transport: new CursorMockTransport(), discoveryService: discovery,
 			catalogCache: new ThrowingCursorCatalogCache(), uuid: () => "cache-warning",
+			now: () => 44,
 			onCatalogDiagnostic: (message) => diagnostics.push(message),
 		});
 		const handler = lifecycleHandlers.get("session_start")?.[0];
 		assert.ok(handler);
-		const registry = { getApiKeyForProvider: async () => "token" };
+		const registry = { getApiKeyForProvider: async () => accessToken };
 		await handler({}, { mode: "tui", ui: { notify: (message: string) => notifications.push(message) }, modelRegistry: registry });
 		await nextTick();
 		assert.equal(registrations.at(-1)?.config.models.some((model) => model.id === "live-after-warning"), true);

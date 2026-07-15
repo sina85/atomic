@@ -1,22 +1,31 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { buildFallbackModel, parseModelPattern } from "./model-resolver-patterns.ts";
+import {
+  hasNormalizedCursorProviderQualifier,
+  isExactCursorProvider,
+  parseExactCursorProviderReference,
+  resolveProviderIdentity,
+} from "./cursor-model-reference.ts";
 import { classifyBareCursorModelReference } from "./legacy-cursor-model-ids.ts";
 import type { ResolveCliModelResult } from "./model-resolver-types.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 
-function buildProviderMap(availableModels: Model<Api>[]): Map<string, string> {
-  const providerMap = new Map<string, string>();
-  for (const model of availableModels) {
-    providerMap.set(model.provider.toLowerCase(), model.provider);
-  }
-  return providerMap;
+function availableProviderIdentities(availableModels: readonly Model<Api>[]): string[] {
+  return availableModels.map((model) => model.provider);
 }
 
 function findRawExactModel(cliModel: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+  // A reserved lowercase `cursor/<bytes>` reference is byte-exact and terminal:
+  // match only exact Cursor rows and never case-fold onto a non-Cursor row.
+  const reservedCursorId = parseExactCursorProviderReference(cliModel);
+  if (reservedCursorId !== undefined) {
+    return availableModels.find((model) => model.provider === "cursor" && model.id === reservedCursorId);
+  }
+  const normalizedCursorQualifier = hasNormalizedCursorProviderQualifier(cliModel);
   const lower = cliModel.toLowerCase();
   return availableModels.find((model) => model.provider === "cursor"
-    ? cliModel === model.id || cliModel === `cursor/${model.id}`
+    ? !normalizedCursorQualifier && (cliModel === model.id || cliModel === `cursor/${model.id}`)
     : model.id.toLowerCase() === lower || `${model.provider}/${model.id}`.toLowerCase() === lower);
 }
 
@@ -54,7 +63,7 @@ export function resolveCliModel(options: {
 }): ResolveCliModelResult {
   const { cliProvider, cliModel, modelRegistry } = options;
 
-  if (!cliModel) {
+  if (cliModel === undefined) {
     return { model: undefined, warning: undefined, error: undefined };
   }
 
@@ -66,24 +75,16 @@ export function resolveCliModel(options: {
       error: "No models available. Check your installation or add models to models.json.",
     };
   }
-  const classifyBareCursor = cliProvider === undefined || cliProvider.trim().toLowerCase() === "cursor";
+  const classifyBareCursor = cliProvider === undefined || isExactCursorProvider(cliProvider);
   if (classifyBareCursor) {
     const kind = classifyBareCursorModelReference(cliModel, availableModels);
     if (kind === "current-cursor") {
-      const current = availableModels.find((model) => model.provider.toLowerCase() === "cursor" && model.id === cliModel);
+      const current = availableModels.find((model) => isExactCursorProvider(model.provider) && model.id === cliModel);
       if (current) return { model: current, warning: undefined, thinkingLevel: undefined, error: undefined };
-    }
-    if (kind === "legacy-cursor") {
-      return {
-        model: undefined,
-        thinkingLevel: undefined,
-        warning: undefined,
-        error: `Model "cursor/${cliModel}" not found. Cursor model IDs changed; reselect an exact model with --list-models.`,
-      };
     }
   }
 
-  const providerMap = buildProviderMap(availableModels);
+  const providers = availableProviderIdentities(availableModels);
 
   // A registered raw ID may itself look like "provider/model:thinking" (for example,
   // a gateway-owned ID). Preserve that exact ID before provider inference consumes the suffix.
@@ -95,7 +96,7 @@ export function resolveCliModel(options: {
     }
   }
 
-  let provider = cliProvider ? providerMap.get(cliProvider.toLowerCase()) : undefined;
+  let provider = cliProvider ? resolveProviderIdentity(cliProvider, providers) : undefined;
   if (cliProvider && !provider) {
     return {
       model: undefined,
@@ -111,7 +112,7 @@ export function resolveCliModel(options: {
     const slashIndex = cliModel.indexOf("/");
     if (slashIndex !== -1) {
       const maybeProvider = cliModel.substring(0, slashIndex);
-      const canonical = providerMap.get(maybeProvider.toLowerCase());
+      const canonical = resolveProviderIdentity(maybeProvider, providers);
       if (canonical) {
         provider = canonical;
         pattern = cliModel.substring(slashIndex + 1);
@@ -129,12 +130,13 @@ export function resolveCliModel(options: {
 
   if (cliProvider && provider) {
     const prefix = `${provider}/`;
-    if (cliModel.toLowerCase().startsWith(prefix.toLowerCase())) {
-      pattern = cliModel.substring(prefix.length);
-    }
+    const hasProviderPrefix = provider === "cursor"
+      ? cliModel.startsWith(prefix)
+      : cliModel.toLowerCase().startsWith(prefix.toLowerCase());
+    if (hasProviderPrefix) pattern = cliModel.substring(prefix.length);
   }
 
-  if (provider?.toLowerCase() === "cursor") {
+  if (isExactCursorProvider(provider)) {
     const exact = availableModels.find((model) => model.provider === provider && model.id === pattern);
     if (exact) return { model: exact, thinkingLevel: undefined, warning: undefined, error: undefined };
     return {

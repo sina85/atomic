@@ -3,6 +3,7 @@ import { modelsAreEqual } from "@earendil-works/pi-ai/compat";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
+import { isExactCursorProvider, parseExactCursorProviderReference } from "./cursor-model-reference.ts";
 import { classifyBareCursorModelReference } from "./legacy-cursor-model-ids.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { parseModelPattern } from "./model-resolver-patterns.ts";
@@ -23,9 +24,7 @@ function hasGlobCharacters(pattern: string): boolean {
 }
 
 function providerQualifiedCursorId(pattern: string): string | undefined {
-  const separator = pattern.indexOf("/");
-  if (separator <= 0 || pattern.slice(0, separator).toLowerCase() !== "cursor") return undefined;
-  return pattern.slice(separator + 1);
+  return parseExactCursorProviderReference(pattern);
 }
 
 function cursorReselectionDiagnostic(reference: string): ModelScopeDiagnostic {
@@ -71,7 +70,7 @@ export async function resolveModelScopeWithDiagnostics(
     const qualifiedCursorId = providerQualifiedCursorId(pattern);
     if (qualifiedCursorId !== undefined) {
       const current = availableModels.find(
-        (model) => model.provider.toLowerCase() === "cursor" && model.id === qualifiedCursorId,
+        (model) => isExactCursorProvider(model.provider) && model.id === qualifiedCursorId,
       );
       if (current) {
         if (!scopedModels.some((entry) => modelsAreEqual(entry.model, current))) {
@@ -85,14 +84,10 @@ export async function resolveModelScopeWithDiagnostics(
 
     const cursorReference = classifyBareCursorModelReference(pattern, availableModels);
     if (cursorReference === "current-cursor") {
-      const current = availableModels.find((model) => model.provider.toLowerCase() === "cursor" && model.id === pattern);
+      const current = availableModels.find((model) => isExactCursorProvider(model.provider) && model.id === pattern);
       if (current && !scopedModels.some((entry) => modelsAreEqual(entry.model, current))) {
         scopedModels.push({ model: current });
       }
-      continue;
-    }
-    if (cursorReference === "legacy-cursor") {
-      diagnostics.push(cursorReselectionDiagnostic(`cursor/${pattern}`));
       continue;
     }
     if (hasGlobCharacters(pattern)) {

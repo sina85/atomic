@@ -1,3 +1,5 @@
+import { CursorStreamAbortError } from "./stream-reader.js";
+
 export async function waitForCursorLoginCatalog(task: Promise<boolean>, signal: AbortSignal | undefined): Promise<boolean> {
 	if (!signal) return task;
 	if (signal.aborted) return false;
@@ -15,15 +17,19 @@ export async function waitForCursorLoginCatalog(task: Promise<boolean>, signal: 
 	}
 }
 
-export async function waitForCursorExecutionCatalog(task: Promise<boolean>, signal: AbortSignal | undefined): Promise<boolean> {
+export function assertCursorExecutionSignalActive(signal: AbortSignal | undefined): void {
+	if (signal?.aborted) throw new CursorStreamAbortError();
+}
+
+export async function waitForCursorExecutionTask<T>(task: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
 	if (!signal) return task;
-	if (signal.aborted) throw abortReason(signal);
+	assertCursorExecutionSignalActive(signal);
 	let onAbort: (() => void) | undefined;
 	try {
 		return await Promise.race([
 			task,
 			new Promise<never>((_resolve, reject) => {
-				onAbort = () => reject(abortReason(signal));
+				onAbort = () => reject(new CursorStreamAbortError());
 				signal.addEventListener("abort", onAbort, { once: true });
 			}),
 		]);
@@ -47,8 +53,4 @@ export async function waitForCatalogDiscoveryTasks(tasks: ReadonlySet<Promise<bo
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
-}
-
-function abortReason(signal: AbortSignal): Error {
-	return signal.reason instanceof Error ? signal.reason : new Error("Cursor request aborted.");
 }

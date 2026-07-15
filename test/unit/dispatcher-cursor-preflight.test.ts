@@ -118,13 +118,21 @@ describe("named Cursor workflow preflight", () => {
 		assert.equal(bodyCalls, 0);
 	});
 
-	test("exact suffix routes and current bare tombstones start only their validated Runs", async () => {
+	test("an exact cursor/ suffix route discovers and runs; a bare id runs without reserving Cursor discovery", async () => {
 		for (const scenario of [
-			{ reference: "cursor/literal-route:high", models: [{ provider: "cursor", id: "literal-route:high", fullId: "cursor/literal-route:high" }] },
-			{ reference: "composer-2", models: [
-				{ provider: "cursor", id: "composer-2", fullId: "cursor/composer-2" },
-				{ provider: "openai", id: "composer-2", fullId: "openai/composer-2" },
-			] },
+			{
+				reference: "cursor/literal-route:high",
+				models: [{ provider: "cursor", id: "literal-route:high", fullId: "cursor/literal-route:high" }],
+				expectedDiscoveries: 1,
+			},
+			{
+				reference: "composer-2",
+				models: [
+					{ provider: "cursor", id: "composer-2", fullId: "cursor/composer-2" },
+					{ provider: "openai", id: "composer-2", fullId: "openai/composer-2" },
+				],
+				expectedDiscoveries: 0,
+			},
 		] as const) {
 			const deps = freshDeps();
 			let discoveryCalls = 0;
@@ -145,12 +153,82 @@ describe("named Cursor workflow preflight", () => {
 			if (result.action !== "run") throw new Error("Expected named Cursor run");
 			assert.notEqual(result.runId, "");
 			await deps.jobs.get(result.runId)?.promise;
-			assert.equal(discoveryCalls, 1);
+			assert.equal(discoveryCalls, scenario.expectedDiscoveries, scenario.reference);
 			assert.equal(promptCalls, 1);
 			assert.equal(deps.store.runs().length, 1);
 		}
 	});
 
+	test("blank exact route discovers, transformed bare text stops, and provider variants pass through", async () => {
+		const successDeps = freshDeps();
+		let successDiscoveries = 0;
+		const successDefinition = makeWorkflow("blank-exact-route");
+		const success = await dispatch(
+			{ action: "run", workflow: successDefinition.name, model: "cursor/" },
+			{
+				registry: createRegistry([successDefinition]), ...successDeps,
+				models: modelCatalog({
+					models: [{ provider: "cursor", id: "", fullId: "cursor/" }],
+					discover: async () => { successDiscoveries += 1; },
+				}),
+			},
+		);
+		assert.equal(success.action, "run");
+		if (success.action === "run") assert.notEqual(success.runId, "");
+		assert.equal(successDiscoveries, 1);
+
+		for (const [index, reference] of ["route:high", " route ", "route (1m)"].entries()) {
+			const deps = freshDeps();
+			let discoveries = 0;
+			let bodyCalls = 0;
+			const definition = workflow({
+				name: `raw-transformed-${index}`, description: "", inputs: {}, outputs: {},
+				run: async () => { bodyCalls += 1; return {}; },
+			}) as WorkflowDefinition;
+			const result = await dispatch(
+				{ action: "run", workflow: definition.name, model: reference },
+				{
+					registry: createRegistry([definition]), ...deps,
+					models: modelCatalog({
+						models: [{ provider: "cursor", id: "route", fullId: "cursor/route" }],
+						discover: async () => { discoveries += 1; },
+					}),
+				},
+			);
+			assert.equal(result.action, "run");
+			if (result.action === "run") assert.equal(result.runId, "");
+			assert.equal(discoveries, 0);
+			assert.equal(bodyCalls, 0);
+			assert.equal(deps.store.runs().length, 0);
+			assert.equal(deps.jobs.runIds().length, 0);
+		}
+
+		for (const [index, reference] of ["CURSOR/route", "CuRsOr/route", " cursor/route", "cursor /route"].entries()) {
+			const deps = freshDeps();
+			let discoveries = 0;
+			let bodyCalls = 0;
+			const definition = workflow({
+				name: `provider-variant-${index}`, description: "", inputs: {}, outputs: {},
+				run: async () => { bodyCalls += 1; return {}; },
+			}) as WorkflowDefinition;
+			const result = await dispatch(
+				{ action: "run", workflow: definition.name, model: reference },
+				{
+					registry: createRegistry([definition]), ...deps,
+					models: modelCatalog({
+						models: [{ provider: "cursor", id: "route", fullId: "cursor/route" }],
+						discover: async () => { discoveries += 1; },
+					}),
+				},
+			);
+			assert.equal(result.action, "run");
+			if (result.action !== "run") throw new Error("Expected non-Cursor pass-through run");
+			assert.notEqual(result.runId, "");
+			await deps.jobs.get(result.runId)?.promise;
+			assert.equal(discoveries, 0);
+			assert.equal(bodyCalls, 1);
+		}
+	});
 	test("nonexact suffix rejects before Run while non-Cursor bypasses discovery", async () => {
 		const failedDeps = freshDeps();
 		let promptCalls = 0;

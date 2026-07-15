@@ -67,3 +67,50 @@ test("Cursor discovery failure stops before stage session creation, prompt, or R
   assert.equal(promptCalls, 0);
   assert.equal(ctx.__modelFallbackMeta().attemptedModels, undefined);
 });
+
+test("stage creation resolves the selected duplicate Cursor occurrence to the LIVE object, never the caller", async () => {
+  const liveOcc0 = { ...staleCursorModel(), name: "live occ0" } as Model<Api>;
+  const liveOcc1 = {
+    ...staleCursorModel(),
+    name: "live occ1",
+    compat: {
+      cursorRouting: {
+        "old-synthetic-high": {
+          modelId: "old-synthetic-high", maxMode: false, supportsImages: false, catalogOccurrence: 1,
+        },
+      },
+    },
+  } as Model<Api>;
+  // Caller object carries occurrence 1 plus stale metadata and a fabricated api.
+  const selected = {
+    ...staleCursorModel(),
+    name: "caller duplicate",
+    api: "anthropic-messages",
+    compat: {
+      cursorRouting: {
+        "old-synthetic-high": {
+          modelId: "old-synthetic-high", maxMode: true, supportsImages: false, catalogOccurrence: 1,
+        },
+      },
+    },
+  } as Model<Api>;
+  let createdModel: Model<Api> | string | undefined;
+  const ctx = createStageContext(makeOpts({
+    adapters: { agentSession: { async create(options) {
+      createdModel = options.model;
+      return makeMockSession({ async prompt() {} }).session;
+    } } },
+    stageOptions: { model: selected },
+    models: {
+      discoverModels: async () => undefined,
+      listModels: async () => [
+        { provider: "cursor", id: liveOcc0.id, fullId: `cursor/${liveOcc0.id}`, model: liveOcc0 },
+        { provider: "cursor", id: liveOcc1.id, fullId: `cursor/${liveOcc1.id}`, model: liveOcc1 },
+      ],
+    },
+  })) as InternalStageContext;
+
+  await ctx.prompt("retain occurrence");
+  assert.equal(createdModel, liveOcc1);
+  assert.notEqual(createdModel, selected);
+});

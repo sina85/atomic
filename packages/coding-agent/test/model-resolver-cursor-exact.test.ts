@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { resolveCliModel } from "../src/core/model-resolver.ts";
+import { findExactModelReferenceMatch, parseModelPattern, resolveCliModel } from "../src/core/model-resolver.ts";
 import { resolveModelScopeWithDiagnostics } from "../src/core/model-resolver-scope.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
 
@@ -63,6 +63,88 @@ describe("Cursor exact model resolution", () => {
 		expect(resolveCliModel({ cliModel: `cursor/${id}`, modelRegistry: registry }).model?.id).toBe(id);
 	});
 
+	test("raw exact Cursor text selects the first duplicate and accepts a blank qualified route", () => {
+		const first = cursorModel("duplicate");
+		const second = { ...cursorModel("duplicate"), name: "second" };
+		const blank = cursorModel("");
+		const available = [first, second, blank];
+		expect(findExactModelReferenceMatch("duplicate", available)).toBe(first);
+		expect(findExactModelReferenceMatch("cursor/duplicate", available)).toBe(first);
+		expect(findExactModelReferenceMatch("cursor/", available)).toBe(blank);
+	});
+
+	test("generic reasoning parsing cannot rewrite text into a Cursor route", () => {
+		const base = cursorModel("route");
+		const literal = cursorModel("route:high");
+		expect(parseModelPattern("route:high", [base]).model).toBeUndefined();
+		const exact = parseModelPattern("route:high", [base, literal]);
+		expect(exact.model).toBe(literal);
+		expect(exact.thinkingLevel).toBeUndefined();
+	});
+
+	test("rejects normalized Cursor provider qualifiers across exact, CLI, pattern, and scope resolution", async () => {
+		const route = cursorModel("route");
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		registry.registerProvider("cursor", {
+			baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent", models: [route],
+		});
+		for (const reference of ["CURSOR/route", "CuRsOr/route", " cursor/route", "cursor /route"]) {
+			expect(findExactModelReferenceMatch(reference, [route]), reference).toBeUndefined();
+			expect(parseModelPattern(reference, [route]).model, reference).toBeUndefined();
+			expect(resolveCliModel({ cliModel: reference, modelRegistry: registry }).model, reference).toBeUndefined();
+			const scope = await resolveModelScopeWithDiagnostics([reference], registry);
+			expect(scope.scopedModels, reference).toEqual([]);
+		}
+	});
+
+	test("does not reinterpret a normalized qualifier variant as a bare Cursor route ID", async () => {
+		const lookalike = cursorModel("CURSOR/route");
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		registry.registerProvider("cursor", {
+			baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent", models: [lookalike],
+		});
+		expect(findExactModelReferenceMatch("CURSOR/route", [lookalike])).toBeUndefined();
+		expect(parseModelPattern("CURSOR/route", [lookalike]).model).toBeUndefined();
+		expect(resolveCliModel({ cliModel: "CURSOR/route", modelRegistry: registry }).model).toBeUndefined();
+		expect((await resolveModelScopeWithDiagnostics(["CURSOR/route"], registry)).scopedModels).toEqual([]);
+	});
+
+	test("requires an exact lowercase explicit Cursor provider while preserving non-Cursor provider normalization", () => {
+		const registry = cursorRegistry();
+		registry.registerProvider("openai", {
+			baseUrl: "https://example.invalid", apiKey: "test", api: "openai-responses",
+			models: [{ ...cursorModel("gpt-5-mini"), provider: "openai", api: "openai-responses" }],
+		});
+		for (const cliProvider of ["CURSOR", "Cursor", " cursor", "cursor "]) {
+			expect(resolveCliModel({ cliProvider, cliModel: exactId, modelRegistry: registry }).model, cliProvider).toBeUndefined();
+		}
+		expect(resolveCliModel({ cliProvider: "cursor", cliModel: exactId, modelRegistry: registry }).model?.id).toBe(exactId);
+		expect(resolveCliModel({ cliProvider: "OPENAI", cliModel: "gpt-5-mini", modelRegistry: registry }).model?.provider).toBe("openai");
+	});
+
+
+	test("coexisting exact cursor and custom Cursor providers never collide", () => {
+		const registry = cursorRegistry();
+		registry.registerProvider("Cursor", {
+			baseUrl: "https://custom.invalid", apiKey: "custom", api: "anthropic-messages",
+			models: [{ ...cursorModel("route"), provider: "Cursor", api: "anthropic-messages" }],
+		});
+		expect(resolveCliModel({ cliProvider: "cursor", cliModel: exactId, modelRegistry: registry }).model?.provider).toBe("cursor");
+		expect(resolveCliModel({ cliProvider: "Cursor", cliModel: "route", modelRegistry: registry }).model?.provider).toBe("Cursor");
+		expect(resolveCliModel({ cliProvider: "CURSOR", cliModel: "route", modelRegistry: registry }).model?.provider).toBe("Cursor");
+		expect(resolveCliModel({ cliModel: "Cursor/route", modelRegistry: registry }).model?.provider).toBe("Cursor");
+	});
+
+	test("scope treats a custom Cursor provider as ordinary non-Cursor identity", async () => {
+		const registry = cursorRegistry();
+		registry.registerProvider("Cursor", {
+			baseUrl: "https://custom.invalid", apiKey: "custom", api: "anthropic-messages",
+			models: [{ ...cursorModel("route"), provider: "Cursor", api: "anthropic-messages" }],
+		});
+		const result = await resolveModelScopeWithDiagnostics(["Cursor/route"], registry);
+		expect(result.scopedModels.map((entry) => `${entry.model.provider}/${entry.model.id}`)).toEqual(["Cursor/route"]);
+		expect(result.diagnostics).toEqual([]);
+	});
 	for (const entry of [
 		{ name: "explicit provider", cliProvider: "cursor", cliModel: staleId },
 		{ name: "provider reference", cliModel: `cursor/${staleId}` },
@@ -85,15 +167,16 @@ describe("Cursor exact model resolution", () => {
 		});
 	}
 
-	test("bare legacy Cursor IDs cannot fall through to another provider", () => {
+	test("bare former-legacy Cursor IDs resolve as ordinary non-Cursor rows", () => {
 		const registry = cursorRegistry();
 		registry.registerProvider("openai", {
 			baseUrl: "https://example.invalid", apiKey: "test", api: "openai-responses",
 			models: [{ ...cursorModel("composer-2"), provider: "openai", api: "openai-responses" }],
 		});
-		const rejected = resolveCliModel({ cliModel: "composer-2", modelRegistry: registry });
-		expect(rejected.model).toBeUndefined();
-		expect(rejected.error).toContain("Cursor model IDs changed");
+		const resolved = resolveCliModel({ cliModel: "composer-2", modelRegistry: registry });
+		expect(resolved.model?.provider).toBe("openai");
+		expect(resolved.model?.id).toBe("composer-2");
+		expect(resolved.error).toBeUndefined();
 
 		registry.registerProvider("cursor", {
 			baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent",
@@ -147,15 +230,14 @@ describe("Cursor exact model resolution", () => {
 		}
 	});
 
-	test("enabled-model scope gives exact Cursor routes precedence over rejection-only tombstones", async () => {
+	test("enabled-model scope resolves a bare former-legacy id as ordinary non-Cursor, then prefers an exact live Cursor route", async () => {
 		const registry = cursorRegistry();
 		registry.registerProvider("openai", {
 			baseUrl: "https://example.invalid", apiKey: "test", api: "openai-responses",
 			models: [{ ...cursorModel("composer-2"), provider: "openai", api: "openai-responses" }],
 		});
-		const rejected = await resolveModelScopeWithDiagnostics(["composer-2"], registry);
-		expect(rejected.scopedModels).toEqual([]);
-		expect(rejected.diagnostics.map((entry) => entry.message).join("\n")).toContain("Cursor model IDs changed");
+		const ordinary = await resolveModelScopeWithDiagnostics(["composer-2"], registry);
+		expect(ordinary.scopedModels.map((entry) => `${entry.model.provider}/${entry.model.id}`)).toEqual(["openai/composer-2"]);
 
 		registry.registerProvider("cursor", {
 			baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent",
@@ -194,5 +276,51 @@ describe("Cursor exact model resolution", () => {
 		expect(registry.find("cursor", exactId)?.id).toBe(exactId);
 		expect(registry.find("cursor", staleId)).toBeUndefined();
 		expect(registry.canRestoreUnknownModel("cursor")).toBe(false);
+	});
+
+	test("a reserved lowercase cursor/ reference is terminal and never selects a case-variant or custom raw id", () => {
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		// A custom provider literally named `Cursor` (capital) plus a custom
+		// provider whose model id literally contains `cursor/missing`.
+		registry.registerProvider("Cursor", {
+			baseUrl: "https://custom.invalid", apiKey: "custom", api: "anthropic-messages",
+			models: [{ ...cursorModel("route"), provider: "Cursor", api: "anthropic-messages" }],
+		});
+		registry.registerProvider("custom", {
+			baseUrl: "https://custom.invalid", apiKey: "custom", api: "anthropic-messages",
+			models: [{ ...cursorModel("cursor/missing"), provider: "custom", api: "anthropic-messages" }],
+		});
+		const all = registry.getAll();
+
+		// Reserved lowercase `cursor/route` has no live lowercase Cursor row: terminal miss.
+		expect(findExactModelReferenceMatch("cursor/route", all)).toBeUndefined();
+		expect(parseModelPattern("cursor/route", all).model).toBeUndefined();
+		const cliRoute = resolveCliModel({ cliModel: "cursor/route", modelRegistry: registry });
+		expect(cliRoute.model).toBeUndefined();
+
+		// Reserved lowercase `cursor/missing` must not select the custom raw id.
+		expect(findExactModelReferenceMatch("cursor/missing", all)).toBeUndefined();
+		expect(parseModelPattern("cursor/missing", all).model).toBeUndefined();
+		expect(resolveCliModel({ cliModel: "cursor/missing", modelRegistry: registry }).model).toBeUndefined();
+
+		// A genuine capital `Cursor/route` reference remains ordinary and resolves.
+		expect(findExactModelReferenceMatch("Cursor/route", all)?.provider).toBe("Cursor");
+		expect(resolveCliModel({ cliModel: "Cursor/route", modelRegistry: registry }).model?.provider).toBe("Cursor");
+	});
+
+	test("a reserved lowercase cursor/<id> still resolves when the exact live route exists", () => {
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		registry.registerProvider("Cursor", {
+			baseUrl: "https://custom.invalid", apiKey: "custom", api: "anthropic-messages",
+			models: [{ ...cursorModel("route"), provider: "Cursor", api: "anthropic-messages" }],
+		});
+		registry.registerProvider("cursor", {
+			baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent",
+			models: [cursorModel("route")],
+		});
+		const all = registry.getAll();
+		expect(findExactModelReferenceMatch("cursor/route", all)?.provider).toBe("cursor");
+		expect(parseModelPattern("cursor/route", all).model?.provider).toBe("cursor");
+		expect(resolveCliModel({ cliModel: "cursor/route", modelRegistry: registry }).model?.provider).toBe("cursor");
 	});
 });

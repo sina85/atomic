@@ -87,6 +87,21 @@ describe("persisted Cursor model recovery", () => {
     })).toEqual({ kind: "session", id: "session-exact" });
   });
 
+  test("a present blank Cursor default remains an exact deferred reference", () => {
+    expect(selectDeferredCursorModelReference({
+      explicitModel: undefined,
+      sessionModel: undefined,
+      defaultProvider: "cursor",
+      defaultModelId: "",
+    })).toEqual({ kind: "default", id: "" });
+    expect(selectDeferredCursorModelReference({
+      explicitModel: undefined,
+      sessionModel: undefined,
+      defaultProvider: "cursor",
+      defaultModelId: undefined,
+    })).toBeUndefined();
+  });
+
   test("a restored non-Cursor session identity suppresses a Cursor settings default", () => {
     expect(selectDeferredCursorModelReference({
       explicitModel: undefined,
@@ -94,5 +109,22 @@ describe("persisted Cursor model recovery", () => {
       defaultProvider: "cursor",
       defaultModelId: "default-exact",
     })).toBeUndefined();
+  });
+
+  test("provider identity variants never activate deferred Cursor recovery", () => {
+    for (const provider of ["Cursor", "CURSOR", " cursor", "cursor "]) {
+      expect(selectDeferredCursorModelReference({
+        explicitModel: undefined,
+        sessionModel: { provider, modelId: "session-route" },
+        defaultProvider: "cursor",
+        defaultModelId: "default-route",
+      }), provider).toBeUndefined();
+      expect(selectDeferredCursorModelReference({
+        explicitModel: undefined,
+        sessionModel: undefined,
+        defaultProvider: provider,
+        defaultModelId: "default-route",
+      }), provider).toBeUndefined();
+    }
   });
 });

@@ -25,8 +25,7 @@ export function decodeAvailableModelsResponse(bytes: Uint8Array): readonly Curso
 		const fieldNumber = Math.floor(tag / 8);
 		const wireType = tag % 8;
 		if (fieldNumber === 2 && wireType === 2) {
-			const model = decodeModel(readLengthDelimited(reader));
-			if (model) models.push(model);
+			models.push(decodeModel(readLengthDelimited(reader)));
 		} else {
 			skipWireField(reader, wireType);
 		}
@@ -34,7 +33,7 @@ export function decodeAvailableModelsResponse(bytes: Uint8Array): readonly Curso
 	return models;
 }
 
-function decodeModel(bytes: Uint8Array): CursorAvailableModel | undefined {
+function decodeModel(bytes: Uint8Array): CursorAvailableModel {
 	const reader: WireReader = { bytes, offset: 0 };
 	let id: string | undefined;
 	let serverModelName: string | undefined;
@@ -44,20 +43,18 @@ function decodeModel(bytes: Uint8Array): CursorAvailableModel | undefined {
 		const tag = readVarint(reader);
 		const fieldNumber = Math.floor(tag / 8);
 		const wireType = tag % 8;
-		if (fieldNumber === 1 && wireType === 2) id = nonEmpty(decodeString(readLengthDelimited(reader)));
+		if (fieldNumber === 1 && wireType === 2) id = decodeString(readLengthDelimited(reader));
 		else if (fieldNumber === 10 && wireType === 0) supportsImages = readVarint(reader) !== 0;
-		else if (fieldNumber === 18 && wireType === 2) serverModelName = nonEmpty(decodeString(readLengthDelimited(reader)));
+		else if (fieldNumber === 18 && wireType === 2) serverModelName = decodeString(readLengthDelimited(reader));
 		else if (fieldNumber === 30 && wireType === 2) {
 			const variantId = decodeVariantId(readLengthDelimited(reader));
-			if (variantId) variantIds.push(variantId);
+			if (variantId !== undefined) variantIds.push(variantId);
 		} else skipWireField(reader, wireType);
 	}
-	const distinctVariantIds = [...new Set(variantIds)];
-	if (!id && !serverModelName && distinctVariantIds.length === 0) return undefined;
 	return {
-		...(id ? { id } : {}),
-		...(serverModelName ? { serverModelName } : {}),
-		variantIds: distinctVariantIds,
+		...(id !== undefined ? { id } : {}),
+		...(serverModelName !== undefined ? { serverModelName } : {}),
+		variantIds,
 		...(supportsImages !== undefined ? { supportsImages } : {}),
 	};
 }
@@ -69,7 +66,7 @@ function decodeVariantId(bytes: Uint8Array): string | undefined {
 		const tag = readVarint(reader);
 		const fieldNumber = Math.floor(tag / 8);
 		const wireType = tag % 8;
-		if (fieldNumber === 9 && wireType === 2) variantId = nonEmpty(decodeString(readLengthDelimited(reader)));
+		if (fieldNumber === 9 && wireType === 2) variantId = decodeString(readLengthDelimited(reader));
 		else skipWireField(reader, wireType);
 	}
 	return variantId;
@@ -129,8 +126,4 @@ function skipBytes(reader: WireReader, length: number): void {
 
 function decodeString(bytes: Uint8Array): string {
 	return new TextDecoder().decode(bytes);
-}
-
-function nonEmpty(value: string): string | undefined {
-	return value.trim().length > 0 ? value : undefined;
 }

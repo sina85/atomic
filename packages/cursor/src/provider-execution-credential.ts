@@ -1,5 +1,5 @@
 import { deriveCursorCredentialScope } from "./catalog-cache.js";
-import { waitForCursorExecutionCatalog } from "./provider-waits.js";
+import { assertCursorExecutionSignalActive, waitForCursorExecutionTask } from "./provider-waits.js";
 
 export type CursorAccessTokenResolver = () => Promise<string | undefined> | string | undefined;
 
@@ -28,22 +28,27 @@ export async function activateCursorExecutionCredential(
 	callerSignal: AbortSignal | undefined,
 	dependencies: CursorExecutionCredentialDependencies,
 ): Promise<boolean> {
+	const executionSignal = callerSignal
+		? AbortSignal.any([callerSignal, dependencies.activationSignal])
+		: dependencies.activationSignal;
+	assertCursorExecutionSignalActive(executionSignal);
 	while (!dependencies.inactive()) {
 		const epoch = dependencies.currentEpoch();
-		const first = await resolveCursorCredentialSelection(epoch, dependencies);
+		const first = await waitForCursorExecutionTask(resolveCursorCredentialSelection(epoch, dependencies), executionSignal);
+		assertCursorExecutionSignalActive(executionSignal);
 		if (first.state === "superseded") continue;
 		const firstScope = applyCurrentSelection(first, epoch, dependencies);
 		if (firstScope === undefined || firstScope !== credentialScope) return false;
+		assertCursorExecutionSignalActive(executionSignal);
 		if (!isCurrent(epoch, dependencies)) continue;
 
 		const task = dependencies.scheduleDiscovery(accessToken);
-		const waitSignal = callerSignal
-			? AbortSignal.any([callerSignal, dependencies.activationSignal])
-			: dependencies.activationSignal;
-		if (task && !await waitForCursorExecutionCatalog(task, waitSignal)) return false;
+		if (task && !await waitForCursorExecutionTask(task, executionSignal)) return false;
+		assertCursorExecutionSignalActive(executionSignal);
 		if (!isCurrent(epoch, dependencies)) continue;
 
-		const second = await resolveCursorCredentialSelection(epoch, dependencies);
+		const second = await waitForCursorExecutionTask(resolveCursorCredentialSelection(epoch, dependencies), executionSignal);
+		assertCursorExecutionSignalActive(executionSignal);
 		if (second.state === "superseded") continue;
 		const secondScope = applyCurrentSelection(second, epoch, dependencies);
 		return secondScope === credentialScope

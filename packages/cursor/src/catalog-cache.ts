@@ -22,7 +22,7 @@ export interface CursorCatalogCacheRecord {
 
 export interface CursorCatalogCache {
 	load(credentialScope?: string): CursorModelCatalog | null;
-	save(catalog: CursorModelCatalog, credentialScope?: string): void;
+	save(catalog: CursorModelCatalog, credentialScope?: string): void | Promise<void>;
 	clear?(credentialScope?: string): void | Promise<void>;
 }
 
@@ -47,7 +47,7 @@ export class FileCursorCatalogCache implements CursorCatalogCache {
 			writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 			withCacheFileLock(path, () => {
 				const current = this.load(credentialScope);
-				if (current && current.fetchedAt >= catalog.fetchedAt) return;
+				if (current && current.fetchedAt > catalog.fetchedAt) return;
 				renameSync(tmpPath, path);
 			});
 		} catch (error) {
@@ -59,7 +59,8 @@ export class FileCursorCatalogCache implements CursorCatalogCache {
 	}
 	clear(credentialScope?: string): void {
 		if (!credentialScope) return;
-		rmSync(this.#pathFor(credentialScope), { force: true });
+		const path = this.#pathFor(credentialScope);
+		withCacheFileLock(path, () => rmSync(path, { force: true }));
 	}
 	#pathFor(credentialScope: string): string { return `${this.#path}.${credentialScope}` }
 }

@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { isValidThinkingLevel } from "../cli/args.ts";
+import { hasNormalizedCursorProviderQualifier, parseExactCursorProviderReference } from "./cursor-model-reference.ts";
 import { defaultModelPerProvider } from "./model-resolver-defaults.ts";
 import type { ParsedModelResult } from "./model-resolver-types.ts";
 
@@ -17,18 +18,30 @@ function isAlias(id: string): boolean {
 
 /**
  * Find an exact model reference match.
- * Supports either a bare model id or a canonical provider/modelId reference.
- * When matching by bare id, ambiguous matches across providers are rejected.
+ * Cursor references are matched byte-for-byte first and select the first
+ * ordered occurrence. Bare non-Cursor ambiguity is rejected.
  */
 export function findExactModelReferenceMatch(
   modelReference: string,
   availableModels: Model<Api>[],
 ): Model<Api> | undefined {
-  const exactCursorMatches = availableModels.filter(
-    (model) => model.provider === "cursor" && (modelReference === model.id || modelReference === `cursor/${model.id}`),
+  // A reserved lowercase `cursor/<bytes>` reference is byte-exact and terminal:
+  // it selects only the exact Cursor route (first ordered occurrence) and must
+  // never fall through to generic case-insensitive matching that could pick a
+  // custom raw id or a case-variant `Cursor` provider row.
+  const reservedCursorId = parseExactCursorProviderReference(modelReference);
+  if (reservedCursorId !== undefined) {
+    return availableModels.find(
+      (model) => model.provider === "cursor" && model.id === reservedCursorId,
+    );
+  }
+  const normalizedCursorQualifier = hasNormalizedCursorProviderQualifier(modelReference);
+  const exactCursorMatch = availableModels.find(
+    (model) => !normalizedCursorQualifier
+      && model.provider === "cursor"
+      && (modelReference === model.id || modelReference === `cursor/${model.id}`),
   );
-  if (exactCursorMatches.length === 1) return exactCursorMatches[0];
-  if (exactCursorMatches.length > 1) return undefined;
+  if (exactCursorMatch) return exactCursorMatch;
 
   const trimmedReference = modelReference.trim();
   if (!trimmedReference) {
@@ -146,7 +159,26 @@ export function parseModelPattern(
   availableModels: Model<Api>[],
   options?: { allowInvalidThinkingLevelFallback?: boolean },
 ): ParsedModelResult {
-  const exactMatch = tryMatchModel(pattern, availableModels);
+  // A reserved lowercase `cursor/<bytes>` reference is byte-exact and terminal:
+  // resolve it against exact Cursor rows only and never fall through to generic
+  // (or recursive reasoning-suffix) parsing that could select a non-Cursor row.
+  const reservedCursorId = parseExactCursorProviderReference(pattern);
+  if (reservedCursorId !== undefined) {
+    const reservedMatch = availableModels.find(
+      (model) => model.provider === "cursor" && model.id === reservedCursorId,
+    );
+    return { model: reservedMatch, thinkingLevel: undefined, warning: undefined };
+  }
+  const exactCursorMatch = hasNormalizedCursorProviderQualifier(pattern)
+    ? undefined
+    : availableModels.find(
+      (model) => model.provider === "cursor" && (pattern === model.id || pattern === `cursor/${model.id}`),
+    );
+  if (exactCursorMatch) {
+    return { model: exactCursorMatch, thinkingLevel: undefined, warning: undefined };
+  }
+  const genericModels = availableModels.filter((model) => model.provider !== "cursor");
+  const exactMatch = tryMatchModel(pattern, genericModels);
   if (exactMatch) {
     return { model: exactMatch, thinkingLevel: undefined, warning: undefined };
   }
@@ -160,7 +192,7 @@ export function parseModelPattern(
   const suffix = pattern.substring(lastColonIndex + 1);
 
   if (isValidThinkingLevel(suffix)) {
-    const result = parseModelPattern(prefix, availableModels, options);
+    const result = parseModelPattern(prefix, genericModels, options);
     if (result.model) {
       return {
         model: result.model,
@@ -176,7 +208,7 @@ export function parseModelPattern(
     return { model: undefined, thinkingLevel: undefined, warning: undefined };
   }
 
-  const result = parseModelPattern(prefix, availableModels, options);
+  const result = parseModelPattern(prefix, genericModels, options);
   if (result.model) {
     return {
       model: result.model,

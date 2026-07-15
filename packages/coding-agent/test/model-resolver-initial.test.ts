@@ -1,5 +1,5 @@
 import type { Model } from "@earendil-works/pi-ai/compat";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { getSupportedContextWindows } from "../src/core/context-window.ts";
 import {
@@ -135,6 +135,23 @@ describe("default model selection", () => {
 		expect(result.fallbackMessage).toContain("reselect");
 		expect(availableCalls).toBe(0);
 	});
+	test("provider identity variants use ordinary default fallback instead of Cursor reselection", async () => {
+		for (const provider of ["Cursor", "CURSOR", " cursor", "cursor "]) {
+			let availableCalls = 0;
+			const fallback = allModels[0]!;
+			const registry = {
+				find: () => undefined,
+				getAvailable: async () => { availableCalls += 1; return [fallback]; },
+			} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+			const result = await findInitialModel({
+				scopedModels: [], isContinuing: false,
+				defaultProvider: provider, defaultModelId: "missing", modelRegistry: registry,
+			});
+			expect(result.model, provider).toBe(fallback);
+			expect(result.fallbackMessage, provider).toBeUndefined();
+			expect(availableCalls, provider).toBe(1);
+		}
+	});
 	test("findInitialModel accepts an exact authenticated saved settings model", async () => {
 		const registry = {
 			find: () => cursorBaseModel,
@@ -151,6 +168,65 @@ describe("default model selection", () => {
 		});
 		expect(result.model).toBe(cursorBaseModel);
 		expect(result.thinkingLevel).toBe("medium");
+	});
+	test("findInitialModel preserves an authenticated blank saved Cursor model id", async () => {
+		const blankCursorModel = { ...cursorBaseModel, id: "", name: "Blank Cursor route" };
+		const find = vi.fn((provider: string, id: string) =>
+			provider === "cursor" && id === "" ? blankCursorModel : undefined,
+		);
+		const registry = {
+			find,
+			hasConfiguredAuth: () => true,
+			getAvailable: async () => [],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "cursor",
+			defaultModelId: "",
+			modelRegistry: registry,
+		});
+		expect(find).toHaveBeenCalledWith("cursor", "");
+		expect(result.model).toBe(blankCursorModel);
+		expect(result.fallbackMessage).toBeUndefined();
+	});
+	test("a missing blank saved Cursor model fails closed without unrelated fallback", async () => {
+		let availableCalls = 0;
+		const find = vi.fn(() => undefined);
+		const registry = {
+			find,
+			getAvailable: async () => { availableCalls += 1; return [allModels[0]!]; },
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "cursor",
+			defaultModelId: "",
+			modelRegistry: registry,
+		});
+		expect(find).toHaveBeenCalledWith("cursor", "");
+		expect(result.model).toBeUndefined();
+		expect(result.fallbackMessage).toContain("saved Cursor model cursor/");
+		expect(result.fallbackMessage).toContain("reselect");
+		expect(availableCalls).toBe(0);
+	});
+	test("present empty custom provider and model identities follow exact generic lookup", async () => {
+		const custom = { ...allModels[0]!, provider: "", id: "" };
+		const find = vi.fn((provider: string, id: string) => provider === "" && id === "" ? custom : undefined);
+		const registry = {
+			find,
+			hasConfiguredAuth: () => true,
+			getAvailable: async () => [],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "",
+			defaultModelId: "",
+			modelRegistry: registry,
+		});
+		expect(find).toHaveBeenCalledWith("", "");
+		expect(result.model).toBe(custom);
 	});
 	test("restoreModelFromSession rejects a stale Cursor id without current/provider/model fallback", async () => {
 		let availableCalls = 0;
@@ -173,6 +249,33 @@ describe("default model selection", () => {
 		expect(result.fallbackMessage).toContain("cursor/grok-4.5-high");
 		expect(result.fallbackMessage).toContain("reselect");
 		expect(availableCalls).toBe(0);
+	});
+	test("provider identity variants use ordinary restored-session fallback", async () => {
+		for (const provider of ["Cursor", "CURSOR", " cursor", "cursor "]) {
+			let availableCalls = 0;
+			const fallback = allModels[0]!;
+			const registry = {
+				find: () => undefined,
+				canRestoreUnknownModel: () => false,
+				getAvailable: async () => { availableCalls += 1; return [fallback]; },
+			} as unknown as Parameters<typeof restoreModelFromSession>[4];
+			const result = await restoreModelFromSession(provider, "missing", undefined, false, registry);
+			expect(result.model, provider).toBe(fallback);
+			expect(result.fallbackMessage, provider).toContain("Using anthropic/");
+			expect(result.fallbackMessage, provider).not.toContain("reselect");
+			expect(availableCalls, provider).toBe(1);
+		}
+	});
+	test("restores a real custom Cursor provider without Cursor-specific handling", async () => {
+		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		const custom = { ...allModels[0]!, provider: "Cursor", id: "custom-route" };
+		registry.registerProvider("Cursor", {
+			baseUrl: custom.baseUrl, apiKey: "test-key", api: custom.api, models: [custom],
+		});
+		const result = await restoreModelFromSession("Cursor", custom.id, undefined, false, registry);
+		expect(result.model?.provider).toBe("Cursor");
+		expect(result.model?.id).toBe(custom.id);
+		expect(result.fallbackMessage).toBeUndefined();
 	});
 	test("registry and session restore do not migrate prior Cursor synthetic ids", async () => {
 		const authStorage = AuthStorage.inMemory();

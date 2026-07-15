@@ -104,13 +104,13 @@ export class CursorExecutionAuthority {
 		if (this.#closed) return;
 		this.invalidateSnapshot(new Error("Cursor model catalog authority changed; retry with the current exact route."));
 		const routes = new Map<string, CursorExecutionAuthorityRoute[]>();
-		catalog.models.forEach((model, catalogOccurrence) => {
+		catalog.models.forEach((model) => {
 			const occurrences = routes.get(model.id) ?? [];
 			occurrences.push({
 				modelId: model.id,
 				maxMode: model.maxMode,
 				supportsImages: model.supportsImages === true,
-				catalogOccurrence,
+				catalogOccurrence: occurrences.length,
 			});
 			routes.set(model.id, occurrences);
 		});
@@ -134,7 +134,7 @@ export class CursorExecutionAuthority {
 		runtime: CursorExecutionAuthorityRuntime,
 	): Promise<CursorAuthorizedRoute> {
 		if (!runtime.isActive() || this.#closed) throw disposedError();
-		if (model.provider.toLowerCase() !== CURSOR_PROVIDER_ID || model.api !== CURSOR_API) {
+		if (model.provider !== CURSOR_PROVIDER_ID || model.api !== CURSOR_API) {
 			throw new Error(`Cursor model ${model.id} is not an exact Cursor provider route.`);
 		}
 		const credentialScope = deriveCursorCredentialScope(accessToken);
@@ -180,8 +180,9 @@ export class CursorExecutionAuthority {
 		const occurrences = snapshot.routes.get(model.id);
 		if (!occurrences || occurrences.length === 0) return undefined;
 		const selected = selectedCursorRouting(model);
+		// An in-memory selection names an occurrence; current catalog metadata at that ordinal stays authoritative.
 		const route = selected
-			? occurrences.find((candidate) => candidate.catalogOccurrence === selected.catalogOccurrence && routeMatches(candidate, selected))
+			? occurrences.find((candidate) => candidate.catalogOccurrence === selected.catalogOccurrence)
 				?? occurrences.find((candidate) => routeMatches(candidate, selected))
 				?? occurrences[0]
 			: occurrences[0];

@@ -1,4 +1,4 @@
-import { classifyBareCursorModelReference, getModelDefaultContextWindow, getSupportedContextWindows, parseContextWindowValue } from "@bastani/atomic";
+import { getModelDefaultContextWindow, getSupportedContextWindows, parseContextWindowValue } from "@bastani/atomic";
 import type { CreateAgentSessionOptions } from "@bastani/atomic";
 import type {
   WorkflowModelCatalogPort,
@@ -7,11 +7,8 @@ import type {
   WorkflowThinkingLevel,
 } from "../../shared/types.js";
 import {
-  explicitCursorModelObject,
-  hasStrictCursorReference,
-  parseExplicitCursorReference,
-  requireAuthenticatedCursorDiscovery,
-  strictCursorStringReference,
+  cursorObjectOccurrence, explicitCursorModelObject, hasStrictCursorReference, liveInfoCursorOccurrence,
+  parseExplicitCursorReference, requireAuthenticatedCursorDiscovery, strictCursorStringReference,
 } from "./model-fallback-cursor.js";
 
 export interface WorkflowResolvedModelCandidate {
@@ -159,7 +156,6 @@ export function splitReasoningSuffix(model: string): { readonly baseModel: strin
   return { baseModel: model };
 }
 
-
 function unavailableCursorFailure(input: string): ModelResolutionFailure {
   return {
     input,
@@ -214,7 +210,6 @@ function normalizeInfo(info: WorkflowModelInfo): WorkflowModelInfo {
   const fullId = info.fullId.trim().length > 0 ? info.fullId : `${info.provider}/${info.id}`;
   return { ...info, fullId };
 }
-
 function uniqueByFullId(models: readonly WorkflowModelInfo[]): WorkflowModelInfo[] {
   const seen = new Set<string>();
   const result: WorkflowModelInfo[] = [];
@@ -233,10 +228,8 @@ function resolveStringModel(
 ): WorkflowResolvedModelCandidate | ModelResolutionFailure {
   const cursorReference = parseExplicitCursorReference(rawInput);
   if (cursorReference !== undefined) {
-    if (cursorReference.routeId.trim().length === 0 || availableModels === undefined) {
-      return unavailableCursorFailure(rawInput);
-    }
-    const exact = uniqueByFullId(availableModels).find(
+    if (availableModels === undefined) return unavailableCursorFailure(rawInput);
+    const exact = availableModels.map(normalizeInfo).find(
       (model) => model.provider === "cursor"
         && model.id === cursorReference.routeId
         && model.fullId === cursorReference.fullId,
@@ -245,14 +238,13 @@ function resolveStringModel(
       ? unavailableCursorFailure(rawInput)
       : makeCandidate(exact.fullId, exact.model ?? exact.fullId, undefined);
   }
-  const bareCursorKind = classifyBareCursorModelReference(rawInput, availableModels ?? []);
-  if (bareCursorKind === "current-cursor") {
-    const exact = uniqueByFullId(availableModels ?? []).find(
-      (model) => model.provider === "cursor" && model.id === rawInput,
-    );
-    if (exact) return makeCandidate(exact.fullId, exact.model ?? exact.fullId, undefined);
+  const slashIndex = rawInput.indexOf("/");
+  if (slashIndex >= 0) {
+    const rawProvider = rawInput.slice(0, slashIndex);
+    if (rawProvider !== "cursor" && rawProvider.trim().toLowerCase() === "cursor") {
+      return makeCandidate(rawInput, rawInput, undefined);
+    }
   }
-  if (bareCursorKind === "legacy-cursor") return unavailableCursorFailure(`cursor/${rawInput}`);
   const input = rawInput.trim();
   if (!input) return { input: rawInput, reason: "empty model id" };
   // Extract the trailing context-window token, split the reasoning suffix, then
@@ -286,7 +278,7 @@ function resolveStringModel(
 
   if (availableModels === undefined) return candidate(baseModel, baseModel);
 
-  const models = uniqueByFullId(availableModels);
+  const models = uniqueByFullId(availableModels).filter((model) => model.provider !== "cursor");
   const explicit = models.find((model) => model.fullId === baseModel);
   if (explicit !== undefined) {
     return candidate(explicit.fullId, explicit.model ?? explicit.fullId);
@@ -331,12 +323,20 @@ function resolveModelValue(
     if (!explicitCursorModelObject(value)) return { id: workflowModelId(value)!, value };
     const input = `cursor/${value.id}`;
     if (availableModels === undefined) return unavailableCursorFailure(input);
-    const exact = uniqueByFullId(availableModels).find(
+    // Return the LIVE catalog occurrence object, never the caller's object: the
+    // executable api/baseUrl/headers/routing come only from the authenticated
+    // catalog (GetUsable sole authority). The caller's private per-ID ordinal
+    // selects among duplicate live occurrences when it indexes an existing one.
+    const liveMatches = availableModels.map(normalizeInfo).filter(
       (model) => model.provider === "cursor" && model.id === value.id && model.fullId === input,
     );
-    return exact === undefined
-      ? unavailableCursorFailure(input)
-      : { id: exact.fullId, value: exact.model ?? exact.fullId };
+    if (liveMatches.length === 0) return unavailableCursorFailure(input);
+    const ordinal = cursorObjectOccurrence(value);
+    const liveInfo = (ordinal === undefined
+      ? undefined
+      : liveMatches.find((model) => liveInfoCursorOccurrence(model) === ordinal) ?? liveMatches[ordinal])
+      ?? liveMatches[0]!;
+    return { id: liveInfo.fullId, value: liveInfo.model ?? liveInfo.fullId };
   }
   return resolveStringModel(value, availableModels, preferredProvider);
 }

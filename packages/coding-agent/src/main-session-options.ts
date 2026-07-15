@@ -24,7 +24,7 @@ export function buildSessionOptions(
 	// Model from CLI
 	// - supports --provider <name> --model <pattern>
 	// - supports --model <provider>/<pattern>
-	if (parsed.model) {
+	if (parsed.model !== undefined) {
 		const resolved = resolveCliModel({
 			cliProvider: parsed.provider,
 			cliModel: parsed.model,
@@ -51,7 +51,9 @@ export function buildSessionOptions(
 		// Check if saved default is in scoped models - use it if so, otherwise first scoped model
 		const savedProvider = settingsManager.getDefaultProvider();
 		const savedModelId = settingsManager.getDefaultModel();
-		const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
+		const savedModel = savedProvider !== undefined && savedModelId !== undefined
+			? modelRegistry.find(savedProvider, savedModelId)
+			: undefined;
 		const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
 
 		if (savedInScope) {

@@ -46,9 +46,9 @@ function availableParent(options: {
 		cursorProtoTest.encodeStringField(9, id),
 	)));
 	const model = cursorProtoTest.concatBytes(
-		...(options.id ? [cursorProtoTest.encodeStringField(1, options.id)] : []),
+		...(options.id !== undefined ? [cursorProtoTest.encodeStringField(1, options.id)] : []),
 		...(options.supportsImages === undefined ? [] : [cursorProtoTest.encodeVarintField(10, options.supportsImages ? 1n : 0n)]),
-		...(options.serverModelName ? [cursorProtoTest.encodeStringField(18, options.serverModelName)] : []),
+		...(options.serverModelName !== undefined ? [cursorProtoTest.encodeStringField(18, options.serverModelName)] : []),
 		...variants,
 		// Obsolete routing metadata must be skipped rather than retained.
 		cursorProtoTest.encodeVarintField(14, 1n),
@@ -181,6 +181,55 @@ describe("Cursor split catalog discovery", () => {
 			variantIds: [" flat-high ", "flat-high"],
 			supportsImages: true,
 		}]);
+	});
+
+	test("Available decoder preserves explicit blank identities, duplicate variants, and empty parents", () => {
+		const codec = new CursorProtobufProtocolCodec();
+		const decoded = codec.decodeAvailableModelsResponse(cursorProtoTest.concatBytes(
+			availableParent({ id: "", supportsImages: true, variantIds: ["", "  ", "dup", "dup"] }),
+			availableParent({ serverModelName: "", supportsImages: false }),
+			availableParent({}),
+		));
+		assert.deepEqual(decoded, [
+			{ id: "", variantIds: ["", "  ", "dup", "dup"], supportsImages: true },
+			{ serverModelName: "", variantIds: [], supportsImages: false },
+			{ variantIds: [] },
+		]);
+		assert.equal(Object.hasOwn(decoded[0]!, "id"), true);
+		assert.equal(Object.hasOwn(decoded[0]!, "serverModelName"), false);
+		assert.equal(Object.hasOwn(decoded[2]!, "id"), false);
+		assert.equal(Array.isArray(decoded), true);
+		assert.equal(Array.isArray(decoded[0]!.variantIds), true);
+		assert.equal(Object.getPrototypeOf(decoded[0]!), Object.prototype);
+		assert.equal(Object.getPrototypeOf(decoded[0]!.variantIds), Array.prototype);
+	});
+
+	test("raw Available identities enrich blank and whitespace GetUsable rows without fabricating omitted identity", async () => {
+		const client = new UnaryClient({
+			[GET_USABLE_PATH]: getUsableBody([
+				{ id: "", displayName: "first", maxMode: false },
+				{ id: "", displayName: "second", maxMode: true },
+				{ id: "  ", maxMode: false },
+				{ id: " ", maxMode: false },
+			]),
+			[AVAILABLE_PATH]: cursorProtoTest.concatBytes(
+				availableParent({ id: "", supportsImages: true }),
+				availableParent({ variantIds: [""], supportsImages: true }),
+				availableParent({ id: "  ", supportsImages: true }),
+				availableParent({ serverModelName: "  ", supportsImages: false }),
+				availableParent({ variantIds: [" "], supportsImages: true }),
+				availableParent({ supportsImages: true }),
+			),
+		});
+		const catalog = await new CursorModelDiscoveryService({
+			transport: new Http2CursorAgentTransport({ client }),
+		}).discover("same-account", "blank-wire");
+		assert.deepEqual(catalog.models, [
+			{ id: "", displayName: "first", maxMode: false, supportsImages: true },
+			{ id: "", displayName: "second", maxMode: true, supportsImages: true },
+			{ id: "  ", maxMode: false },
+			{ id: " ", maxMode: false, supportsImages: true },
+		]);
 	});
 
 	test("GetUsable alone fixes byte-for-byte route identity, row order, display, Max, and duplicate occurrences", async () => {

@@ -1,5 +1,6 @@
 import { normalizePath } from "../utils/paths.ts";
 import { parseContextWindowValue, validateContextWindowValue } from "./context-window.ts";
+import { trimNonCursorModelReference } from "./cursor-model-reference.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import { SettingsManager } from "./settings-manager-core.ts";
 import { settingsInternals } from "./settings-manager-internals.ts";
@@ -200,7 +201,7 @@ const basicAccessors: SettingsManagerBasicAccessors = {
 	getFallbackModels() {
 		return (settingsInternals(this).settings.fallbackModels ?? [])
 			.filter((model): model is string => typeof model === "string")
-			.map((model) => model.trim())
+			.map(trimNonCursorModelReference)
 			.filter((model) => model.length > 0);
 	},
 

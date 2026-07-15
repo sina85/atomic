@@ -120,6 +120,7 @@ export class CursorStreamAdapter {
 		const trailingToolResults = getTrailingToolResults(context);
 		const resumeAttempt = trailingToolResults.length > 0;
 		let activeTurn = resumeAttempt ? this.#runtime.conversationState.captureTurn(activeConversationKey) : undefined;
+		let turnAssumed = false;
 		let textIndex: number | undefined;
 		let thinkingIndex: number | undefined;
 		let terminalEventSent = false;
@@ -141,6 +142,7 @@ export class CursorStreamAdapter {
 			executionSignal = options.signal
 				? AbortSignal.any([options.signal, cursorRouting.authoritySignal, this.#disposeController.signal])
 				: AbortSignal.any([cursorRouting.authoritySignal, this.#disposeController.signal]);
+			if (executionSignal.aborted) throw new CursorStreamAbortError();
 			if (cursorRouting.modelId !== model.id) throw new Error(`Cursor model ${model.id} is not an exact route in the authenticated catalog. Refresh the catalog and reselect a model.`);
 			if (hasImageInput(context) && !cursorRouting.supportsImages) throw new Error(`Cursor model ${model.id} does not support image input.`);
 			const requestId = this.#runtime.uuid();
@@ -151,6 +153,7 @@ export class CursorStreamAdapter {
 					timeoutMs: effectiveTimeoutMs,
 				});
 				activeTurn = this.#runtime.conversationState.captureTurn(activeConversationKey);
+				turnAssumed = true;
 				messageReader = this.#messageReaderFor(runStream);
 			} else {
 				cursorRouting.assertCurrent();
@@ -169,6 +172,7 @@ export class CursorStreamAdapter {
 				const openedReader = this.#messageReaderFor(runStream);
 				messageReader = openedReader;
 				activeTurn = this.#runtime.conversationState.registerTurn(activeConversationKey, runStream, cursorRouting, () => { void openedReader.finalize(); });
+				turnAssumed = true;
 			}
 			const reader = messageReader;
 			while (true) {
@@ -263,11 +267,15 @@ export class CursorStreamAdapter {
 					: sanitizeDiagnosticText(error instanceof Error ? error.message : "Cursor stream failed.", [options?.apiKey ?? ""]);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			if ((aborted || timedOut) && activeTurn) {
-				this.#trackCleanup(this.#runtime.conversationState.cancelTurn(activeConversationKey, activeTurn));
+				// Only cancel a turn this stream has actually assumed (a fresh turn
+				// after registerTurn, or a resume after resumeTurnWithToolResults
+				// re-captured it). A pre-resume abort or authorization failure must
+				// leave the still-paused turn intact so a later authorized retry can
+				// resume it; resumeTurnWithToolResults owns its own cleanup on failure.
+				if (turnAssumed) {
+					this.#trackCleanup(this.#runtime.conversationState.cancelTurn(activeConversationKey, activeTurn));
+				}
 				runStream = undefined;
-				activeTurn = undefined;
-			} else if (resumeAttempt && activeTurn) {
-				this.#trackCleanup(this.#runtime.conversationState.cancelTurn(activeConversationKey, activeTurn));
 				activeTurn = undefined;
 			}
 		} finally {

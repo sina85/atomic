@@ -125,6 +125,7 @@ class MemoryCache implements CursorCatalogCache {
 	clear(scope?: string): void | Promise<void> { this.clears.push(scope ?? ""); this.catalog = null; }
 }
 
+
 class RejectingClearCache extends MemoryCache {
 	override clear(scope?: string): Promise<void> {
 		super.clear(scope);
@@ -287,6 +288,7 @@ test("cold execution rejects a stale caller credential before discovery or catal
 	await runtime.dispose();
 });
 
+
 test("current-account discovery failure leaves no executable routes or stale-account fallback", async () => {
 	const accountA = token("failure-a", "one");
 	const accountB = token("failure-b", "one");
@@ -446,7 +448,7 @@ test("TTL expiry contains asynchronous cache-clear failures after immediate inva
 	assert.equal(cache.catalog, null);
 	assert.equal(testHarness.registry.find("cursor", "ttl-route"), undefined);
 	await tick();
-	assert.equal(errors.some((error) => error.message === "async cache clear failed"), true);
+	assert.equal(errors.some((error) => error.message === "Cursor model catalog cache clear failed."), true);
 	await runtime.dispose();
 });
 

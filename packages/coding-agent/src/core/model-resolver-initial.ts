@@ -2,6 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import chalk from "chalk";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { isExactCursorProvider } from "./cursor-model-reference.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { findPreferredAvailableModel } from "./model-resolver-defaults.ts";
 import { buildFallbackModel } from "./model-resolver-patterns.ts";
@@ -64,6 +65,7 @@ export async function findInitialModel(options: {
   let model: Model<Api> | undefined;
   let thinkingLevel: ThinkingLevel = DEFAULT_THINKING_LEVEL;
 
+  const hasSavedDefault = defaultProvider !== undefined && defaultModelId !== undefined;
   if (cliProvider && cliModel) {
     const resolved = resolveCliModel({
       cliProvider,
@@ -91,7 +93,7 @@ export async function findInitialModel(options: {
     };
   }
 
-  if (defaultProvider && defaultModelId) {
+  if (hasSavedDefault) {
     const found = modelRegistry.find(defaultProvider, defaultModelId);
     if (found && modelRegistry.hasConfiguredAuth(found)) {
       model = found;
@@ -102,7 +104,7 @@ export async function findInitialModel(options: {
     }
   }
 
-  if (defaultProvider?.toLowerCase() === "cursor" && defaultModelId) {
+  if (isExactCursorProvider(defaultProvider) && defaultModelId !== undefined) {
     return {
       model: undefined,
       thinkingLevel: DEFAULT_THINKING_LEVEL,
@@ -151,7 +153,7 @@ export async function restoreModelFromSession(
 
   const reason = !exactRestoredModel ? "model no longer exists" : "no auth configured";
 
-  if (savedProvider.toLowerCase() === "cursor") {
+  if (isExactCursorProvider(savedProvider)) {
     const reference = `${savedProvider}/${savedModelId}`;
     const fallbackMessage = `Could not restore Cursor model ${reference} (${reason}). Cursor model IDs changed; reselect an exact model with --list-models.`;
     if (shouldPrintMessages) console.error(chalk.yellow(fallbackMessage));

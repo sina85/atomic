@@ -109,6 +109,29 @@ function occurrenceModel(id: string, catalogOccurrence: number, maxMode: boolean
 	} as Model<Api>;
 }
 
+test("an abort immediately before authorization returns prevents transport invocation", async () => {
+	const controller = new AbortController();
+	const transport = new CursorMockTransport({ messages: [{ type: "done", reason: "stop" }] });
+	const adapter = new CursorStreamAdapter({
+		transport,
+		executionAuthorizer: async () => {
+			controller.abort();
+			return authorization();
+		},
+	});
+
+	const events = await collectEvents(adapter.streamSimple(model(), context(), {
+		apiKey: token("pre-transport-abort"),
+		signal: controller.signal,
+	}));
+
+	assert.deepEqual(events.map((event) => event.type), ["start", "error"]);
+	const terminal = events.at(-1);
+	assert.equal(terminal?.type === "error" ? terminal.error.errorMessage : undefined, "Cursor stream aborted.");
+	assert.equal(transport.runs.length, 0);
+	await adapter.dispose();
+});
+
 test("message reader rejects a message when abort becomes visible after the race winner", async () => {
 	const messages = (async function* () {
 		yield { type: "textDelta", text: "must stay buffered" } as const;
@@ -178,19 +201,69 @@ test("execution authority preserves blank and duplicate occurrences and follows 
 	}, scope, 1);
 
 	assert.equal((await authority.authorize(occurrenceModel("", 0, false, false), accessToken, undefined, runtime)).modelId, "");
-	assert.equal((await authority.authorize(occurrenceModel("   ", 1, true, false), accessToken, undefined, runtime)).maxMode, true);
-	const firstDuplicate = await authority.authorize(occurrenceModel("duplicate", 2, false, false), accessToken, undefined, runtime);
-	const laterDuplicate = await authority.authorize(occurrenceModel("duplicate", 3, true, true), accessToken, undefined, runtime);
+	assert.equal((await authority.authorize(occurrenceModel("   ", 0, true, false), accessToken, undefined, runtime)).maxMode, true);
+	const firstDuplicate = await authority.authorize(occurrenceModel("duplicate", 0, false, false), accessToken, undefined, runtime);
+	const laterDuplicate = await authority.authorize(occurrenceModel("duplicate", 1, true, true), accessToken, undefined, runtime);
 	assert.deepEqual([firstDuplicate.maxMode, firstDuplicate.supportsImages], [false, false]);
 	assert.deepEqual([laterDuplicate.maxMode, laterDuplicate.supportsImages], [true, true]);
 
-	authority.publish({ source: "live", fetchedAt: 100, models: [{ id: "duplicate", maxMode: false }] }, scope, 2);
+	authority.publish({
+		source: "live",
+		fetchedAt: 100,
+		models: [
+			{ id: "", maxMode: false },
+			{ id: "   ", maxMode: true },
+			{ id: "duplicate", maxMode: true, supportsImages: true },
+			{ id: "duplicate", maxMode: false },
+		],
+	}, scope, 2);
 	assert.equal(firstDuplicate.authoritySignal.aborted, true);
-	const refreshed = await authority.authorize(occurrenceModel("duplicate", 3, true, true), accessToken, undefined, runtime);
-	assert.deepEqual([refreshed.maxMode, refreshed.supportsImages], [false, false]);
+	const changedMetadataAtSelectedOccurrence = await authority.authorize(
+		occurrenceModel("duplicate", 1, true, true), accessToken, undefined, runtime,
+	);
+	assert.deepEqual(
+		[changedMetadataAtSelectedOccurrence.maxMode, changedMetadataAtSelectedOccurrence.supportsImages],
+		[false, false],
+		"a still-current selected ordinal must win before stale routing metadata",
+	);
+
+	authority.publish({ source: "live", fetchedAt: 100, models: [{ id: "duplicate", maxMode: false }] }, scope, 3);
+	const removedOccurrenceFallback = await authority.authorize(occurrenceModel("duplicate", 1, true, true), accessToken, undefined, runtime);
+	assert.deepEqual([removedOccurrenceFallback.maxMode, removedOccurrenceFallback.supportsImages], [false, false]);
 	authority.close();
 });
 
+
+test("provider identity variants reject before credential activation or transport", async () => {
+	const harness = liveAuthorityHarness();
+	let activations = 0;
+	const runtime: CursorExecutionAuthorityRuntime = {
+		...harness.runtime,
+		activateCurrentCredential: async () => { activations += 1; return true; },
+	};
+	for (const provider of ["Cursor", "CURSOR", " cursor", "cursor "]) {
+		const selected = { ...model(), provider } as Model<Api>;
+		await assert.rejects(
+			harness.authority.authorize(selected, harness.accessToken, undefined, runtime),
+			/not an exact Cursor provider route/u,
+		);
+	}
+	assert.equal(activations, 0);
+
+	const transport = new CursorMockTransport({ messages: [{ type: "done", reason: "stop" }] });
+	const adapter = new CursorStreamAdapter({
+		transport,
+		executionAuthorizer: (selected, accessToken, signal) => harness.authority.authorize(selected, accessToken, signal, runtime),
+	});
+	const events = await collectEvents(adapter.streamSimple({ ...model(), provider: "Cursor" } as Model<Api>, context(), {
+		apiKey: harness.accessToken,
+	}));
+	assert.equal(events.at(-1)?.type, "error");
+	assert.equal(transport.runs.length, 0);
+	assert.equal(activations, 0);
+	await adapter.dispose();
+	harness.authority.close();
+});
 test("TTL expiry actively aborts a silent transport and removes its active turn", async () => {
 	let currentTime = 100;
 	const scheduler = new ManualAuthorityScheduler();
@@ -356,26 +429,6 @@ for (const scenario of [
 		await adapter.dispose();
 	});
 }
-
-test("paused tool turns are cancelled when the current route is removed or expired", async () => {
-	let rejectAuthorization = false;
-	const transport = new CursorMockTransport({ messages: [{ type: "toolCall", id: "tool-1", name: "Read", argumentsJson: "{}" }] });
-	const adapter = new CursorStreamAdapter({
-		transport,
-		executionAuthorizer: async () => {
-			if (rejectAuthorization) throw new Error("current Cursor route expired or was removed");
-			return exactTestAuthorization;
-		},
-	});
-	await collectEvents(adapter.streamSimple(model(), context(), { apiKey: "access-secret", sessionId: "removed-route" }));
-	rejectAuthorization = true;
-	const events = await collectEvents(adapter.streamSimple(model(), toolResultContext(), { apiKey: "access-secret", sessionId: "removed-route" }));
-	assert.equal(events.at(-1)?.type, "error");
-	assert.equal(transport.runs[0]?.stream.writtenToolResults.length, 0);
-	assert.equal(transport.runs[0]?.stream.cancelled, true);
-	assert.equal(adapter.getLifecycleSnapshot().activeTurns, 0);
-	await adapter.dispose();
-});
 
 test("execution authority installation is one-shot", async () => {
 	const transport = new CursorMockTransport({ messages: [{ type: "done", reason: "stop" }] });

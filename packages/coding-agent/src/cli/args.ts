@@ -15,6 +15,7 @@ import {
 	ENV_TELEMETRY,
 } from "../config.ts";
 import { parseContextWindowValue } from "../core/context-window.ts";
+import { trimNonCursorModelReference } from "../core/cursor-model-reference.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 
 export type Mode = "text" | "json" | "rpc";
@@ -123,7 +124,7 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--session-dir" && i + 1 < args.length) {
 			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
-			result.models = args[++i].split(",").map((s) => s.trim());
+			result.models = args[++i].split(",").map(trimNonCursorModelReference);
 		} else if (arg === "--no-tools" || arg === "-nt") {
 			result.noTools = true;
 		} else if (arg === "--no-builtin-tools" || arg === "-nbt") {

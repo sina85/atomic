@@ -324,8 +324,8 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionStartEvent,
 			model: sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,
-			contextWindow: parsed.model && !sessionOptions.model ? undefined : sessionOptions.contextWindow,
-			contextWindowStrict: parsed.model && !sessionOptions.model ? undefined : sessionOptions.contextWindowStrict,
+			contextWindow: parsed.model !== undefined && !sessionOptions.model ? undefined : sessionOptions.contextWindow,
+			contextWindowStrict: parsed.model !== undefined && !sessionOptions.model ? undefined : sessionOptions.contextWindowStrict,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			excludedTools: resolveExcludedToolsForAppMode(appMode, sessionOptions.excludedTools),
@@ -391,9 +391,9 @@ export async function main(args: string[], options?: MainOptions) {
 		await listModelsAfterExtensionStartup(runtime, modelRegistry, searchPattern);
 		process.exit(0);
 	}
-	const startupDiagnostics = [...await recoverCursorCliModelAfterExtensionStartup(parsed, runtime, appMode)];
+	const startupDiagnostics = [...await recoverCursorCliModelAfterExtensionStartup(parsed, runtime, appMode, deferredExtensionLoad)];
 	const enabledModelPatterns = parsed.models ?? settingsManager.getEnabledModels();
-	const recoveredScope = !deferredExtensionLoad && enabledModelPatterns?.length ? await recoverCursorModelScopeAfterExtensionStartup({ patterns: enabledModelPatterns, modelRegistry, mode: appMode === "interactive" ? "tui" : appMode, selectInitialModel: parsed.model === undefined && sessionManager.buildSessionContext().messages.length === 0, session }) : undefined;
+	const recoveredScope = !deferredExtensionLoad && enabledModelPatterns?.length ? await recoverCursorModelScopeAfterExtensionStartup({ patterns: enabledModelPatterns, modelRegistry, mode: appMode === "interactive" ? "tui" : appMode, selectInitialModel: parsed.model === undefined && sessionManager.buildSessionContext().messages.length === 0, session, currentModel: session.model ?? undefined, savedProvider: settingsManager.getDefaultProvider(), savedModelId: settingsManager.getDefaultModel() }) : undefined;
 	if (recoveredScope) startupDiagnostics.push(...recoveredScope.diagnostics);
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
 	let stdinContent: string | undefined;

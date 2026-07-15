@@ -19,6 +19,7 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { InteractiveModeBase } from "../src/modes/interactive/interactive-mode-base.ts";
 import "../src/modes/interactive/interactive-model-routing.ts";
+import { mapCursorCatalogToProviderModels } from "../../cursor/src/model-mapper.ts";
 
 const MAI_CODE_FLASH_ID = "mai-code-2-flash-picker";
 const COPILOT_TOKEN = "tid=x;proxy-ep=proxy.individual.githubcopilot.com";
@@ -124,6 +125,50 @@ test("refreshCurrentModelFromRegistry adopts catalog metadata and clamps stale C
 	session.dispose();
 });
 
+
+test("refreshCurrentModelFromRegistry preserves a selected routed Cursor occurrence", async () => {
+	const tempDir = makeTempDir("atomic-cursor-session-refresh");
+	const agentDir = join(tempDir, "agent");
+	const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+	const models = mapCursorCatalogToProviderModels({
+		source: "live",
+		fetchedAt: 1,
+		models: [
+			{ id: "duplicate", displayName: "first", maxMode: false },
+			{ id: "duplicate", displayName: "second", maxMode: true },
+		],
+	}) as Model<Api>[];
+	registry.registerProvider("cursor", {
+		baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent", models,
+	});
+	const selected = registry.getAll().filter((model) => model.provider === "cursor")[1]!;
+	const { session } = await createAgentSession({
+		cwd: tempDir,
+		agentDir,
+		model: selected,
+		modelRegistry: registry,
+		settingsManager: SettingsManager.create(tempDir, agentDir),
+		sessionManager: SessionManager.inMemory(tempDir),
+	});
+
+	assert.equal(session.model, selected);
+	session.refreshCurrentModelFromRegistry();
+	assert.equal(session.model, selected);
+	const refreshedModels = mapCursorCatalogToProviderModels({
+		source: "live",
+		fetchedAt: 2,
+		models: [
+			{ id: "duplicate", displayName: "first current", maxMode: true },
+			{ id: "duplicate", displayName: "second current", maxMode: false },
+		],
+	}) as Model<Api>[];
+	registry.registerProvider("cursor", {
+		baseUrl: "https://api2.cursor.sh", apiKey: "cursor-test-key", api: "cursor-agent", models: refreshedModels,
+	});
+	session.refreshCurrentModelFromRegistry();
+	assert.equal(session.model, selected, "refresh must preserve the selected in-memory duplicate occurrence");
+	session.dispose();
+});
 test("refreshCurrentModelFromRegistry leaves the active fallback untouched when registry cannot resolve it", async () => {
 	const tempDir = makeTempDir("atomic-copilot-session-refresh-missing");
 	const agentDir = join(tempDir, "agent");

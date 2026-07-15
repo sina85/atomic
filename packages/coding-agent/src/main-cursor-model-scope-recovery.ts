@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
+import { modelsAreEqual } from "@earendil-works/pi-ai/compat";
 import type { ExtensionMode } from "./core/extensions/context-types.ts";
-import { isLegacyBareCursorModelId } from "./core/legacy-cursor-model-ids.ts";
+import { parseExactCursorProviderReference } from "./core/cursor-model-reference.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveModelScopeWithDiagnostics, type ResolveModelScopeResult } from "./core/model-resolver-scope.ts";
 import type { ScopedModel } from "./core/model-resolver-types.ts";
@@ -17,10 +18,39 @@ export interface CursorModelScopeRecoveryInput {
 	readonly mode: ExtensionMode;
 	readonly selectInitialModel: boolean;
 	readonly session: CursorScopeRecoverySession;
+	/** Current session model, retained when it is present in the resolved scope. */
+	readonly currentModel?: Model<Api>;
+	/** Saved settings default; only `undefined` is absent, so a blank id "" counts. */
+	readonly savedProvider?: string;
+	readonly savedModelId?: string;
 }
 
 export function modelScopeNeedsCursorDiscovery(patterns: readonly string[]): boolean {
-	return patterns.some((pattern) => isLegacyBareCursorModelId(pattern) || pattern.toLowerCase().startsWith("cursor/"));
+	// Only an explicit lowercase `cursor/<id>` reference reserves authenticated
+	// Cursor discovery. Bare references resolve through the ordinary (non-Cursor)
+	// scope path; Cursor exposes no static executable catalog.
+	return patterns.some((pattern) => parseExactCursorProviderReference(pattern) !== undefined);
+}
+
+/**
+ * Choose which resolved scope entry to select initially. Precedence:
+ * 1. the current session model when it is present in the new scope,
+ * 2. the saved settings default when present (only `undefined` is absent, so a
+ *    blank id "" is honored; `modelsAreEqual` compares provider+id, so a
+ *    duplicate/blank saved default matches the first matching scoped occurrence),
+ * 3. the first scoped model.
+ */
+function selectScopeInitialModel(input: CursorModelScopeRecoveryInput, scopedModels: readonly ScopedModel[]): Model<Api> | undefined {
+	const first = scopedModels[0]?.model;
+	if (!first) return undefined;
+	if (input.currentModel && scopedModels.some((scoped) => modelsAreEqual(scoped.model, input.currentModel!))) {
+		return input.currentModel;
+	}
+	const savedModel = input.savedProvider !== undefined && input.savedModelId !== undefined
+		? input.modelRegistry.find(input.savedProvider, input.savedModelId)
+		: undefined;
+	const preferred = savedModel ? scopedModels.find((scoped) => modelsAreEqual(scoped.model, savedModel)) : undefined;
+	return preferred?.model ?? first;
 }
 
 /**
@@ -47,7 +77,9 @@ export async function recoverCursorModelScopeAfterExtensionStartup(
 	}
 	const result = await resolveModelScopeWithDiagnostics([...input.patterns], input.modelRegistry);
 	input.session.setScopedModels(result.scopedModels);
-	const initial = result.scopedModels[0]?.model;
-	if (input.selectInitialModel && initial) await input.session.setModel(initial);
+	if (input.selectInitialModel) {
+		const initial = selectScopeInitialModel(input, result.scopedModels);
+		if (initial) await input.session.setModel(initial);
+	}
 	return result;
 }

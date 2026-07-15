@@ -218,6 +218,7 @@ describe("Cursor provider registration", () => {
 		await secondRuntime.dispose();
 	});
 	test("model discovery preflight blocks TUI startup until stored-credential discovery registers live models", async () => {
+		const accessToken = jwtForSubject("stored-preflight", "stored-access");
 		const { host, registrations, lifecycleHandlers } = makeHost();
 		const cache = new MemoryCursorCatalogCache();
 		const discoveryRequests: { readonly accessToken: string; readonly requestId: string }[] = [];
@@ -238,10 +239,10 @@ describe("Cursor provider registration", () => {
 		assert.ok(handler);
 		await handler(
 			{ type: "model_catalog_discover" },
-			{ mode: "tui", modelRegistry: { getApiKeyForProvider: async (provider: string) => provider === "cursor" ? "stored-access" : undefined } },
+			{ mode: "tui", modelRegistry: { getApiKeyForProvider: async (provider: string) => provider === "cursor" ? accessToken : undefined } },
 		);
 
-		assert.deepEqual(discoveryRequests, [{ accessToken: "stored-access", requestId: "session-start-discovery" }]);
+		assert.deepEqual(discoveryRequests, [{ accessToken, requestId: "session-start-discovery" }]);
 		assert.equal(cache.saved.length, 1);
 		assert.equal(registrations.at(-1)?.config.models.find((model) => model.id === "composer-2.5")?.name, "Composer 2.5");
 		await runtime.dispose();

@@ -54,26 +54,37 @@ describe("Cursor exact GetUsable model mapping", () => {
 		assert.equal("thinkingLevelMap" in (mapped[0] ?? {}), false);
 	});
 
-	test("maps blank and duplicate rows in order with occurrence-specific routing metadata", () => {
+	test("maps blank, whitespace, and duplicate rows with per-ID occurrence ordinals", () => {
 		const mapped = mapCursorCatalogToProviderModels({
 			source: "live",
 			fetchedAt: 1,
 			models: [
-				{ id: "", displayName: "", maxMode: false },
+				{ id: "", displayName: "Blank first", maxMode: false },
+				{ id: "unrelated-a", maxMode: false },
 				{ id: "duplicate", displayName: "First", maxMode: false },
+				{ id: "   ", displayNameShort: "Whitespace first", maxMode: true },
+				{ id: "unrelated-b", maxMode: true },
 				{ id: "duplicate", displayName: "Second", maxMode: true, supportsImages: true },
-				{ id: "   ", displayNameShort: "  ", maxMode: true },
+				{ id: "", displayName: "Blank second", maxMode: true },
+				{ id: "   ", displayNameShort: "Whitespace second", maxMode: false },
 			],
 		});
 
-		assert.deepEqual(mapped.map((model) => [model.id, model.name]), [
-			["", ""], ["duplicate", "First"], ["duplicate", "Second"], ["   ", "  "],
+		assert.deepEqual(mapped.map((model) => model.id), [
+			"", "unrelated-a", "duplicate", "   ", "unrelated-b", "duplicate", "", "   ",
+		]);
+		assert.deepEqual(mapped.map((model) => model.compat.cursorRouting[model.id]?.catalogOccurrence), [
+			0, 0, 0, 0, 0, 1, 1, 1,
 		]);
 		assert.deepEqual(mapped.map((model) => model.compat.cursorRouting[model.id]), [
 			{ modelId: "", maxMode: false, supportsImages: false, catalogOccurrence: 0 },
-			{ modelId: "duplicate", maxMode: false, supportsImages: false, catalogOccurrence: 1 },
-			{ modelId: "duplicate", maxMode: true, supportsImages: true, catalogOccurrence: 2 },
-			{ modelId: "   ", maxMode: true, supportsImages: false, catalogOccurrence: 3 },
+			{ modelId: "unrelated-a", maxMode: false, supportsImages: false, catalogOccurrence: 0 },
+			{ modelId: "duplicate", maxMode: false, supportsImages: false, catalogOccurrence: 0 },
+			{ modelId: "   ", maxMode: true, supportsImages: false, catalogOccurrence: 0 },
+			{ modelId: "unrelated-b", maxMode: true, supportsImages: false, catalogOccurrence: 0 },
+			{ modelId: "duplicate", maxMode: true, supportsImages: true, catalogOccurrence: 1 },
+			{ modelId: "", maxMode: true, supportsImages: false, catalogOccurrence: 1 },
+			{ modelId: "   ", maxMode: false, supportsImages: false, catalogOccurrence: 1 },
 		]);
 	});
 });

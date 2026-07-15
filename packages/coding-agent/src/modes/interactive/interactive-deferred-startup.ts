@@ -131,7 +131,9 @@ export async function applyDeferredModelScope(mode: InteractiveModeBase): Promis
 
     const savedProvider = mode.settingsManager.getDefaultProvider();
     const savedModelId = mode.settingsManager.getDefaultModel();
-    const savedModel = savedProvider && savedModelId ? mode.session.modelRegistry.find(savedProvider, savedModelId) : undefined;
+    const savedModel = savedProvider !== undefined && savedModelId !== undefined
+      ? mode.session.modelRegistry.find(savedProvider, savedModelId)
+      : undefined;
     const preferred = savedModel ? scopedModels.find((scoped) => modelsAreEqual(scoped.model, savedModel)) : undefined;
     const nextScopedModel = preferred ?? scopedModels[0];
     if (mode.session.modelRegistry.hasConfiguredAuth(nextScopedModel.model)) {

@@ -72,9 +72,11 @@ describe("computeDeferExtensions", () => {
 		expect(computeDeferExtensions(baseInput({ model: "claude-sonnet" }))).toBe(false);
 	});
 
-	it("keeps strict Cursor model scopes on the synchronous discovery path", () => {
+	it("keeps explicit cursor/ scopes on the synchronous discovery path while bare scopes defer", () => {
 		expect(computeDeferExtensions(baseInput({ models: ["cursor/missing-route"] }))).toBe(false);
-		expect(computeDeferExtensions(baseInput({ models: ["composer-2"] }))).toBe(false);
+		// A bare id no longer reserves Cursor discovery, so it defers like any
+		// other ordinary (non-Cursor) scope reference.
+		expect(computeDeferExtensions(baseInput({ models: ["composer-2"] }))).toBe(true);
 		expect(computeDeferExtensions(baseInput({ models: ["claude-*"] }))).toBe(true);
 	});
 

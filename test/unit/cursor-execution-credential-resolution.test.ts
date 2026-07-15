@@ -112,6 +112,16 @@ async function collect(stream: AsyncIterable<AssistantMessageEvent>): Promise<As
 	for await (const event of stream) events.push(event);
 	return events;
 }
+async function expectAbortedCompletion(iterator: AsyncIterator<AssistantMessageEvent>): Promise<void> {
+	const terminal = await iterator.next();
+	assert.equal(terminal.done, false);
+	assert.equal(terminal.value?.type, "error");
+	if (terminal.value?.type === "error") {
+		assert.equal(terminal.value.reason, "aborted");
+		assert.equal(terminal.value.error.errorMessage, "Cursor stream aborted.");
+	}
+	assert.equal((await iterator.next()).done, true);
+}
 
 describe("Cursor execution credential resolver epochs", () => {
 	test("a delayed execution resolver cannot replace the newer lifecycle account", async () => {
@@ -282,4 +292,165 @@ describe("Cursor execution credential resolver epochs", () => {
 			assert.notEqual(testHarness.runtime.getCatalogRefreshStatus().state, "fresh");
 		});
 	}
+
+	for (const lateOutcome of ["selected", "rejected"] as const) {
+		test(`caller abort detaches a pending first resolver and a late ${lateOutcome} outcome is inert`, async () => {
+			const accessToken = token(`caller-abort-${lateOutcome}`);
+			const delayed = Promise.withResolvers<string | undefined>();
+			const resolverStarted = Promise.withResolvers<void>();
+			const errors: Error[] = [];
+			const discovery = new ControlledDiscovery();
+			discovery.catalogs.set(accessToken, { source: "live", fetchedAt: 100, models: [{ id: "late-route", maxMode: false }] });
+			const testHarness = harness({
+				discovery,
+				onError: (error) => errors.push(error),
+				resolveCurrentAccessToken: () => { resolverStarted.resolve(); return delayed.promise; },
+			});
+			const controller = new AbortController();
+			const iterator = testHarness.registrations[0]!.streamSimple(
+				fabricatedModel("late-route"), context, { apiKey: accessToken, signal: controller.signal },
+			)[Symbol.asyncIterator]();
+			assert.equal((await iterator.next()).value?.type, "start");
+			await resolverStarted.promise;
+			controller.abort();
+			await expectAbortedCompletion(iterator);
+			if (lateOutcome === "selected") delayed.resolve(accessToken);
+			else delayed.reject(new Error("private late rejection"));
+			await Promise.resolve();
+			await Promise.resolve();
+			assert.deepEqual(discovery.calls, []);
+			assert.deepEqual(testHarness.cache.loads, []);
+			assert.deepEqual(testHarness.cache.saves, []);
+			assert.deepEqual(testHarness.cache.clears, []);
+			assert.deepEqual(errors, []);
+			assert.equal(testHarness.transport.runs.length, 0);
+			await testHarness.runtime.dispose();
+		});
+	}
+
+	test("runtime disposal detaches a permanently pending first resolver", async () => {
+		const accessToken = token("dispose-pending-first");
+		const delayed = Promise.withResolvers<string | undefined>();
+		const resolverStarted = Promise.withResolvers<void>();
+		const discovery = new ControlledDiscovery();
+		const testHarness = harness({ discovery, resolveCurrentAccessToken: () => { resolverStarted.resolve(); return delayed.promise; } });
+		const iterator = testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("pending-route"), context, { apiKey: accessToken },
+		)[Symbol.asyncIterator]();
+		assert.equal((await iterator.next()).value?.type, "start");
+		await resolverStarted.promise;
+		await testHarness.runtime.dispose();
+		await expectAbortedCompletion(iterator);
+		assert.deepEqual(discovery.calls, []);
+		assert.equal(testHarness.transport.runs.length, 0);
+	});
+
+	test("caller abort detaches a pending second resolver before transport", async () => {
+		const accessToken = token("caller-abort-second");
+		const delayedSecond = Promise.withResolvers<string | undefined>();
+		const secondStarted = Promise.withResolvers<void>();
+		let calls = 0;
+		const discovery = new ControlledDiscovery();
+		discovery.catalogs.set(accessToken, { source: "live", fetchedAt: 100, models: [{ id: "second-route", maxMode: true }] });
+		const testHarness = harness({
+			discovery,
+			resolveCurrentAccessToken: () => {
+				calls += 1;
+				if (calls === 1) return accessToken;
+				secondStarted.resolve();
+				return delayedSecond.promise;
+			},
+		});
+		const controller = new AbortController();
+		const iterator = testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("second-route"), context, { apiKey: accessToken, signal: controller.signal },
+		)[Symbol.asyncIterator]();
+		assert.equal((await iterator.next()).value?.type, "start");
+		await secondStarted.promise;
+		controller.abort();
+		await expectAbortedCompletion(iterator);
+		assert.deepEqual(discovery.calls, [accessToken]);
+		assert.equal(testHarness.transport.runs.length, 0);
+		delayedSecond.resolve(accessToken);
+		await testHarness.runtime.dispose();
+	});
+
+	test("runtime disposal detaches a pending second resolver before transport", async () => {
+		const accessToken = token("dispose-pending-second");
+		const delayedSecond = Promise.withResolvers<string | undefined>();
+		const secondStarted = Promise.withResolvers<void>();
+		let calls = 0;
+		const discovery = new ControlledDiscovery();
+		discovery.catalogs.set(accessToken, { source: "live", fetchedAt: 100, models: [{ id: "dispose-second-route", maxMode: true }] });
+		const testHarness = harness({
+			discovery,
+			resolveCurrentAccessToken: () => {
+				calls += 1;
+				if (calls === 1) return accessToken;
+				secondStarted.resolve();
+				return delayedSecond.promise;
+			},
+		});
+		const iterator = testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("dispose-second-route"), context, { apiKey: accessToken },
+		)[Symbol.asyncIterator]();
+		assert.equal((await iterator.next()).value?.type, "start");
+		await secondStarted.promise;
+		await testHarness.runtime.dispose();
+		await expectAbortedCompletion(iterator);
+		assert.deepEqual(discovery.calls, [accessToken]);
+		assert.equal(testHarness.transport.runs.length, 0);
+	});
+
+	test("an already-aborted caller does not invoke the first credential resolver", async () => {
+		const accessToken = token("already-aborted");
+		let resolverCalls = 0;
+		const discovery = new ControlledDiscovery();
+		const testHarness = harness({
+			discovery,
+			resolveCurrentAccessToken: () => { resolverCalls += 1; return accessToken; },
+		});
+		const controller = new AbortController();
+		controller.abort();
+		const events = await collect(testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("never-resolved"), context, { apiKey: accessToken, signal: controller.signal },
+		));
+		assert.deepEqual(events.map((event) => event.type), ["start", "error"]);
+		assert.equal(resolverCalls, 0);
+		assert.deepEqual(discovery.calls, []);
+		assert.equal(testHarness.transport.runs.length, 0);
+		await testHarness.runtime.dispose();
+	});
+
+	test("a cancelled permanently pending resolver does not block a later stream", async () => {
+		const accessToken = token("cancelled-resolver-recovery");
+		const abandoned = Promise.withResolvers<string | undefined>();
+		const firstStarted = Promise.withResolvers<void>();
+		let calls = 0;
+		const discovery = new ControlledDiscovery();
+		discovery.catalogs.set(accessToken, { source: "live", fetchedAt: 100, models: [{ id: "recovery-route", maxMode: false }] });
+		const testHarness = harness({
+			discovery,
+			resolveCurrentAccessToken: () => {
+				calls += 1;
+				if (calls === 1) { firstStarted.resolve(); return abandoned.promise; }
+				return accessToken;
+			},
+		});
+		const controller = new AbortController();
+		const first = testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("recovery-route"), context, { apiKey: accessToken, signal: controller.signal },
+		)[Symbol.asyncIterator]();
+		assert.equal((await first.next()).value?.type, "start");
+		await firstStarted.promise;
+		controller.abort();
+		await expectAbortedCompletion(first);
+
+		const recovered = await collect(testHarness.registrations[0]!.streamSimple(
+			fabricatedModel("recovery-route"), context, { apiKey: accessToken },
+		));
+		assert.equal(recovered.at(-1)?.type, "done");
+		assert.equal(testHarness.transport.runs.length, 1);
+		await testHarness.runtime.dispose();
+	});
 });

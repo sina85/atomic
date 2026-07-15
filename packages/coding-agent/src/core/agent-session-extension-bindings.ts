@@ -103,6 +103,24 @@ export function _applyExtensionBindings(this: AgentSession, runner: ExtensionRun
 }
 
 
+interface CursorRoutingMetadata {
+	readonly modelId: string;
+	readonly maxMode: boolean;
+	readonly supportsImages: boolean;
+	readonly catalogOccurrence: number;
+}
+
+function hasExactCursorRouting(model: NonNullable<AgentSession["model"]>): boolean {
+	if (model.provider !== "cursor") return false;
+	const compat = model.compat as { readonly cursorRouting?: Readonly<Record<string, CursorRoutingMetadata>> } | undefined;
+	const routing = compat?.cursorRouting?.[model.id];
+	return routing?.modelId === model.id
+		&& typeof routing.maxMode === "boolean"
+		&& typeof routing.supportsImages === "boolean"
+		&& Number.isInteger(routing.catalogOccurrence)
+		&& routing.catalogOccurrence >= 0;
+}
+
 export function refreshCurrentModelFromRegistry(this: AgentSession): void {
 	this._refreshCurrentModelFromRegistry();
 }
@@ -113,6 +131,7 @@ export function _refreshCurrentModelFromRegistry(this: AgentSession): void {
 		return;
 	}
 
+	if (hasExactCursorRouting(currentModel)) return;
 	const refreshedModel = this._modelRegistry.find(currentModel.provider, currentModel.id);
 	if (!refreshedModel || refreshedModel === currentModel) {
 		return;

@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionMode } from "./extensions/index.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { isExactCursorProvider } from "./cursor-model-reference.ts";
 
 export interface DeferredCursorModelReference {
   readonly kind: "session" | "default";
@@ -20,11 +21,11 @@ export function selectDeferredCursorModelReference(input: {
 }): DeferredCursorModelReference | undefined {
   if (input.explicitModel) return undefined;
   if (input.sessionModel) {
-    return input.sessionModel.provider.toLowerCase() === "cursor"
+    return isExactCursorProvider(input.sessionModel.provider)
       ? { kind: "session", id: input.sessionModel.modelId }
       : undefined;
   }
-  if (input.defaultProvider?.toLowerCase() === "cursor" && input.defaultModelId) {
+  if (isExactCursorProvider(input.defaultProvider) && input.defaultModelId !== undefined) {
     return { kind: "default", id: input.defaultModelId };
   }
   return undefined;

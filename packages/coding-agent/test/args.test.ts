@@ -180,6 +180,18 @@ describe("parseArgs", () => {
 			const result = parseArgs(["--models", "gpt-4o,claude-sonnet,gemini-pro"]);
 			expect(result.models).toEqual(["gpt-4o", "claude-sonnet", "gemini-pro"]);
 		});
+
+		test("preserves literal Cursor model scope bytes without normalizing qualifier lookalikes", () => {
+			const result = parseArgs(["--models", " openai/gpt-4o ,cursor/   , cursor/route,CURSOR/route,cursor/literal:high,cursor/route (1m)"]);
+			expect(result.models).toEqual([
+				"openai/gpt-4o",
+				"cursor/   ",
+				" cursor/route",
+				"CURSOR/route",
+				"cursor/literal:high",
+				"cursor/route (1m)",
+			]);
+		});
 	});
 
 	describe("--name flag", () => {

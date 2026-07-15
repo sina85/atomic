@@ -2,7 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import type { Args } from "./cli/args.ts";
 import type { AgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "./core/agent-session-services.ts";
-import { isLegacyBareCursorModelId } from "./core/legacy-cursor-model-ids.ts";
+import { parseExactCursorProviderReference } from "./core/cursor-model-reference.ts";
 import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel } from "./core/model-resolver.ts";
 import type { AppMode } from "./main-app-mode.ts";
@@ -36,8 +36,17 @@ export function recoverCursorCliModelAfterExtensionStartup(
 	parsed: Pick<Args, "provider" | "model" | "contextWindow">,
 	runtime: CursorStartupRecoveryRuntime,
 	appMode: AppMode,
+	deferredExtensionLoad = false,
 ): Promise<readonly AgentSessionRuntimeDiagnostic[]> {
 	if (!isCursorSelection(parsed.provider, parsed.model) && isCursorReselectionFailure(runtime.modelFallbackMessage)) {
+		// When extensions were deferred for an interactive TTY with a settings-only
+		// (or restored-session) Cursor default, the empty pre-load runner cannot see
+		// the dynamic route, so the eager recovery produced a reselection message.
+		// Leave it on runtime.modelFallbackMessage for the post-load
+		// retryDeferredModelRestore instead of escalating to a fatal startup error.
+		if (deferredExtensionLoad && appMode === "interactive") {
+			return Promise.resolve(runtime.diagnostics);
+		}
 		return Promise.resolve(appendDiagnostic(runtime.diagnostics, runtime.modelFallbackMessage!));
 	}
 	return recoverUnresolvedCursorCliModel({
@@ -108,31 +117,24 @@ function removePreDiscoveryCursorResolutionErrors(
 }
 
 function isCursorSelection(provider: string | undefined, model: string | undefined): boolean {
-	if (!model) return false;
-	const normalizedProvider = provider?.trim().toLowerCase();
-	if (normalizedProvider && normalizedProvider !== "cursor") return false;
-	if (normalizedProvider === "cursor") return true;
-	const slashIndex = model.indexOf("/");
-	return (slashIndex > 0 && model.slice(0, slashIndex).trim().toLowerCase() === "cursor")
-		|| isLegacyBareCursorModelId(model);
+	if (model === undefined) return false;
+	if (provider !== undefined) return provider === "cursor";
+	return parseExactCursorProviderReference(model) !== undefined;
 }
 
 function normalizeCursorReference(provider: string | undefined, model: string): string {
-	const slashIndex = model.indexOf("/");
-	if (slashIndex > 0 && model.slice(0, slashIndex).trim().toLowerCase() === "cursor") {
-		return `cursor/${model.slice(slashIndex + 1)}`;
-	}
-	return provider?.trim().toLowerCase() === "cursor" || isLegacyBareCursorModelId(model) ? `cursor/${model}` : model;
+	const qualifiedId = parseExactCursorProviderReference(model);
+	if (qualifiedId !== undefined) return `cursor/${qualifiedId}`;
+	return provider === "cursor" ? `cursor/${model}` : model;
 }
 
 function findExactCursorModel(
 	reference: string,
 	availableModels: Model<Api>[],
 ): { readonly model: Model<Api> } | undefined {
-	const slashIndex = reference.indexOf("/");
-	if (slashIndex <= 0 || reference.slice(0, slashIndex).toLowerCase() !== "cursor") return undefined;
-	const modelId = reference.slice(slashIndex + 1);
-	const direct = availableModels.find((model) => model.provider.toLowerCase() === "cursor" && model.id === modelId);
+	const modelId = parseExactCursorProviderReference(reference);
+	if (modelId === undefined) return undefined;
+	const direct = availableModels.find((model) => model.provider === "cursor" && model.id === modelId);
 	return direct ? { model: direct } : undefined;
 }
 

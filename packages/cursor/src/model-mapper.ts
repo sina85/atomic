@@ -24,6 +24,7 @@ export interface CursorModelRouting {
 	readonly modelId: string;
 	readonly maxMode: boolean;
 	readonly supportsImages: boolean;
+	/** Zero-based ordinal among GetUsable rows sharing this exact model ID. */
 	readonly catalogOccurrence: number;
 }
 
@@ -58,7 +59,10 @@ export function normalizeCursorUsableModels(models: readonly CursorUsableModel[]
 }
 
 export function mapCursorCatalogToProviderModels(catalog: CursorModelCatalog): CursorProviderModelDefinition[] {
-	return normalizeCursorUsableModels(catalog.models).map((model, catalogOccurrence) => {
+	const occurrencesById = new Map<string, number>();
+	return normalizeCursorUsableModels(catalog.models).map((model) => {
+		const catalogOccurrence = occurrencesById.get(model.id) ?? 0;
+		occurrencesById.set(model.id, catalogOccurrence + 1);
 		const metadataProvenance = {
 			catalog: "live" as const,
 			capabilities: model.supportsImages === true

@@ -122,6 +122,36 @@ describe("applyDeferredModelScope", () => {
 		expect(setScopedModels).toHaveBeenCalledWith([{ model: cursorModel, thinkingLevel: undefined }]);
 		expect(setModel).toHaveBeenCalledWith(cursorModel);
 	});
+
+	it("prefers a present blank saved default within a deferred model scope", async () => {
+		const blankCursorModel = { ...claudeModel, provider: "cursor", id: "", name: "Blank Cursor route" };
+		const setModel = vi.fn();
+		const find = vi.fn((provider: string, id: string) =>
+			provider === "cursor" && id === "" ? blankCursorModel : undefined,
+		);
+		const mode = {
+			options: { deferredModelScopePatterns: ["anthropic/claude-sonnet-4", "cursor/"] },
+			session: {
+				discoverExtensionModels: vi.fn(async () => {}),
+				modelRegistry: {
+					getAvailable: vi.fn(async () => [claudeModel, blankCursorModel]),
+					find,
+					hasConfiguredAuth: vi.fn(() => true),
+				},
+				setScopedModels: vi.fn(),
+				setModel,
+			},
+			sessionManager: { buildSessionContext: () => ({ messages: [] }) },
+			settingsManager: { getDefaultProvider: () => "cursor", getDefaultModel: () => "" },
+			showError: vi.fn(),
+			showWarning: vi.fn(),
+		};
+
+		await applyDeferredModelScope(mode as never);
+
+		expect(find).toHaveBeenCalledWith("cursor", "");
+		expect(setModel).toHaveBeenCalledWith(blankCursorModel);
+	});
 });
 
 describe("retryDeferredModelRestore", () => {
