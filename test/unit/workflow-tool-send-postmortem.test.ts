@@ -83,6 +83,32 @@ describe("workflow send — post-mortem parity", () => {
     assert.equal(store.runs().find((r) => r.id === RUN_ID)?.stages[0]?.status, "completed");
   });
 
+  test("rejects explicit resume without appending or mutating terminal status", async () => {
+    const sessionFile = retainedSession("send-no-resume");
+    seedCompletedRun(sessionFile);
+    const promptCalls: string[] = [];
+    const counter = { creates: 0 };
+    const session: StageSessionRuntime = {
+      ...mockSession(),
+      sessionFile,
+      async prompt(text: string) { promptCalls.push(text); },
+    };
+
+    await assert.rejects(
+      () => workflowSendAction(
+        { runId: RUN_ID, stageId: "stage-a", text: "resume should be rejected", delivery: "resume" },
+        { resolvePostMortemDeps: resolvePostMortemDeps(session, counter) },
+      ),
+      /Post-mortem stage chat cannot pause or resume workflow execution\./,
+    );
+
+    assert.deepEqual(promptCalls, []);
+    assert.equal(counter.creates, 0);
+    const run = store.runs().find((candidate) => candidate.id === RUN_ID);
+    assert.equal(run?.status, "completed");
+    assert.equal(run?.stages[0]?.status, "completed");
+  });
+
   test("stays a no-op with an explicit reason when the session is invalid", async () => {
     seedCompletedRun(join(tempDir, "missing.jsonl"));
     const counter = { creates: 0 };

@@ -105,18 +105,32 @@ describe("ensurePostMortemStageHandle", () => {
     assert.equal(counter.creates, 1);
   });
 
-  test("rejects a post-mortem pause/resume of workflow execution", async () => {
+  test("rejects post-mortem pause and resume without appending a prompt", async () => {
     const registry = createStageControlRegistry();
     const sessionFile = retainedSession("no-resume");
-    const session: StageSessionRuntime = { ...mockSession(), sessionFile };
-    const result = ensurePostMortemStageHandle("run-1", completedStage({ sessionFile }), {
+    const promptCalls: string[] = [];
+    const counter = { creates: 0 };
+    const session: StageSessionRuntime = {
+      ...mockSession(),
+      sessionFile,
+      async prompt(text: string) { promptCalls.push(text); },
+    };
+    const stage = completedStage({ sessionFile });
+    const result = ensurePostMortemStageHandle("run-1", stage, {
       registry,
-      adapters: adaptersRecording(session, { creates: 0 }),
+      adapters: adaptersRecording(session, counter),
       cwd: tempDir,
     });
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    await assert.rejects(() => result.handle.pause());
+
+    const expected = /Post-mortem stage chat cannot pause or resume workflow execution\./;
+    await assert.rejects(() => result.handle.pause(), expected);
+    await assert.rejects(() => result.handle.resume("resume should be rejected"), expected);
+    assert.deepEqual(promptCalls, []);
+    assert.equal(counter.creates, 0);
+    assert.equal(result.handle.status, "completed");
+    assert.equal(stage.status, "completed");
   });
 
   test("returns not_terminal for a running stage", () => {
