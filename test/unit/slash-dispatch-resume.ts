@@ -224,6 +224,48 @@ describe("/workflow resume <runId> — exact live fast path", () => {
             .join("\n");
         assert.match(content, /Resumed 1 stage\(s\)/);
     });
+    test.serial("exact paused nested child remains excluded from top-level resume targets", async () => {
+        class CatalogCountingBackend extends InMemoryDurableBackend {
+            completedCatalogCalls = 0;
+
+            override listCompletedWorkflows() {
+                this.completedCatalogCalls += 1;
+                return super.listCompletedWorkflows();
+            }
+        }
+
+        const backend = new CatalogCountingBackend();
+        setDurableBackend(backend);
+        const { pi, commands } = buildMockPi();
+        addFactoryStubs(pi);
+        const factoryModule = await import("../../packages/workflows/src/extension/index.js");
+        factoryModule.default(pi);
+        const handler = commands.find((command) => command.name === "workflow")!.options.handler;
+        const runId = `nested-paused-resume-${Date.now()}`;
+        const stageId = "stage-nested-paused";
+        store.recordRunStart({
+            ...makeInflightRun(runId),
+            parentRunId: "parent-run",
+            rootRunId: "parent-run",
+            stages: [{
+                id: stageId,
+                name: "nested-worker",
+                status: "paused",
+                parentIds: [],
+                startedAt: Date.now(),
+                toolEvents: [],
+            }],
+        });
+        registerTestStageHandle(runId, stageId, "paused");
+
+        await assert.rejects(
+            handler(`resume ${runId}`, { hasUI: false, ui: { notify: () => undefined } }),
+            /No durable workflow found for id\/prefix/,
+        );
+
+        assert.ok(backend.completedCatalogCalls > 0, "nested child must continue through the top-level resolver");
+        assert.equal(store.runs().find((run) => run.id === runId)?.stages[0]?.status, "paused");
+    });
 });
 
 // ---------------------------------------------------------------------------

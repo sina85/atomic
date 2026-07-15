@@ -300,10 +300,12 @@ export async function handleRunControlCommand(
         return true;
       }
       if (exactBeforePreparation !== undefined
+        && exactBeforePreparation.parentRunId === undefined
         && exactHasPausedState
         && backend.isWorkflowLoadable(exactBeforePreparation.id)) {
-        // Exact live state is authoritative. Avoid scanning the potentially
-        // large completed catalog while preserving live-over-durable precedence.
+        // Exact top-level live state is authoritative. Avoid scanning the
+        // potentially large completed catalog while preserving the established
+        // top-level target namespace and live-over-durable precedence.
         runId = exactBeforePreparation.id;
       } else {
         let durable: readonly ResumableWorkflowEntry[] = [];
