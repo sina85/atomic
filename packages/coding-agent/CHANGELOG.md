@@ -20,6 +20,16 @@
 - Enforced Cursor's host-selected current-account GetUsable catalog through live revocable execution leases: the caller credential is checked against the host-selected scope before cold cache activation or discovery, a selected account change unregisters prior rows and joins the new account's cache/GetUsable discovery, stale or missing host credentials cannot establish or roll back authority, and logout/credential lookup failure removes stale rows before workflow or scope preflight. Retained, fabricated, expired, disposed, removed, and non-current-account routes fail at the transport boundary; current Max/image routing overrides stale caller metadata; explicit empty dynamic catalogs unregister models; and forced or silent TTL expiry revokes routes, scoped cache, and freshness state. Catalog publication/revocation aborts prior active and paused streams, multi-result resumes recheck synchronously before every write, local HTTP/2 stream bookkeeping is released before remote cleanup, and bounded disposal detaches never-settling cleanup tasks ([#1702](https://github.com/bastani-inc/atomic/issues/1702)).
 - Made workflows and enabled-model/`--models` scope resolution await shared authenticated model discovery before validating explicit Cursor references. Qualified `cursor/<exact-id>` scope entries are byte-exact and fatal when unavailable during synchronous or deferred interactive startup—reasoning-looking suffixes are never stripped, and startup cannot continue prompting on a default/current model outside the requested scope. Rejection-only bare historical direct IDs such as `composer-2` select a byte-exact current Cursor row when returned or fail before cross-provider/fuzzy/default fallback. Explicit non-Cursor qualification remains unchanged; workflow caller cancellation detaches without cancelling other waiters, and non-Cursor workflows are not delayed ([#1702](https://github.com/bastani-inc/atomic/issues/1702)).
 
+## [0.9.9-alpha.3] - 2026-07-14
+
+### Added
+
+- Added `pi.sendMessages()` for atomic, array-ordered custom-message admission without waiting for the resulting model turn, allowing companion extensions to keep related preludes and terminal notices contiguous without globally serializing unrelated work.
+
+### Fixed
+
+- Preserved accepted async-child Intercom chronology across lazily activated companion extensions by atomically admitting same-child ordinary messages before pause, completion, and failure notices; unrelated children remain independent and ask/reply behavior is unchanged ([#1802](https://github.com/bastani-inc/atomic/issues/1802)).
+
 ## [0.9.9-alpha.2] - 2026-07-14
 
 ### Changed

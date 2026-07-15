@@ -21,6 +21,12 @@
 - Made stream termination identity-safe and non-blocking: each exact turn is detached before transport cleanup, local HTTP/2 codec/open-stream state is released exactly once before remote close/cancel is awaited, stale cancellation/completion cannot affect a replacement turn, and message iterators receive idempotent `return()` finalization on success, error, caller abort, authority abort, or disposal. Adapter/session disposal bounds its cleanup grace and detaches never-settling cancellation, close, and iterator bookkeeping so shutdown cannot hang ([#1702](https://github.com/bastani-inc/atomic/issues/1702)).
 - Fixed forced refresh failures that settle after catalog expiry to unregister routes, clear the scoped cache, and report failed state instead of leaving an expired catalog executable ([#1702](https://github.com/bastani-inc/atomic/issues/1702)).
 
+## [0.9.9-alpha.3] - 2026-07-14
+
+### Changed
+
+- Published a synchronized Atomic 0.9.9-alpha.3 prerelease for the Cursor provider package; no functional Cursor provider changes were made after 0.9.9-alpha.2.
+
 ## [0.9.9-alpha.2] - 2026-07-14
 
 ### Changed
