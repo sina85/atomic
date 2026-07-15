@@ -3,7 +3,7 @@ import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
 import type { Store } from "../shared/store.js";
 import type { StageUiBroker } from "../shared/stage-ui-broker.js";
 import type { GraphTheme } from "./graph-theme.js";
-import type { StageControlRegistry } from "../runs/foreground/stage-control-registry.js";
+import type { StageControlHandle, StageControlRegistry } from "../runs/foreground/stage-control-registry.js";
 
 export interface AttachUiStatusSurface {
   setStatus?: (key: string, value: string | undefined) => void;
@@ -18,6 +18,15 @@ export interface WorkflowAttachPaneOpts {
    * the user attaches to a node. Defaults to the singleton registry.
    */
   stageControlRegistry?: StageControlRegistry;
+  /**
+   * Resolver that revives an interactive post-mortem chat handle for an
+   * eligible terminal agent stage that has a valid retained session but no
+   * process-local handle (generic attach/connect, restored/replayed durable
+   * snapshots). Returns `undefined` when the stage is not revivable, so the
+   * pane preserves the read-only transcript. Called only after a live
+   * `stageControlRegistry.get()` miss.
+   */
+  resolvePostMortemHandle?: (runId: string, stageId: string) => StageControlHandle | undefined;
   /** Broker used to route stage-local custom UI such as ask_user_question into attached chats. */
   stageUiBroker?: StageUiBroker;
   /**

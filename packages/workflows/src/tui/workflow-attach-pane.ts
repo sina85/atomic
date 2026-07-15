@@ -45,6 +45,7 @@ export class WorkflowAttachPane implements Component {
   private theme: GraphTheme;
   private runId: string | null;
   private registry: StageControlRegistry | undefined;
+  private resolvePostMortemHandle?: (runId: string, stageId: string) => StageControlHandle | undefined;
   private stageUiBroker: StageUiBroker | undefined;
   private uiStatus: AttachUiStatusSurface | undefined;
   private onClose: () => void;
@@ -82,7 +83,7 @@ export class WorkflowAttachPane implements Component {
     this.store = opts.store;
     this.theme = opts.graphTheme;
     this.runId = opts.runId;
-    this.registry = opts.stageControlRegistry;
+    this.registry = opts.stageControlRegistry; this.resolvePostMortemHandle = opts.resolvePostMortemHandle;
     this.stageUiBroker = opts.stageUiBroker;
     this.uiStatus = opts.uiStatus;
     this.onClose = opts.onClose;
@@ -175,7 +176,7 @@ export class WorkflowAttachPane implements Component {
         : 0;
     this.attachedRunId = runId;
     this.lastAttachedStageId = stageId;
-    const handle: StageControlHandle | undefined = this.registry?.get(runId, stageId);
+    const handle = this.registry?.get(runId, stageId) ?? this.resolvePostMortemHandle?.(runId, stageId);
     this.chatView?.dispose();
     let chatView!: StageChatView;
     chatView = new StageChatView({

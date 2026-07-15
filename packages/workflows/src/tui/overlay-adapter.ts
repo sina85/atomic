@@ -23,7 +23,7 @@ import { WORKFLOW_STATUS_KEY } from "./workflow-status.js";
 import { deriveGraphThemeFromPiTheme } from "./graph-theme.js";
 import { quitRun as defaultQuitRun } from "../runs/background/quit.js";
 import { stageControlRegistry as defaultStageControlRegistry } from "../runs/foreground/stage-control-registry.js";
-import type { StageControlRegistry } from "../runs/foreground/stage-control-registry.js";
+import type { StageControlHandle, StageControlRegistry } from "../runs/foreground/stage-control-registry.js";
 import type { StageUiBroker } from "../shared/stage-ui-broker.js";
 import type {
   PiCustomComponent,
@@ -130,6 +130,14 @@ export interface BuildGraphOverlayAdapterOpts {
    * Defaults to the singleton registry registered alongside the store.
    */
   stageControlRegistry?: StageControlRegistry;
+  /**
+   * Resolver that revives a post-mortem chat handle for an eligible terminal
+   * agent stage with a valid retained session but no process-local handle.
+   * Threaded into every `WorkflowAttachPane` so generic attach/connect and
+   * restored/replayed durable snapshots open as interactive follow-up chats
+   * instead of read-only archives. `undefined` results keep the archive.
+   */
+  resolvePostMortemHandle?: (runId: string, stageId: string) => StageControlHandle | undefined;
   /** Broker used to route stage-local custom UI into attached stage chats. */
   stageUiBroker?: StageUiBroker;
   /**
@@ -149,6 +157,7 @@ export function buildGraphOverlayAdapter(
   buildOpts: BuildGraphOverlayAdapterOpts = {},
 ): GraphOverlayPort {
   const registry = buildOpts.stageControlRegistry ?? defaultStageControlRegistry;
+  const resolvePostMortemHandle = buildOpts.resolvePostMortemHandle;
   const stageUiBroker = buildOpts.stageUiBroker;
   const terminalOutput = buildOpts.terminalOutput ?? {
     platform: process.platform,
@@ -367,6 +376,7 @@ export function buildGraphOverlayAdapter(
         graphTheme: deriveGraphThemeFromPiTheme(theme),
         runId,
         stageControlRegistry: registry,
+        resolvePostMortemHandle,
         stageUiBroker,
         uiStatus,
         onClose: finish,
