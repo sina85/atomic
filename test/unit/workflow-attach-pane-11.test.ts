@@ -13,11 +13,12 @@
 
 import { describe, test } from "bun:test";
 import assert from "node:assert/strict";
-import { createStore } from "../../packages/workflows/src/shared/store.js";
+import { createStore, store as globalStore } from "../../packages/workflows/src/shared/store.js";
 import { WorkflowAttachPane } from "../../packages/workflows/src/tui/workflow-attach-pane.js";
 import { deriveGraphTheme } from "../../packages/workflows/src/tui/graph-theme.js";
 import { createStageControlRegistry } from "../../packages/workflows/src/runs/foreground/stage-control-registry.js";
 import type { StageControlHandle } from "../../packages/workflows/src/runs/foreground/stage-control-registry.js";
+import { createPostMortemHandleResolver } from "../../packages/workflows/src/extension/postmortem-deps.js";
 import type { AgentSession } from "@bastani/atomic";
 function setupCompletedRun(store: ReturnType<typeof createStore>, runId: string) {
   store.recordRunStart({ id: runId, name: "test-wf", inputs: {}, status: "completed", stages: [], startedAt: 1 });
@@ -76,7 +77,7 @@ describe("WorkflowAttachPane post-mortem revival", () => {
       stageControlRegistry: registry,
       resolvePostMortemHandle: (runId, stageId) => {
         resolverCalls.push([runId, stageId]);
-        return makeHandle(runId, stageId, promptCalls);
+        return { ok: true, handle: makeHandle(runId, stageId, promptCalls) };
       },
       onClose: () => {},
       initialAttachStageId: "stage-a",
@@ -127,5 +128,43 @@ describe("WorkflowAttachPane post-mortem revival", () => {
     assert.equal(pane._mode, "stage-chat");
     assert.equal(pane._hasChatView, true);
     pane.dispose();
+  });
+
+  test("renders the post-mortem unavailability reason instead of a generic archive", () => {
+    const store = createStore();
+    setupCompletedRun(store, "run-1");
+    const pane = new WorkflowAttachPane({
+      store,
+      graphTheme: deriveGraphTheme({}),
+      runId: "run-1",
+      stageControlRegistry: createStageControlRegistry(),
+      resolvePostMortemHandle: () => ({ ok: false, reason: "invalid_session" }),
+      onClose: () => {},
+      initialAttachStageId: "stage-a",
+    });
+
+    const rendered = pane.render(96).join("\n");
+    assert.match(rendered, /SESSION UNAVAILABLE/);
+    assert.match(rendered, /missing, unreadable, or invalid/);
+    assert.doesNotMatch(rendered, /archived transcript/);
+    pane.dispose();
+  });
+
+  test.serial("the extension resolver preserves invalid-session reasons", () => {
+    globalStore.clear();
+    try {
+      setupCompletedRun(globalStore, "resolver-run");
+      const resolver = createPostMortemHandleResolver({
+        adapters: { agentSession: { async create() { throw new Error("must not create"); } } },
+        resolveDefaultStageSessionDir: () => undefined,
+      });
+
+      assert.deepEqual(
+        resolver("resolver-run", "stage-a"),
+        { ok: false, reason: "invalid_session" },
+      );
+    } finally {
+      globalStore.clear();
+    }
   });
 });

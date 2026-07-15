@@ -105,6 +105,40 @@ describe("ensurePostMortemStageHandle", () => {
     assert.equal(counter.creates, 1);
   });
 
+  test("disposes a pending lazy session when the registry is cleared", async () => {
+    const registry = createStageControlRegistry();
+    const sessionFile = retainedSession("clear-race");
+    const created = Promise.withResolvers<StageSessionRuntime>();
+    let disposeCalls = 0;
+    const session: StageSessionRuntime = {
+      ...mockSession(),
+      sessionFile,
+      dispose() { disposeCalls += 1; },
+    };
+    const stage = completedStage({ sessionFile });
+    const result = ensurePostMortemStageHandle("run-1", stage, {
+      registry,
+      adapters: {
+        agentSession: {
+          async create() { return created.promise; },
+        },
+      },
+      cwd: tempDir,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+
+    const attaching = result.handle.ensureAttached();
+    await Promise.resolve();
+    registry.clear();
+    created.resolve(session);
+
+    await assert.rejects(attaching, /session has been disposed/);
+    assert.equal(disposeCalls, 1);
+    assert.equal(result.handle.isDisposed, true);
+    assert.deepEqual(registry.forRun("run-1"), []);
+  });
+
   test("rejects post-mortem pause and resume without appending a prompt", async () => {
     const registry = createStageControlRegistry();
     const sessionFile = retainedSession("no-resume");

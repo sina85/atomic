@@ -29,15 +29,6 @@ import {
 
 export type { WorkflowRunControlDeps } from "./workflow-durable-resume-command.js";
 
-function resolveAttachStageId(runId: string, stageTarget: string | undefined): string | undefined | false {
-  if (!stageTarget) return undefined;
-  const run = store.runs().find((r) => r.id === runId);
-  if (!run) return undefined;
-  const exact = run.stages.find((s) => s.id === stageTarget);
-  const prefix = exact ?? run.stages.find((s) => s.id.startsWith(stageTarget));
-  const byName = prefix ?? run.stages.find((s) => s.name === stageTarget);
-  return byName?.id ?? false;
-}
 
 
 export async function handleRunControlCommand(
@@ -353,11 +344,12 @@ export async function handleRunControlCommand(
       runId = resolved.runId;
     }
     if (action === "attach") {
-      const stageId = resolveAttachStageId(runId, stageTarget);
-      if (stageId === false) {
-        fail(`Stage not found in run ${runId.slice(0, 8)}: ${stageTarget}`);
+      const resolvedStage = resolveStageTarget(runId, stageTarget);
+      if (!resolvedStage.ok) {
+        fail(resolvedStage.message);
         return true;
       }
+      const stageId = resolvedStage.stageId;
       if (failHeadlessAttachCommand("attach", runId, stageId)) return true;
       if (policy.allowInputPicker) deps.overlay.open(runId, overlaySurfaceFromContext(ctx), stageId);
       print(stageId ? `Attached to ${runId.slice(0, 8)} stage ${stageId.slice(0, 8)}. ctrl+d return to graph · esc close.` : `Attached to ${runId.slice(0, 8)}. ↵ chat · ctrl+d detach.`);

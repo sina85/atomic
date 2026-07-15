@@ -268,6 +268,71 @@ describe("/workflow resume <runId> — exact live fast path", () => {
     });
 });
 
+describe("/workflow attach <rootRunId> <nestedStageId>", () => {
+    test.serial("routes an explicit nested stage through the root graph overlay", async () => {
+        const rootRunId = `attach-root-${Date.now()}`;
+        const childRunId = `attach-child-${Date.now()}`;
+        const nestedStageId = "nested-review";
+        store.recordRunStart({
+            ...makeInflightRun(rootRunId),
+            stages: [{
+                id: "workflow:child",
+                name: "child",
+                status: "completed",
+                parentIds: [],
+                startedAt: Date.now(),
+                endedAt: Date.now(),
+                toolEvents: [],
+                workflowChild: {
+                    alias: "child",
+                    workflow: "child-workflow",
+                    runId: childRunId,
+                    status: "completed",
+                    outputs: {},
+                },
+            }],
+        });
+        store.recordRunStart({
+            ...makeInflightRun(childRunId),
+            parentRunId: rootRunId,
+            rootRunId,
+            stages: [{
+                id: nestedStageId,
+                name: "review",
+                status: "completed",
+                parentIds: [],
+                startedAt: Date.now(),
+                endedAt: Date.now(),
+                toolEvents: [],
+                sessionFile: "/tmp/nested-review.jsonl",
+            }],
+        });
+
+        let overlayOpens = 0;
+        const notifications: string[] = [];
+        const { pi, commands } = buildMockPi();
+        addFactoryStubs(pi);
+        pi.ui = {
+            notify: (message: string) => { notifications.push(message); },
+            setWidget: () => {},
+            custom: () => {
+                overlayOpens += 1;
+                return undefined;
+            },
+        };
+        const factoryModule = await import("../../packages/workflows/src/extension/index.js");
+        factoryModule.default(pi);
+        const handler = commands.find((command) => command.name === "workflow")!.options.handler;
+
+        await handler(`attach ${rootRunId} ${nestedStageId}`, { hasUI: true, ui: pi.ui });
+
+        assert.equal(overlayOpens, 1);
+        const content = notifications.join("\n");
+        assert.match(content, /Attached to .* stage nested-r/);
+        assert.doesNotMatch(content, /Stage not found/);
+    });
+});
+
 // ---------------------------------------------------------------------------
 // resume regression: tool action "resume" against active run returns status:"ok"
 // ---------------------------------------------------------------------------

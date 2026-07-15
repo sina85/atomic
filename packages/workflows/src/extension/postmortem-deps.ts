@@ -16,10 +16,10 @@ import { store } from "../shared/store.js";
 import { getDurableBackend } from "../durable/factory.js";
 import {
   ensurePostMortemStageHandle,
+  type EnsurePostMortemStageHandleResult,
   type PostMortemStageChatDeps,
 } from "../runs/foreground/postmortem-stage-chat.js";
 import { stageControlRegistry } from "../runs/foreground/stage-control-registry.js";
-import type { StageControlHandle } from "../runs/foreground/stage-control-registry.js";
 import type { StageAdapters } from "../runs/foreground/stage-runner.js";
 
 export interface PostMortemResolverDeps {
@@ -51,18 +51,17 @@ export function postMortemDepsForRun(
 }
 
 /**
- * Build a `(runId, stageId) => handle | undefined` resolver for the attach pane.
- * Returns `undefined` when the stage is unknown or not revivable so the pane
- * keeps its read-only transcript fallback.
+ * Build a `(runId, stageId) => result | undefined` resolver for the attach pane.
+ * Unknown stages return `undefined`; known but non-revivable stages retain the
+ * resolver's explicit reason so the pane can explain why chat is unavailable.
  */
 export function createPostMortemHandleResolver(
   deps: PostMortemResolverDeps,
-): (runId: string, stageId: string) => StageControlHandle | undefined {
+): (runId: string, stageId: string) => EnsurePostMortemStageHandleResult | undefined {
   return (runId, stageId) => {
     const run = store.snapshot().runs.find((candidate) => candidate.id === runId);
     const stage = run?.stages.find((candidate) => candidate.id === stageId);
     if (stage === undefined) return undefined;
-    const result = ensurePostMortemStageHandle(runId, stage, postMortemDepsForRun(runId, deps));
-    return result.ok ? result.handle : undefined;
+    return ensurePostMortemStageHandle(runId, stage, postMortemDepsForRun(runId, deps));
   };
 }

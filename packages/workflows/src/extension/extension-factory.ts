@@ -16,7 +16,7 @@ import { registerWorkflowLifecycleHandlers } from "./extension-lifecycle.js";
 import { dynamicTextRenderComponent } from "./render-component.js";
 import { makeExecuteWorkflowTool } from "./workflow-tool.js";
 import { createPostMortemHandleResolver, postMortemDepsForRun } from "./postmortem-deps.js";
-import type { StageControlHandle } from "../runs/foreground/stage-control-registry.js";
+import type { PostMortemHandleResolution } from "../tui/workflow-attach-pane-types.js";
 import { registerWorkflowTool } from "./workflow-tool-registration.js";
 import { registerWorkflowSlashCommand } from "./workflow-command-registration.js";
 import { installInputInterceptor, type WorkflowCommandHandler } from "./workflow-command-utils.js";
@@ -36,7 +36,7 @@ function registerWorkflowMessageRenderers(pi: ExtensionAPI): void {
 
 function buildWorkflowOverlay(
   pi: ExtensionAPI,
-  resolvePostMortemHandle: (runId: string, stageId: string) => StageControlHandle | undefined,
+  resolvePostMortemHandle: (runId: string, stageId: string) => PostMortemHandleResolution,
 ): GraphOverlayPort {
   return buildGraphOverlayAdapter(pi, store, {
     resolvePostMortemHandle,
