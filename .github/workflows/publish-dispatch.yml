@@ -50,7 +50,11 @@ jobs:
                     if [[ "$attempt" -lt 6 ]]; then sleep 10; fi
                   done
 
-                  gh workflow run publish.yml --ref main -f "tag=${RELEASE_TAG}"
+                  dispatch_status=0
+                  gh workflow run publish.yml --ref main -f "tag=${RELEASE_TAG}" || dispatch_status=$?
+                  if [[ "$dispatch_status" -ne 0 ]]; then
+                    echo "Publish dispatch returned status ${dispatch_status}; acceptance is ambiguous, so retaining the per-tag lock until observable." >&2
+                  fi
                   until [[ "$(count_existing)" -gt 0 ]]; do
                     echo "Accepted Publish ${RELEASE_TAG} dispatch is not observable yet; retaining the per-tag lock."
                     sleep 10

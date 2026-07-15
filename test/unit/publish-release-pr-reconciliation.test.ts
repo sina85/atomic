@@ -480,8 +480,13 @@ describe("publish-release tag and dispatch recovery", () => {
     const observableIndex = coordinator.indexOf('until [[ "$(count_existing)" -gt 0 ]]', dispatchIndex);
     const releaseIndex = coordinator.indexOf("releasing the per-tag lock", observableIndex);
     assert.match(coordinator, /lookup failed; retaining the per-tag lock and retrying\." >&2/u);
+    assert.match(coordinator, /gh workflow run publish\.yml --ref main .* \|\| dispatch_status=\$\?/u);
+    assert.equal(coordinator.match(/gh workflow run publish\.yml/g)?.length, 1);
+    const ambiguousIndex = coordinator.indexOf("acceptance is ambiguous", dispatchIndex);
     assert.ok(dispatchIndex >= 0);
     assert.ok(observableIndex > dispatchIndex);
+    assert.ok(ambiguousIndex > dispatchIndex);
+    assert.ok(observableIndex > ambiguousIndex);
     assert.ok(releaseIndex > observableIndex);
 
     for (const path of ["AGENTS.md", "docs/ci.md", "scripts/cut-release.ts"]) {
