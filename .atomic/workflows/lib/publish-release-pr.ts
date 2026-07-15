@@ -122,10 +122,28 @@ function rollupCheckWorkflow(value: JsonValue): string | undefined {
   if (!isJsonObject(value)) return undefined;
   return stringField(value, "workflowName");
 }
+function isStatusContext(value: JsonValue): boolean {
+  if (!isJsonObject(value)) return false;
+  return stringField(value, "__typename") === "StatusContext"
+    || stringField(value, "context") !== undefined;
+}
 
-function isRequiredContext(value: JsonValue, name: string, workflow: string | undefined): boolean {
-  return rollupCheckName(value) === name
-    && (workflow === undefined || rollupCheckWorkflow(value) === workflow);
+
+function isRequiredContext(
+  value: JsonValue,
+  name: string,
+  workflow: string | undefined,
+  link: string | undefined,
+  externalStatus: boolean,
+): boolean {
+  if (rollupCheckName(value) !== name) return false;
+  if (workflow !== undefined) return rollupCheckWorkflow(value) === workflow;
+  if (externalStatus) {
+    return isStatusContext(value)
+      && (link === undefined || rollupCheckLink(value) === link);
+  }
+  if (link !== undefined) return rollupCheckLink(value) === link;
+  return true;
 }
 
 function rollupCheckPassed(value: JsonValue): boolean {
@@ -157,18 +175,18 @@ export function verifyPullRequestChecksForHeadJson(
       : undefined;
     const link = isJsonObject(required) ? stringField(required, "link") : undefined;
     const workflow = isJsonObject(required) ? stringField(required, "workflow") : undefined;
+    const externalStatus = isJsonObject(required) && required.workflow === "";
     if (name === undefined) {
       failures.push(`required check[${index}] had no name`);
       continue;
     }
-    const sameContext = available.filter((candidate) => isRequiredContext(candidate.check, name, workflow));
+    const sameContext = available.filter((candidate) => isRequiredContext(candidate.check, name, workflow, link, externalStatus));
     if (sameContext.some((candidate) => !rollupCheckPassed(candidate.check))) {
       failures.push(`required check ${name} had a pending or failing rerun in the captured head status rollup`);
       continue;
     }
     const match = available.find((candidate) => !candidate.used
-      && isRequiredContext(candidate.check, name, workflow)
-      && (link === undefined || rollupCheckLink(candidate.check) === link)
+      && isRequiredContext(candidate.check, name, workflow, link, externalStatus)
       && rollupCheckPassed(candidate.check));
     if (match === undefined) failures.push(`required check ${name} was not passing in the captured head status rollup`);
     else match.used = true;

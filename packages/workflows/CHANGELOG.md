@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Hardened repository release recovery so externally merged PRs require exact current identity, refs, SHA, required checks, merge evidence, and retained branch state. Required reruns are correlated by check name and workflow identity, preserving same-named optional jobs, and checks refresh after merge. Tag recovery proves `verified merge → tag parent → current base`; unfiltered exhaustive dispatch reconciliation runs under a protected per-tag coordinator that keeps its lock until accepted or ambiguously acknowledged dispatches become observable; and recovered success is bound to the exact tag SHA reported by the protected integrity job.
+- Hardened repository release recovery so externally merged PRs require exact current identity, refs, SHA, checks, merge evidence, and retained branch state. Required Actions reruns use name plus workflow identity; external checks require matching `StatusContext` identity and exact target link when present, preventing same-named optional substitution; checks refresh after merge. Tag recovery proves `verified merge → tag parent → current base`; exhaustive dispatch reconciliation retains a protected per-tag lock through ambiguous acceptance visibility; and recovered success is bound to the exact integrity-job tag SHA.
 
 ## [0.9.9] - 2026-07-15
 

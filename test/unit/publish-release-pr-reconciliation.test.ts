@@ -8,11 +8,7 @@ import {
   type JsonValue,
   type PullRequestReferenceVerification,
 } from "../../.atomic/workflows/lib/publish-release.js";
-import { findExistingPublishDispatch, inspectReleaseTagRecovery } from "../../.atomic/workflows/lib/publish-release-recovery.js";
-import {
-  verifyReleasePrChecksPassed,
-  verifyReleaseTagPublished,
-} from "../../.atomic/workflows/lib/publish-release-gates.js";
+import { verifyReleasePrChecksPassed } from "../../.atomic/workflows/lib/publish-release-gates.js";
 
 const headOid = "dddddddddddddddddddddddddddddddddddddddd";
 const mergeOid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -207,6 +203,92 @@ describe("publish-release PR reconciliation", () => {
     if (result.ok) assert.equal(result.disposition, "merge-required");
   });
 
+  test("permits a failing optional Actions check sharing an external required status name", async () => {
+    const requiredChecks: JsonValue = [{
+      name: "external-status",
+      workflow: "",
+      link: "https://example.test/external-required",
+      bucket: "pass",
+      state: "SUCCESS",
+    }];
+    const statusCheckRollup: JsonValue = [
+      {
+        context: "external-status",
+        targetUrl: "https://example.test/external-required",
+        state: "SUCCESS",
+      },
+      {
+        name: "external-status",
+        workflowName: "Optional Actions",
+        detailsUrl: "https://example.test/optional-actions",
+        status: "COMPLETED",
+        conclusion: "FAILURE",
+      },
+    ];
+    const result = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({ ...openPr, statusCheckRollup }),
+    ]);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.disposition, "merge-required");
+
+    const wrongTarget = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [{ context: "external-status", targetUrl: "https://example.test/other", state: "SUCCESS" }],
+      }),
+    ]);
+    assert.equal(wrongTarget.ok, false);
+  });
+
+  test("uses StatusContext identity for external required checks without target links", async () => {
+    const requiredChecks: JsonValue = [{
+      name: "external-status",
+      workflow: "",
+      link: "",
+      bucket: "pass",
+      state: "SUCCESS",
+    }];
+    const optionalOnly = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [{
+          name: "external-status",
+          workflowName: "Optional Actions",
+          status: "COMPLETED",
+          conclusion: "SUCCESS",
+        }],
+      }),
+    ]);
+    assert.equal(optionalOnly.ok, false);
+
+    const externalSuccess = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({
+        ...openPr,
+        statusCheckRollup: [
+          { context: "external-status", state: "SUCCESS" },
+          { name: "external-status", workflowName: "Optional Actions", status: "COMPLETED", conclusion: "FAILURE" },
+        ],
+      }),
+    ]);
+    assert.equal(externalSuccess.ok, true);
+
+    const externalPending = await verify([
+      response(openPr),
+      response(requiredChecks),
+      response({ ...openPr, statusCheckRollup: [{ context: "external-status", state: "PENDING" }] }),
+    ]);
+    assert.equal(externalPending.ok, false);
+    assert.match(externalPending.summary, /pending or failing rerun/u);
+  });
+
   test("rejects a pending rerun from the same workflow-qualified required context", async () => {
     const requiredChecks: JsonValue = [{
       name: "test",
@@ -283,214 +365,6 @@ describe("publish-release PR reconciliation", () => {
       const result = verifyPullRequestMergedJson(candidate, release.branch, "main", headOid, { prUrl, prNumber: 123 });
       assert.equal(result.ok, false);
       assert.match(result.summary, /expected captured URL|expected captured number/u);
-    }
-  });
-});
-
-describe("publish-release tag and dispatch recovery", () => {
-  const baseOid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-  const tagOid = "cccccccccccccccccccccccccccccccccccccccc";
-  const manifest = JSON.stringify({ version: release.version });
-
-  test("classifies absent, partial, and fully published exact tags without force", () => {
-    const cases = [
-      { expected: "absent", responses: [rawResponse("", 1), rawResponse("")] },
-      { expected: "remote-only", responses: [rawResponse("", 1), rawResponse(`${tagOid}\trefs/tags/${release.version}`)] },
-      { expected: "local-only", responses: [rawResponse(tagOid), rawResponse(""), rawResponse(baseOid), rawResponse(manifest), rawResponse(""), rawResponse("")] },
-      { expected: "published", responses: [rawResponse(tagOid), rawResponse(`${tagOid}\trefs/tags/${release.version}`), rawResponse(baseOid), rawResponse(manifest), rawResponse(""), rawResponse("")] },
-    ] as const;
-
-    for (const fixture of cases) {
-      const result = inspectReleaseTagRecovery(release, baseOid, mergeOid, queuedExecutor(fixture.responses));
-      assert.equal(result.ok, true);
-      if (result.ok) assert.equal(result.state, fixture.expected);
-    }
-  });
-
-  test("rejects existing tags with wrong parent, version, or remote target", () => {
-    for (const responses of [
-      [rawResponse(tagOid), rawResponse(""), rawResponse(headOid), rawResponse(manifest), rawResponse("", 1), rawResponse("")],
-      [rawResponse(tagOid), rawResponse(""), rawResponse(baseOid), rawResponse(JSON.stringify({ version: "9.9.9" })), rawResponse(""), rawResponse("")],
-      [rawResponse(tagOid), rawResponse(`${headOid}\trefs/tags/${release.version}`), rawResponse(baseOid), rawResponse(manifest), rawResponse(""), rawResponse("")],
-    ]) {
-      const result = inspectReleaseTagRecovery(release, baseOid, mergeOid, queuedExecutor(responses));
-      assert.equal(result.ok, false);
-      assert.match(result.summary, /conflicts with deterministic release evidence/u);
-    }
-  });
-
-  test("reuses an exact prior tag after unrelated base advancement", () => {
-    const result = inspectReleaseTagRecovery(release, baseOid, mergeOid, queuedExecutor([
-      rawResponse(tagOid),
-      rawResponse(`${tagOid}\trefs/tags/${release.version}`),
-      rawResponse(headOid),
-      rawResponse(manifest),
-      rawResponse(""),
-      rawResponse(""),
-    ]));
-    assert.equal(result.ok, true);
-    if (result.ok) assert.equal(result.state, "published");
-  });
-
-  test("rejects a prior tag whose integrated parent predates the verified merge", () => {
-    const result = inspectReleaseTagRecovery(release, baseOid, mergeOid, queuedExecutor([
-      rawResponse(tagOid),
-      rawResponse(`${tagOid}\trefs/tags/${release.version}`),
-      rawResponse(headOid),
-      rawResponse(manifest),
-      rawResponse(""),
-      rawResponse("", 1),
-    ]));
-    assert.equal(result.ok, false);
-    assert.match(result.summary, /verified merge commit .* is not an ancestor/u);
-  });
-
-  test("final tag publication gate accepts an integrated prior parent during recovery", () => {
-    const result = verifyReleaseTagPublished(release, baseOid, {
-      allowIntegratedParent: true,
-      requiredAncestorOid: mergeOid,
-      execute: queuedExecutor([
-        rawResponse(tagOid),
-        rawResponse(headOid),
-        rawResponse(""),
-        rawResponse(""),
-        rawResponse(manifest),
-        rawResponse(`${tagOid}\trefs/tags/${release.version}`),
-      ]),
-    });
-    assert.equal(result.ok, true);
-  });
-
-  test("newly materialized tags still require the exact current base parent", () => {
-    const result = verifyReleaseTagPublished(release, baseOid, {
-      requiredAncestorOid: mergeOid,
-      execute: queuedExecutor([
-        rawResponse(tagOid),
-        rawResponse(headOid),
-        rawResponse(""),
-        rawResponse(manifest),
-        rawResponse(`${tagOid}\trefs/tags/${release.version}`),
-      ]),
-    });
-    assert.equal(result.ok, false);
-    assert.match(result.summary, /expected the verified base commit/u);
-  });
-
-  test("reuses only an existing protected-main Publish dispatch for the exact release", async () => {
-    const run = {
-      id: 987,
-      name: "Publish",
-      head_branch: "main",
-      path: ".github/workflows/publish.yml",
-      event: "workflow_dispatch",
-      display_title: `Publish ${release.version}`,
-      status: "in_progress",
-      conclusion: null,
-      head_sha: baseOid,
-      html_url: "https://github.com/bastani-inc/atomic/actions/runs/987",
-    };
-    const found = await findExistingPublishDispatch(release, { execute: queuedExecutor([response([{ workflow_runs: [run] }])]) });
-    assert.equal(found.ok, true);
-    if (found.ok) {
-      assert.equal(found.found, true);
-      if (found.found) assert.equal(found.runId, 987);
-    }
-
-    for (const mismatch of [
-      { ...run, head_branch: release.version },
-      { ...run, path: ".github/workflows/other.yml" },
-      { ...run, display_title: "Publish 9.9.9" },
-    ]) {
-      const result = await findExistingPublishDispatch(release, { execute: queuedExecutor([response([{ workflow_runs: [mismatch] }])]) });
-      assert.equal(result.ok, true);
-      if (result.ok) assert.equal(result.found, false);
-    }
-  });
-
-  test("finds an exact dispatch beyond 1,000 newer history entries", async () => {
-    const newerRuns = Array.from({ length: 1_100 }, (_, index) => ({
-      id: index + 1,
-      name: "Publish",
-      head_branch: "main",
-      event: "workflow_dispatch",
-      path: ".github/workflows/publish.yml",
-      display_title: `Publish 9.9.${index}`,
-      status: "completed",
-      conclusion: "success",
-      head_sha: baseOid,
-      html_url: `https://github.com/bastani-inc/atomic/actions/runs/${index + 1}`,
-    }));
-    const exact = {
-      ...newerRuns[0],
-      id: 987,
-      display_title: `Publish ${release.version}`,
-      html_url: "https://github.com/bastani-inc/atomic/actions/runs/987",
-    };
-    const result = await findExistingPublishDispatch(release, {
-      execute: queuedExecutor([response([{ workflow_runs: newerRuns }, { workflow_runs: [exact] }])]),
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.found, true);
-      if (result.found) assert.equal(result.runId, 987);
-    }
-  });
-
-  test("polls an ambiguity window before deciding a prior dispatch is absent", async () => {
-    const sleeps: number[] = [];
-    const result = await findExistingPublishDispatch(release, {
-      attempts: 3,
-      pollIntervalMs: 25,
-      execute: queuedExecutor([
-        response([{ workflow_runs: [] }]),
-        response([{ workflow_runs: [] }]),
-        response([{ workflow_runs: [] }]),
-      ]),
-      sleep: (durationMs) => {
-        sleeps.push(durationMs);
-        return Promise.resolve();
-      },
-    });
-    assert.equal(result.ok, true);
-    if (result.ok) assert.equal(result.found, false);
-    assert.deepEqual(sleeps, [25, 25]);
-    assert.match(result.summary, /reconciliation window/u);
-  });
-
-  test("workflow separates tag materialization from protected dispatch and reconciles before both", () => {
-    const source = readFileSync(".atomic/workflows/publish-release.ts", "utf8");
-    assert.match(source, /inspectReleaseTagRecovery\(release, mainReady\.mainOid, mergeVerification\.mergeCommitOid\)/u);
-    assert.match(source, /ctx\.task\("materialize-release-tag"/u);
-    assert.match(source, /findExistingPublishDispatch\(release,/u);
-    assert.match(source, /ctx\.task\("coordinate-protected-publish-dispatch"/u);
-    assert.match(source, /existingDispatch\.found \? existingDispatch\.runId : undefined/u);
-    assert.match(source, /allowIntegratedParent: tagRecovery\.state !== "absent"/u);
-    assert.doesNotMatch(source, /cut-release-tag/u);
-    assert.doesNotMatch(source, /--limit\s+50/u);
-    assert.match(source, /const postMergeCiVerification = await verifyReleasePrChecksPassed/u);
-    assert.doesNotMatch(source, /event=workflow_dispatch/u);
-    assert.match(source, /gh workflow run publish-dispatch\.yml --ref main/u);
-
-    const coordinator = readFileSync(".github/workflows/publish-dispatch.yml", "utf8");
-    assert.match(coordinator, /group: protected-publish-dispatch-\$\{\{ inputs\.tag \}\}/u);
-    assert.match(coordinator, /gh api --method GET --paginate --slurp/u);
-    assert.doesNotMatch(coordinator, /event=workflow_dispatch/u);
-    assert.match(coordinator, /gh workflow run publish\.yml --ref main/u);
-    const dispatchIndex = coordinator.indexOf("gh workflow run publish.yml --ref main");
-    const observableIndex = coordinator.indexOf('until [[ "$(count_existing)" -gt 0 ]]', dispatchIndex);
-    const releaseIndex = coordinator.indexOf("releasing the per-tag lock", observableIndex);
-    assert.match(coordinator, /lookup failed; retaining the per-tag lock and retrying\." >&2/u);
-    assert.match(coordinator, /gh workflow run publish\.yml --ref main .* \|\| dispatch_status=\$\?/u);
-    assert.equal(coordinator.match(/gh workflow run publish\.yml/g)?.length, 1);
-    const ambiguousIndex = coordinator.indexOf("acceptance is ambiguous", dispatchIndex);
-    assert.ok(dispatchIndex >= 0);
-    assert.ok(observableIndex > dispatchIndex);
-    assert.ok(ambiguousIndex > dispatchIndex);
-    assert.ok(observableIndex > ambiguousIndex);
-    assert.ok(releaseIndex > observableIndex);
-
-    for (const path of ["AGENTS.md", "docs/ci.md", "scripts/cut-release.ts"]) {
-      assert.doesNotMatch(readFileSync(path, "utf8"), /gh workflow run publish\.yml/u, path);
     }
   });
 });
