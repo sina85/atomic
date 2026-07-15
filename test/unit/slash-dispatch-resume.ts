@@ -270,6 +270,22 @@ describe("/workflow resume <runId> — exact live fast path", () => {
 
 describe("/workflow attach <rootRunId> <nestedStageId>", () => {
     test.serial("routes an explicit nested stage through the root graph overlay", async () => {
+        let overlayOpens = 0;
+        const notifications: string[] = [];
+        const { pi, commands } = buildMockPi();
+        addFactoryStubs(pi);
+        pi.ui = {
+            notify: (message: string) => { notifications.push(message); },
+            setWidget: () => {},
+            custom: () => {
+                overlayOpens += 1;
+                return undefined;
+            },
+        };
+        const factoryModule = await import("../../packages/workflows/src/extension/index.js");
+        factoryModule.default(pi);
+        const handler = commands.find((command) => command.name === "workflow")!.options.handler;
+
         const rootRunId = `attach-root-${Date.now()}`;
         const childRunId = `attach-child-${Date.now()}`;
         const nestedStageId = "nested-review";
@@ -307,22 +323,6 @@ describe("/workflow attach <rootRunId> <nestedStageId>", () => {
                 sessionFile: "/tmp/nested-review.jsonl",
             }],
         });
-
-        let overlayOpens = 0;
-        const notifications: string[] = [];
-        const { pi, commands } = buildMockPi();
-        addFactoryStubs(pi);
-        pi.ui = {
-            notify: (message: string) => { notifications.push(message); },
-            setWidget: () => {},
-            custom: () => {
-                overlayOpens += 1;
-                return undefined;
-            },
-        };
-        const factoryModule = await import("../../packages/workflows/src/extension/index.js");
-        factoryModule.default(pi);
-        const handler = commands.find((command) => command.name === "workflow")!.options.handler;
 
         await handler(`attach ${rootRunId} ${nestedStageId}`, { hasUI: true, ui: pi.ui });
 
