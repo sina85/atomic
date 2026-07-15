@@ -299,11 +299,15 @@ export async function handleRunControlCommand(
         fail(`Workflow ${exactBeforePreparation.id.slice(0, 8)} is already running in this session. Attach with \`/workflow connect ${exactBeforePreparation.id.slice(0, 8)}\` instead of resuming.`);
         return true;
       }
+      const exactLocalResolution = exactBeforePreparation !== undefined
+        && backend.isWorkflowLoadable(exactBeforePreparation.id)
+        ? resolveWorkflowResumeTarget(target, [exactBeforePreparation], [], [])
+        : undefined;
       let durable: readonly ResumableWorkflowEntry[] = [];
       let preparationError: string | undefined;
-      const needsDurablePreparation = exactBeforePreparation === undefined
+      const needsDurablePreparation = exactLocalResolution?.kind !== "live" && (exactBeforePreparation === undefined
         || (!backend.isWorkflowLoadable(exactBeforePreparation.id)
-          && (!exactHasPausedState || backend.hydrateResumableWorkflows !== undefined));
+          && (!exactHasPausedState || backend.hydrateResumableWorkflows !== undefined)));
       if (needsDurablePreparation) {
         await ensureWorkflowResourcesVisible();
         const runtime = deps.runtimeForContext(ctx);
@@ -314,7 +318,9 @@ export async function handleRunControlCommand(
         }
       }
       const loadableRuns = topLevelWorkflowRuns(store.runs()).filter((run) => backend.isWorkflowLoadable(run.id));
-      const combined = resolveWorkflowResumeTarget(target, loadableRuns, durable, backend.listCompletedWorkflows());
+      const combined = exactLocalResolution?.kind === "live"
+        ? exactLocalResolution
+        : resolveWorkflowResumeTarget(target, loadableRuns, durable, backend.listCompletedWorkflows());
       if (combined.kind === "ambiguous") {
         fail(`Ambiguous workflow prefix "${target}" matches: ${combined.matches.map((match) => `${match.name} (${match.workflowId.slice(0, 8)})`).join(", ")}`);
         return true;
