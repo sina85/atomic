@@ -1,11 +1,12 @@
-import { readFileSync, statSync } from "node:fs";
 import type { RunSnapshot, StageSnapshot } from "../shared/store-types.js";
 import type { WorkflowInputValues } from "../shared/types.js";
+import { isReopenableSessionTranscript } from "../shared/session-transcript.js";
 import type { DurableWorkflowBackend } from "./backend.js";
-import type {
-  DurableCheckpoint,
-  DurableStageCheckpoint,
-  ResumableWorkflowEntry,
+import {
+  DURABLE_STAGE_TOPOLOGY_VERSION,
+  type DurableCheckpoint,
+  type DurableStageCheckpoint,
+  type ResumableWorkflowEntry,
 } from "./types.js";
 import { resolveDurableEntry } from "./resume-runtime.js";
 
@@ -15,15 +16,6 @@ export type CompletedWorkflowResolution =
   | { readonly kind: "not_found" }
   | { readonly kind: "stale"; readonly entry: ResumableWorkflowEntry };
 
-interface SessionTranscriptEntry {
-  readonly type?: string;
-  readonly id?: string;
-  readonly timestamp?: string;
-  readonly message?: {
-    readonly role?: string;
-    readonly content?: string | object;
-  };
-}
 
 interface StageDraft {
   readonly replayKey: string;
@@ -40,6 +32,7 @@ interface StageDraft {
   readonly fastMode?: boolean;
   readonly attemptedModels?: readonly string[];
   readonly modelAttempts?: DurableStageCheckpoint["modelAttempts"];
+  readonly topology?: DurableStageCheckpoint["topology"];
 }
 
 /** Authoritative completed rows. This path is deliberately separate from resumability. */
@@ -109,49 +102,6 @@ function validatedStageTranscript(stage: StageSnapshot): StageSnapshot {
   return withoutSessionFile;
 }
 
-function isReopenableSessionTranscript(path: string): boolean {
-  try {
-    const stats = statSync(path);
-    if (!stats.isFile() || stats.size === 0) return false;
-    const lines = readFileSync(path, "utf8").split("\n").filter((line) => line.trim().length > 0);
-    if (lines.length < 2) return false;
-    const entries: SessionTranscriptEntry[] = [];
-    for (const line of lines) {
-      const parsed = JSON.parse(line) as object;
-      if (typeof parsed !== "object" || parsed === null) return false;
-      entries.push(parsed as SessionTranscriptEntry);
-    }
-    const header = entries[0];
-    return header?.type === "session" && typeof header.id === "string" && entries.some(isUsableContextMessage);
-  } catch {
-    return false;
-  }
-}
-
-function isUsableContextMessage(entry: SessionTranscriptEntry): boolean {
-  return entry.type === "message"
-    && typeof entry.id === "string"
-    && typeof entry.timestamp === "string"
-    && typeof entry.message?.role === "string"
-    && hasUsableMessageContent(entry.message.content);
-}
-
-function hasUsableMessageContent(content: string | object | undefined): boolean {
-  if (typeof content === "string") return content.trim().length > 0;
-  return Array.isArray(content) && content.some(hasUsableContentBlock);
-}
-
-function hasUsableContentBlock(block: object): boolean {
-  if (typeof block !== "object" || block === null) return false;
-  const contentBlock = block as {
-    readonly text?: string;
-    readonly thinking?: string;
-    readonly data?: string;
-    readonly name?: string;
-  };
-  return [contentBlock.text, contentBlock.thinking, contentBlock.data, contentBlock.name]
-    .some((value) => typeof value === "string" && value.trim().length > 0);
-}
 
 function stageSnapshotsFromCheckpoints(
   checkpoints: readonly DurableCheckpoint[],
@@ -165,7 +115,7 @@ function stageSnapshotsFromCheckpoints(
   }
   const ordered = [...drafts.values()].sort((a, b) => a.firstCompletedAt - b.firstCompletedAt);
   if (ordered.length === 0) return [syntheticCheckpointStage(checkpoints.length, fallbackCompletedAt)];
-  return ordered.map(stageSnapshotFromDraft);
+  return stageSnapshotsFromDrafts(ordered);
 }
 
 function mergeStageDraft(
@@ -187,6 +137,7 @@ function mergeStageDraft(
     ...valueOrExisting("fastMode", checkpoint, existing),
     ...valueOrExisting("attemptedModels", checkpoint, existing),
     ...valueOrExisting("modelAttempts", checkpoint, existing),
+    ...valueOrExisting("topology", checkpoint, existing),
   };
 }
 
@@ -199,14 +150,47 @@ function valueOrExisting<
   return existingValue === undefined ? {} : { [key]: existingValue } as Pick<StageDraft, K>;
 }
 
-function stageSnapshotFromDraft(draft: StageDraft, index: number): StageSnapshot {
+function stageSnapshotsFromDrafts(drafts: readonly StageDraft[]): StageSnapshot[] {
+  const reconstructedIds = drafts.map((_, index) => `completed-stage-${index + 1}`);
+  const sourceToReconstructed = new Map<string, string>();
+  let topologyAvailable = drafts.every((draft) => draft.topology?.version === DURABLE_STAGE_TOPOLOGY_VERSION);
+  for (let index = 0; topologyAvailable && index < drafts.length; index += 1) {
+    const sourceId = drafts[index]!.topology!.stageId;
+    if (sourceToReconstructed.has(sourceId)) {
+      topologyAvailable = false;
+      break;
+    }
+    sourceToReconstructed.set(sourceId, reconstructedIds[index]!);
+  }
+  if (topologyAvailable) {
+    topologyAvailable = drafts.every((draft) =>
+      draft.topology!.parentIds.every((parentId) => sourceToReconstructed.has(parentId)),
+    );
+  }
+  return drafts.map((draft, index) => stageSnapshotFromDraft(
+    draft,
+    reconstructedIds[index]!,
+    topologyAvailable
+      ? draft.topology!.parentIds.map((parentId) => sourceToReconstructed.get(parentId)!)
+      : [],
+    topologyAvailable,
+  ));
+}
+
+function stageSnapshotFromDraft(
+  draft: StageDraft,
+  id: string,
+  parentIds: readonly string[],
+  topologyAvailable: boolean,
+): StageSnapshot {
   const startedAt = draft.startedAt ?? draft.firstCompletedAt;
   const endedAt = draft.endedAt ?? draft.firstCompletedAt;
   return {
-    id: `completed-stage-${index + 1}`,
+    id,
     name: draft.name,
     status: "completed",
-    parentIds: [],
+    parentIds,
+    ...(!topologyAvailable ? { topologyState: "unavailable" as const } : {}),
     startedAt,
     endedAt,
     durationMs: draft.durationMs ?? Math.max(0, endedAt - startedAt),
