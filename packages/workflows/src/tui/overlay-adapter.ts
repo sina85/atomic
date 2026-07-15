@@ -65,12 +65,12 @@ export interface OverlayPiSurface {
  * `toggle(runId)`— show if hidden, hide if visible, create if absent.
  * `close()`      — permanently dismiss.
  *
- * Optional `stageId` (on `open`) opens directly on the stage-chat
- * surface for that node — used by `/workflow attach <runId> <stageId>`
+ * Optional `stageId` and owning `stageRunId` (on `open`) open directly on
+ * that exact stage-chat node — used by `/workflow attach <runId> <stageId>`
  * and the picker overlay's connect-to-stage flow.
  */
 export interface GraphOverlayPort {
-  open(runId: string | null, surface?: OverlayPiSurface, stageId?: string): void;
+  open(runId: string | null, surface?: OverlayPiSurface, stageId?: string, stageRunId?: string): void;
   toggle(runId: string | null, surface?: OverlayPiSurface): void;
   close(): void;
 }
@@ -315,13 +315,14 @@ export function buildGraphOverlayAdapter(
     runId: string | null,
     surface?: OverlayPiSurface,
     stageId?: string,
+    stageRunId?: string,
   ): void {
     const ui = surface?.ui ?? pi.ui;
     observeHostCustomUi(ui);
 
     // Already mounted but hidden — flip visibility without remounting.
     if (mounted && currentHandle?.isHidden()) {
-      currentView?.retarget(runId, stageId);
+      currentView?.retarget(runId, stageId, stageRunId);
       currentView?.setVisible(true);
       updateTerminalAutowrap(true);
       updateMouseScrollTracking(currentView?.wantsMouseScrollTracking() ?? true);
@@ -330,7 +331,7 @@ export function buildGraphOverlayAdapter(
       return;
     }
     if (mounted) {
-      currentView?.retarget(runId, stageId);
+      currentView?.retarget(runId, stageId, stageRunId);
       updateTerminalAutowrap(true);
       updateMouseScrollTracking(currentView?.wantsMouseScrollTracking() ?? true);
       // Restore keyboard focus to the visible overlay after retargeting.
@@ -384,6 +385,7 @@ export function buildGraphOverlayAdapter(
         onHide: hideMounted,
         onQuit: quitRun,
         initialAttachStageId: stageId,
+        initialAttachRunId: stageRunId,
         piTui: tui,
         piTheme: theme,
         piKeybindings: keybindings,

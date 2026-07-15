@@ -65,6 +65,8 @@ export interface WorkflowAttachPaneOpts {
    * directly on the node's chat.
    */
   initialAttachStageId?: string;
+  /** Owning nested run for `initialAttachStageId`; omitted stages resolve through the root graph. */
+  initialAttachRunId?: string;
   /**
    * Optional accessor returning the current terminal row count. Threaded
    * into both `GraphView` and `StageChatView` so the overlay renders a

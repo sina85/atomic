@@ -105,7 +105,7 @@ export class WorkflowAttachPane implements Component {
     this.unsubscribeStore = this.store.subscribe((snapshot) => this._handleStoreUpdate(snapshot));
     this.graphView = this._buildGraphView();
     if (opts.initialAttachStageId !== undefined && this.runId) {
-      const target = this._resolveGraphStageTarget(this.runId, opts.initialAttachStageId);
+      const target = opts.initialAttachRunId === undefined ? this._resolveGraphStageTarget(this.runId, opts.initialAttachStageId) : { runId: opts.initialAttachRunId, stageId: opts.initialAttachStageId };
       this._attachToStage(target.runId, target.stageId);
     } else {
       this._syncAwaitingInputKeys(this.store.snapshot());
@@ -238,7 +238,7 @@ export class WorkflowAttachPane implements Component {
     this._setBaseStatus();
     this._syncMouseScrollTracking();
   }
-  retarget(runId: string | null, stageId?: string): void {
+  retarget(runId: string | null, stageId?: string, stageRunId?: string): void {
     if (this.chatView && this.attachedRunId && this.lastAttachedStageId) {
       this.store.recordStageAttached(this.attachedRunId, this.lastAttachedStageId, false);
     }
@@ -254,7 +254,7 @@ export class WorkflowAttachPane implements Component {
     this.graphView = this._buildGraphView();
     this._syncAwaitingInputKeys(this.store.snapshot());
     if (stageId !== undefined && runId) {
-      const target = this._resolveGraphStageTarget(runId, stageId);
+      const target = stageRunId === undefined ? this._resolveGraphStageTarget(runId, stageId) : { runId: stageRunId, stageId };
       this._attachToStage(target.runId, target.stageId);
       return;
     }

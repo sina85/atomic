@@ -143,10 +143,11 @@ describe("WorkflowAttachPane post-mortem revival", () => {
       initialAttachStageId: "stage-a",
     });
 
-    const rendered = pane.render(96).join("\n");
-    assert.match(rendered, /SESSION UNAVAILABLE/);
-    assert.match(rendered, /missing, unreadable, or invalid/);
-    assert.doesNotMatch(rendered, /archived transcript/);
+    const rendered = pane.render(40).join("\n");
+    const visible = rendered.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " ");
+    assert.match(visible, /SESSION UNAVAILABLE/);
+    assert.match(visible, /The retained session is missing, unreadable, or invalid\. Check that the session file still exists and is readable\./);
+    assert.doesNotMatch(visible, /archived transcript/);
     pane.dispose();
   });
 

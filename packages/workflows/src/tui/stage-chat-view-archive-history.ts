@@ -40,9 +40,6 @@ export function renderReadOnlyArchiveBody(
 
   const t = ctx.theme;
   const unavailableMessage = postMortemUnavailableMessage(ctx.postMortemUnavailableReason);
-  const calloutRows = 5;
-  const transcriptBudget = Math.max(1, budget - calloutRows);
-  const lines = ctx.chatHost.renderBody(width, transcriptBudget);
   const callout: string[] = [];
   callout.push(blankLine(width));
   callout.push(
@@ -67,6 +64,8 @@ export function renderReadOnlyArchiveBody(
       0,
     ).render(width),
   );
+  const transcriptBudget = Math.max(0, budget - callout.length);
+  const lines = transcriptBudget > 0 ? ctx.chatHost.renderBody(width, transcriptBudget) : [];
   lines.push(...callout);
   while (lines.length < budget) lines.push(blankLine(width));
   if (lines.length > budget) lines.length = budget;
