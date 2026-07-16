@@ -61,3 +61,13 @@ test("protected publisher retains release and OIDC integrity gates", async () =>
     assert.ok(publish.includes(invariant), `missing release invariant: ${invariant}`);
   }
 });
+
+test("recovery guidance rejects recreating the unpublished tag at its old commit", async () => {
+  const docs = await Bun.file(join(root, "docs/ci.md")).text();
+  assert.match(docs, /preferred recovery[\s\S]*0\.9\.10-alpha\.2[\s\S]*post-merge protected `main`/u);
+  assert.match(
+    docs,
+    /Recreating `0\.9\.10-alpha\.1` at its existing commit `88c11adcdddcf5245b7b04dd3d2912c7531906fe` is insufficient/u,
+  );
+  assert.match(docs, /new deterministic `Release 0\.9\.10-alpha\.1` commit whose parent is post-merge protected `main`/u);
+});
