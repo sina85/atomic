@@ -133,18 +133,14 @@ The selected base is never advanced by the version stamp. The script resolves it
 
 ### Agent publishing requests
 
-If a user asks to publish a release or prerelease, execute the release process directly rather than launching an Atomic workflow:
+If a user asks to publish a release or prerelease, route the request through the named Atomic `publish-release` workflow. When that workflow is discoverable, it is the only authorized release execution path; never silently fall back to performing its steps inline. If discovery or input validation fails, report the configuration problem instead of manually duplicating the release process.
 
-1. Ask for the version only when it was not supplied. Stable releases use `MAJOR.MINOR.PATCH`; prereleases use `MAJOR.MINOR.PATCH-alpha.REVISION` with revision starting at 1.
-2. Infer release versus prerelease from a valid supplied version; ask only when it is ambiguous or invalid. Use the requested `base_ref`, defaulting to the short branch name `main` when omitted.
+1. Ask for the version only when it was not supplied. Stable releases use `MAJOR.MINOR.PATCH`; prereleases use `MAJOR.MINOR.PATCH-alpha.REVISION` with revision starting at 1. Infer `release_kind` (`release` or `prerelease`) from a valid supplied version; ask only when the version is ambiguous or invalid.
+2. Use the workflow discovery and inspection actions to confirm that `publish-release` is available and validate its current input contract before launch. Launch it with `target_version` set to the version without a leading `v`, the inferred `release_kind`, and the requested short `base_ref`, defaulting to `main` when omitted.
 3. For non-main bases, require the branch to be protected with the repository's required CI checks and configure its exact canonical `refs/heads/<base_ref>` in the repository variable `RELEASE_BASE_REFS`; entries are comma-separated with no spaces, aliases, globs, or partial matches.
-4. Create `[release|prerelease]/<version>` without a leading `v` from the selected base.
-5. Update every relevant `packages/*/CHANGELOG.md` according to the Changelog rules below. Keep the selected base versionless; do not run `scripts/bump-version.ts` on the branch.
-6. Run local validation, commit all intended release-notes changes, push the branch, and open a PR to the selected base.
-7. Inspect required CI checks once. Never use `--watch`, sleeps, polling loops, or another workflow as a waiter. If checks are pending, report the PR/run and wait for a lifecycle notice or user follow-up; if checks fail, ask what to do.
-8. After checks pass, merge the exact verified head commit, switch to the selected base, and pull `origin/<base_ref>`.
-9. Run `bun run scripts/cut-release.ts <version> --base <base_ref> --push --yes`. This stamps the real version only on the detached release commit, records canonical base metadata, and pushes the tag, which automatically starts protected publishing.
-10. Inspect the matching `Publish <version>` action once. If it is pending, report its URL and wait for a lifecycle notice or user follow-up rather than blocking. If it fails, report the failing job and ask what to do. If it succeeds, verify npm and GitHub Release state and summarize the release evidence.
+4. Launch the named workflow in the background, as required for model-launched named workflows. After the launch is accepted, report its run ID and end the turn; do not wait for release gates in the launching turn.
+5. The `publish-release` workflow owns release preparation, the release-notes PR and required-check gates, exact merge verification, release-tag creation, and publish verification. Do not manually dispatch GitHub's `publish.yml`; pushing the verified release tag is the workflow's sole publication signal.
+6. If a PR-check or publish gate is pending, wait for a workflow lifecycle notice or user follow-up, then resume the same workflow run by its existing run ID. Never poll, use `--watch` or sleep loops, launch a second release workflow, or manually duplicate any release action while the run is pending.
 
 ## Docs
 
