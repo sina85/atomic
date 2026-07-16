@@ -336,7 +336,7 @@ export default workflow({
       return blockedOutput(
         release,
         "verify-publish-workflow-succeeded",
-        "GitHub Actions tag-triggered Publish run completes successfully after its protected integrity job verifies and pins the release SHA",
+        "GitHub Actions protected workflow_run Publish run completes successfully after its integrity job verifies and pins the release SHA",
         [publishVerification.summary, "", "Tag stage output:", excerpt(tagStageText, 1_000)].join("\n"),
         publishVerification.pending === true ? "blocked" : "failed",
       );
@@ -349,7 +349,7 @@ export default workflow({
       `Branch: ${release.branch}`,
       prUrl === undefined ? "PR URL: see open-release-pr stage output" : `PR URL: ${prUrl}`,
       `Tag: ${release.version}`,
-      actionUrl === undefined ? "Publish run: resume after GitHub reports the tag-triggered run" : `Publish run: ${actionUrl}`,
+      actionUrl === undefined ? "Publish run: resume after GitHub reports the protected workflow_run" : `Publish run: ${actionUrl}`,
       "",
       "Stage summaries:",
       "## prepare-release-branch-and-metadata",

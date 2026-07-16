@@ -142,7 +142,8 @@ function nullableStringField(object: { readonly [key: string]: JsonValue }, key:
 
 export function selectPublishWorkflowRunJson(
   value: JsonValue,
-  expectedHeadBranch: string,
+  expectedReleaseTag: string,
+  expectedWorkflowBranch = "main",
 ): PublishWorkflowRunReference {
   if (!Array.isArray(value)) {
     return { ok: false, summary: "GitHub Actions run list response was not a JSON array." };
@@ -166,7 +167,7 @@ export function selectPublishWorkflowRunJson(
     const displayTitle = stringField(candidate, "displayTitle");
     const workflowName = stringField(candidate, "workflowName");
 
-    if (displayTitle !== `Publish ${expectedHeadBranch}` || event !== "create" || headBranch !== expectedHeadBranch || workflowName !== "Publish") {
+    if (displayTitle !== `Publish ${expectedReleaseTag}` || event !== "workflow_run" || headBranch !== expectedWorkflowBranch || workflowName !== "Publish") {
       mismatches.push(
         `run[${index}] displayTitle=${displayTitle ?? "missing"} event=${event ?? "missing"} headBranch=${headBranch ?? "missing"} workflowName=${workflowName ?? "missing"}`,
       );
@@ -190,9 +191,9 @@ export function selectPublishWorkflowRunJson(
     return {
       ok: true,
       summary: [
-        "GitHub Actions tag-triggered publish run is selected.",
+        "GitHub Actions protected publish run is selected.",
         `databaseId: ${runId}`,
-        `releaseTag: ${expectedHeadBranch}`,
+        `releaseTag: ${expectedReleaseTag}`,
         `event: ${event}`,
         `status: ${status}`,
         conclusion === undefined ? undefined : `conclusion: ${conclusion}`,
@@ -210,8 +211,8 @@ export function selectPublishWorkflowRunJson(
   return {
     ok: false,
     summary: [
-      "GitHub Actions tag-triggered publish run was not found for the release tag.",
-      `expected release: ${expectedHeadBranch} on protected main workflow Publish`,
+      "GitHub Actions protected publish run was not found for the release tag.",
+      `expected release: ${expectedReleaseTag} on protected ${expectedWorkflowBranch} workflow Publish`,
       `examined runs: ${value.length}`,
       ...mismatches.slice(0, 10).map((mismatch) => `- ${mismatch}`),
     ].join("\n"),
@@ -220,7 +221,8 @@ export function selectPublishWorkflowRunJson(
 
 export function verifyPublishWorkflowRunJson(
   value: JsonValue,
-  expectedHeadBranch: string,
+  expectedReleaseTag: string,
+  expectedWorkflowBranch = "main",
 ): PublishWorkflowRunVerification {
   if (!isJsonObject(value)) {
     return { ok: false, summary: "GitHub Actions run response was not a JSON object." };
@@ -238,16 +240,14 @@ export function verifyPublishWorkflowRunJson(
   const failures: string[] = [];
 
   if (runId === undefined) failures.push("databaseId was missing or invalid");
-  if (displayTitle !== `Publish ${expectedHeadBranch}`) {
-    failures.push(`displayTitle was ${displayTitle ?? "missing"}, expected Publish ${expectedHeadBranch}`);
+  if (displayTitle !== `Publish ${expectedReleaseTag}`) {
+    failures.push(`displayTitle was ${displayTitle ?? "missing"}, expected Publish ${expectedReleaseTag}`);
   }
-  if (headBranch !== expectedHeadBranch) failures.push(`headBranch was ${headBranch ?? "missing"}, expected ${expectedHeadBranch}`);
+  if (headBranch !== expectedWorkflowBranch) failures.push(`headBranch was ${headBranch ?? "missing"}, expected ${expectedWorkflowBranch}`);
   if (workflowName !== "Publish") failures.push(`workflowName was ${workflowName ?? "missing"}, expected Publish`);
-  if (event !== "create") failures.push(`event was ${event ?? "missing"}, expected create`);
+  if (event !== "workflow_run") failures.push(`event was ${event ?? "missing"}, expected workflow_run`);
   if (status !== "completed") failures.push(`status was ${status ?? "missing"}, expected completed`);
   if (conclusion !== "success") failures.push(`conclusion was ${conclusion ?? "missing"}, expected success`);
-  // The create event loads the workflow from the default branch while github.sha
-  // and the run head identify the newly-created tag commit.
 
   if (failures.length > 0 || runId === undefined || status === undefined || conclusion === undefined) {
     return {
@@ -264,10 +264,10 @@ export function verifyPublishWorkflowRunJson(
   return {
     ok: true,
     summary: [
-      "GitHub Actions publish run is verified as successful.",
+      "GitHub Actions protected publish run is verified as successful.",
       `databaseId: ${runId}`,
       workflowName === undefined ? undefined : `workflowName: ${workflowName}`,
-      `releaseTag: ${expectedHeadBranch}`,
+      `releaseTag: ${expectedReleaseTag}`,
       `event: ${event}`,
       `status: ${status}`,
       `conclusion: ${conclusion}`,

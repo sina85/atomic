@@ -54,7 +54,7 @@ export async function verifyPublishRunSucceeded(
   execute: RunCommand = defaultRunCommand,
 ): Promise<PublishWorkflowRunVerification> {
   const runList = execute([
-    "gh", "run", "list", "--workflow", "publish.yml", "--event", "create",
+    "gh", "run", "list", "--workflow", "publish.yml", "--event", "workflow_run",
     "--json", runJsonFields, "--limit", "50",
   ]);
   if (runList.exitCode !== 0) {

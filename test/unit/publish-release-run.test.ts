@@ -14,8 +14,8 @@ describe("publish-release event-driven GitHub Actions verification", () => {
   const successfulRun: JsonValue = {
     databaseId: 987654321,
     workflowName: "Publish",
-    headBranch: "1.2.3",
-    event: "create",
+    headBranch: "main",
+    event: "workflow_run",
     displayTitle: "Publish 1.2.3",
     status: "completed",
     conclusion: "success",
@@ -27,7 +27,7 @@ describe("publish-release event-driven GitHub Actions verification", () => {
   };
   const integrityLog = `Release integrity verified: ${releaseSha} is deterministic output from integrated parent aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.`;
 
-  test("selects the newest tag-triggered protected publish run", () => {
+  test("selects the newest protected workflow_run publish run", () => {
     const result = selectPublishWorkflowRunJson([
       { ...successfulRun, databaseId: 111, displayTitle: "Publish 1.2.4" },
       { ...successfulRun, status: "in_progress", conclusion: null },
@@ -37,10 +37,10 @@ describe("publish-release event-driven GitHub Actions verification", () => {
     if (!result.ok) return;
     assert.equal(result.runId, 987654321);
     assert.equal(result.status, "in_progress");
-    assert.match(result.summary, /event: create/u);
+    assert.match(result.summary, /event: workflow_run/u);
   });
 
-  test("rejects manual dispatches and unrelated tag events", () => {
+  test("rejects manual dispatches and unrelated protected runs", () => {
     const result = selectPublishWorkflowRunJson([
       { ...successfulRun, displayTitle: "Publish 1.2.4" },
       { ...successfulRun, event: "workflow_dispatch" },
@@ -51,7 +51,7 @@ describe("publish-release event-driven GitHub Actions verification", () => {
     assert.match(result.summary, /event=workflow_dispatch/u);
   });
 
-  test("accepts only a completed successful create event", () => {
+  test("accepts only a completed successful workflow_run event", () => {
     const result = verifyPublishWorkflowRunJson(successfulRun, "1.2.3");
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -78,7 +78,7 @@ describe("publish-release event-driven GitHub Actions verification", () => {
 
     assert.equal(result.ok, true);
     assert.equal(commands.length, 4);
-    assert.match(commands[0] ?? "", /--event create/u);
+    assert.match(commands[0] ?? "", /--event workflow_run/u);
     assert.equal(commands.some((command) => command.includes("--watch")), false);
   });
 

@@ -23,3 +23,41 @@ test("test workflow runs platform-independent suites once and preserves cross-pl
   assert.match(workflow, /run-flaky-test-suite\.ts --label "coding-agent tests/);
   assert.match(workflow, /name: Upload flaky-test diagnostics[\s\S]*if: always\(\)/);
 });
+
+test("tag creation is unprivileged and protected publication is selected separately", async () => {
+  const signal = await Bun.file(join(root, ".github/workflows/publish-tag-created.yml")).text();
+  const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
+
+  assert.match(signal, /on:\n\s+create:/u);
+  assert.match(signal, /permissions: \{\}/u);
+  assert.match(signal, /if \[\[ "\$REF_TYPE" != "tag" \]\]; then[\s\S]*exit 1/u);
+  assert.doesNotMatch(signal, /checkout|id-token|npm publish|action-gh-release/u);
+  assert.match(signal, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/u);
+  assert.doesNotMatch(signal, /refs\/heads\/main/u);
+
+  assert.match(publish, /workflow_run:\n\s+workflows: \["Publish tag created"\]\n\s+types: \[completed\]/u);
+  assert.doesNotMatch(publish, /\n\s+create:/u);
+  assert.match(publish, /ref: \$\{\{ github\.workflow_sha \}\}/u);
+  assert.match(publish, /RELEASE_TAG: \$\{\{ github\.event\.workflow_run\.head_branch \}\}/u);
+  assert.match(publish, /TRIGGER_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/u);
+  assert.match(publish, /bun scripts\/verify-publish-context\.ts/u);
+  assert.match(publish, /PROTECTED_DEFAULT_REF: refs\/remotes\/atomic-publisher\/protected-default/u);
+  assert.match(publish, /environment: npm-publish/u);
+});
+
+test("protected publisher retains release and OIDC integrity gates", async () => {
+  const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
+  for (const invariant of [
+    '[[ "$release_sha" == "$TRIGGER_SHA" ]]',
+    "Release-base-ref",
+    "Release-base-sha",
+    'git merge-base --is-ancestor "$release_base_sha" "$fetched_base_sha"',
+    "scripts/verify-release-integrity.ts",
+    "persist-credentials: false",
+    "id-token: write",
+    "npm publish --provenance",
+    "Reconfirm release tag is immutable",
+  ]) {
+    assert.ok(publish.includes(invariant), `missing release invariant: ${invariant}`);
+  }
+});

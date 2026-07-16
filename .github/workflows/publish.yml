@@ -1,16 +1,18 @@
 name: Publish
-run-name: Publish ${{ github.ref_name }}
+run-name: Publish ${{ github.event.workflow_run.head_branch }}
 
+# workflow_run selects this privileged workflow from the protected default
+# branch. The completed create workflow is an untrusted signal only.
 on:
-    # The create event is evaluated from the default branch. A release tag can
-    # select the release commit, but it cannot replace this workflow definition.
-    create:
+    workflow_run:
+        workflows: ["Publish tag created"]
+        types: [completed]
 
 permissions:
     contents: read
 
 concurrency:
-    group: publish-${{ github.ref_name }}
+    group: publish-${{ github.event.workflow_run.head_branch }}
     cancel-in-progress: false
 
 env:
@@ -22,14 +24,16 @@ env:
 jobs:
     release-integrity:
         name: Verify release integrity
-        if: github.ref_type == 'tag'
+        if: >-
+            github.event.workflow_run.event == 'create' &&
+            github.event.workflow_run.conclusion == 'success'
         runs-on: blacksmith-4vcpu-ubuntu-2404
         outputs:
             sha: ${{ steps.release.outputs.sha }}
             tag: ${{ steps.release.outputs.tag }}
         steps:
-            # Pin the protected workflow revision rather than checking out code
-            # selected by the newly-created tag.
+            # workflow_run exposes the protected default-branch definition SHA.
+            # Pin all trusted release verification code to that immutable commit.
             - uses: useblacksmith/checkout@v1
               with:
                   ref: ${{ github.workflow_sha }}
@@ -42,15 +46,23 @@ jobs:
               id: release
               shell: bash
               env:
-                  RELEASE_TAG: ${{ github.ref_name }}
-                  TRIGGER_SHA: ${{ github.sha }}
+                  PUBLISH_EVENT: ${{ github.event_name }}
+                  RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+                  TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
                   WORKFLOW_REF: ${{ github.workflow_ref }}
+                  WORKFLOW_SHA: ${{ github.workflow_sha }}
                   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+                  SIGNAL_EVENT: ${{ github.event.workflow_run.event }}
+                  SIGNAL_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  SIGNAL_PATH: ${{ github.event.workflow_run.path }}
+                  SIGNAL_REPOSITORY: ${{ github.event.workflow_run.repository.full_name }}
+                  PROTECTED_DEFAULT_REF: refs/remotes/atomic-publisher/protected-default
                   ALLOWED_RELEASE_BASE_REFS: ${{ vars.RELEASE_BASE_REFS }}
               run: |
                   set -euo pipefail
-                  expected_workflow_ref="${GITHUB_REPOSITORY}/.github/workflows/publish.yml@refs/heads/${DEFAULT_BRANCH}"
-                  [[ "$WORKFLOW_REF" == "$expected_workflow_ref" ]] || { echo "Publish workflow was not loaded from protected $DEFAULT_BRANCH: $WORKFLOW_REF" >&2; exit 1; }
+                  git update-ref -d "$PROTECTED_DEFAULT_REF"
+                  git fetch --no-tags origin "refs/heads/${DEFAULT_BRANCH}:${PROTECTED_DEFAULT_REF}"
+                  bun scripts/verify-publish-context.ts
                   release_version_re='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-alpha\.[1-9][0-9]*)?'
                   [[ "$RELEASE_TAG" =~ ^$release_version_re$ ]] || { echo "Unexpected tag format: $RELEASE_TAG" >&2; exit 1; }
                   release_sha=$(git ls-remote --exit-code --refs origin "refs/tags/$RELEASE_TAG" | awk 'NR == 1 { print $1 }')
@@ -342,6 +354,7 @@ jobs:
 
     publish:
         name: Publish @bastani/atomic
+        environment: npm-publish
         permissions:
             contents: write
             id-token: write
