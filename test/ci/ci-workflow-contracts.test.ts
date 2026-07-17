@@ -5,8 +5,12 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
+async function readText(path: string): Promise<string> {
+  return (await Bun.file(join(root, path)).text()).replace(/\r\n?/gu, "\n");
+}
+
 test("test workflow runs platform-independent suites once and preserves cross-platform smoke", async () => {
-  const workflow = await Bun.file(join(root, ".github/workflows/test.yml")).text();
+  const workflow = await readText(".github/workflows/test.yml");
   for (const step of ["Typecheck", "File length check", "Docs link validation"]) {
     const block = workflow.slice(workflow.indexOf(`- name: ${step}`), workflow.indexOf("- name:", workflow.indexOf(`- name: ${step}`) + 1));
     assert.match(block, /if: runner\.os == 'Linux'/, `${step} must run on only one matrix leg`);
@@ -30,7 +34,7 @@ test("CI workflows pin the repository's declared Bun version", async () => {
   assert.match(bunVersion, /^\d+\.\d+\.\d+$/u);
 
   for (const workflowPath of [".github/workflows/test.yml", ".github/workflows/publish.yml"]) {
-    const workflow = await Bun.file(join(root, workflowPath)).text();
+    const workflow = await readText(workflowPath);
     const configuredVersions = [...workflow.matchAll(/bun-version:\s*([^\s]+)/gu)].map((match) => match[1]);
     assert.ok(configuredVersions.length > 0, `${workflowPath} must configure setup-bun`);
     assert.deepEqual(
@@ -42,7 +46,7 @@ test("CI workflows pin the repository's declared Bun version", async () => {
 });
 
 test("publisher is a strict protected-main workflow_dispatch", async () => {
-  const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
+  const publish = await readText(".github/workflows/publish.yml");
   assert.match(publish, /workflow_dispatch:\n\s+inputs:\n\s+version:\n\s+description:[^\n]+\n\s+required: true\n\s+type: string/u);
   assert.doesNotMatch(publish, /\n\s+(?:create|workflow_run):/u);
   assert.match(publish, /run-name: Publish \$\{\{ inputs\.version \}\}/u);
@@ -55,7 +59,7 @@ test("publisher is a strict protected-main workflow_dispatch", async () => {
 });
 
 test("publisher preserves tag, base, deterministic tree, and exact-SHA contracts", async () => {
-  const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
+  const publish = await readText(".github/workflows/publish.yml");
   for (const invariant of [
     'git ls-remote --exit-code --refs origin "$expected_tag_ref"',
     "Release-base-ref",
@@ -74,7 +78,7 @@ test("publisher preserves tag, base, deterministic tree, and exact-SHA contracts
 });
 
 test("publisher keeps least privilege, npm environment, OIDC, and pre-side-effect tag reconfirmation", async () => {
-  const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
+  const publish = await readText(".github/workflows/publish.yml");
   assert.match(publish, /permissions:\n\s+contents: read/u);
   assert.match(publish, /publish:\n\s+name: Publish @bastani\/atomic\n\s+environment: npm-publish\n\s+permissions:\n\s+contents: write\n\s+id-token: write/u);
   assert.doesNotMatch(publish, /NPM_TOKEN|NODE_AUTH_TOKEN/u);
