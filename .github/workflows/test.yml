@@ -29,7 +29,7 @@ jobs:
                   fetch-depth: 0
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: latest
+                  bun-version: 1.3.14
             # Node is required by test/integration/installed-package-node-extensions.test.ts,
             # which smoke-tests the built npm package under the Node runtime (the
             # `atomic` bin runs via `#!/usr/bin/env node` for npm/bun installs).

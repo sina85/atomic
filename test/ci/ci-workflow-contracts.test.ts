@@ -24,6 +24,23 @@ test("test workflow runs platform-independent suites once and preserves cross-pl
   assert.match(workflow, /name: Upload flaky-test diagnostics[\s\S]*if: always\(\)/);
 });
 
+test("CI workflows pin the repository's declared Bun version", async () => {
+  const manifest = (await Bun.file(join(root, "package.json")).json()) as { packageManager: string };
+  const bunVersion = manifest.packageManager.replace(/^bun@/u, "");
+  assert.match(bunVersion, /^\d+\.\d+\.\d+$/u);
+
+  for (const workflowPath of [".github/workflows/test.yml", ".github/workflows/publish.yml"]) {
+    const workflow = await Bun.file(join(root, workflowPath)).text();
+    const configuredVersions = [...workflow.matchAll(/bun-version:\s*([^\s]+)/gu)].map((match) => match[1]);
+    assert.ok(configuredVersions.length > 0, `${workflowPath} must configure setup-bun`);
+    assert.deepEqual(
+      [...new Set(configuredVersions)],
+      [bunVersion],
+      `${workflowPath} must pin setup-bun to packageManager instead of resolving a moving tag`,
+    );
+  }
+});
+
 test("publisher is a strict protected-main workflow_dispatch", async () => {
   const publish = await Bun.file(join(root, ".github/workflows/publish.yml")).text();
   assert.match(publish, /workflow_dispatch:\n\s+inputs:\n\s+version:\n\s+description:[^\n]+\n\s+required: true\n\s+type: string/u);
