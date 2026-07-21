@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed newly authenticated providers remaining unavailable in the model selector until Atomic restarted. API-key and OAuth login now reload the isolated engine's credentials and refresh its authoritative model catalog immediately, including credential-dependent dynamic discovery ([#1918](https://github.com/bastani-inc/atomic/issues/1918)).
 - Added actionable `/logout` and `/login` recovery guidance when OpenAI Codex invalidates or revokes a locally unexpired OAuth token, and prevented an earlier WebSocket-to-SSE transport diagnostic from making the definitive authentication rejection retryable ([#1922](https://github.com/bastani-inc/atomic/issues/1922)).
 
 ## [0.9.10] - 2026-07-20
