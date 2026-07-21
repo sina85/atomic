@@ -2,6 +2,7 @@ import { beforeEach, describe, test } from "bun:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import {
   EXPECTED_WORKFLOW_DESCRIPTION_TOKENS,
   factory,
@@ -12,6 +13,20 @@ import {
 } from "./mock-extension-api-helpers.js";
 import type { WorkflowToolArgs } from "./mock-extension-api-helpers.js";
 import type { WorkflowToolResult } from "../../packages/workflows/src/extension/render-result.js";
+
+function registryModel(overrides: Partial<Model<Api>> & Pick<Model<Api>, "id" | "provider">): Model<Api> {
+  return {
+    name: overrides.id,
+    api: "openai-completions",
+    baseUrl: "https://example.invalid",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 4_096,
+    ...overrides,
+  };
+}
 
 describe("MockExtensionAPI — tool registration", () => {
   let mock: ReturnType<typeof makeMock>;
@@ -95,7 +110,7 @@ describe("MockExtensionAPI — tool registration", () => {
     const actionSchema = params.properties.action;
     // TypeBox Optional(Union([...])) wraps in anyOf
     const raw = JSON.stringify(actionSchema);
-    for (const literal of ["run", "list", "get", "status", "interrupt", "quit", "resume", "inputs"]) {
+    for (const literal of ["run", "list", "get", "status", "interrupt", "quit", "resume", "inputs", "models"]) {
       assert.ok(raw.includes(literal));
     }
     assert.ok(!raw.includes("kill"));
@@ -165,6 +180,40 @@ describe("MockExtensionAPI — tool registration", () => {
     const r = result as { action: "inputs"; name: string; inputs: Array<{ name: string }> };
     assert.equal(r.name, "deep-research-codebase");
     assert.ok(r.inputs.some((input) => input.name === "prompt"));
+  });
+
+  test("tool execute derives thinking levels from real-shaped registry models and marks current", async () => {
+    const execute = mock.tools[0]!.opts.execute;
+    const reasoningModel = registryModel({
+      provider: "openai",
+      id: "gpt-4",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: "medium",
+        high: "high",
+        xhigh: null,
+        max: "max",
+      },
+    });
+    const nonReasoningModel = registryModel({ provider: "anthropic", id: "claude-3" });
+    const withRegistry = await execute("models-with-registry", { action: "models" }, undefined, undefined, {
+      model: reasoningModel,
+      modelRegistry: { getAvailable: () => [reasoningModel, nonReasoningModel] },
+    } as never);
+    const result = withRegistry.details as Extract<WorkflowToolResult, { action: "models" }>;
+    assert.equal(result.models.length, 2);
+    assert.equal(result.models[0]!.fullId, "openai/gpt-4");
+    assert.equal(result.models[0]!.isCurrent, true);
+    assert.deepEqual(result.models[0]!.availableThinkingLevels, ["off", "low", "medium", "high", "max"]);
+    assert.equal(result.models[1]!.fullId, "anthropic/claude-3");
+    assert.equal(result.models[1]!.isCurrent, false);
+    assert.deepEqual(result.models[1]!.availableThinkingLevels, ["off"]);
+
+    const withoutRegistry = await execute("models-without-registry", { action: "models" }, undefined, undefined, {} as never);
+    const emptyResult = withoutRegistry.details as Extract<WorkflowToolResult, { action: "models" }>;
+    assert.deepEqual(emptyResult.models, []);
   });
 
   test("tool execute returns read-only workflow details for action='get'", async () => {
