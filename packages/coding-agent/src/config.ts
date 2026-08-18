@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { getHomeDir, normalizePath } from "./utils/paths.ts";
 import { isSplitLauncherRuntime, moduleFileFromMetaUrl } from "./utils/split-launcher.ts";
+import { type ForkVersionMetadata, formatVersionOutput } from "./version-display.ts";
 
 // =============================================================================
 // Package Detection
@@ -204,7 +205,7 @@ export function getBundledInteractiveAssetPath(name: string): string {
 // App Config (from package.json <appName>Config, with piConfig as a legacy shim)
 // =============================================================================
 
-interface AppConfig {
+interface AppConfig extends ForkVersionMetadata {
 	name?: string;
 	configDir?: string;
 	changelogUrl?: string;
@@ -249,6 +250,12 @@ export const LEGACY_CONFIG_DIR_NAME = ".pi";
 export const CONFIG_DIR_NAMES: readonly string[] =
 	CONFIG_DIR_NAME === LEGACY_CONFIG_DIR_NAME ? [CONFIG_DIR_NAME] : [CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME];
 export const VERSION: string = pkg.version || "0.0.0";
+/**
+ * Text `--version` prints. Identical to `VERSION` unless the manifest declares
+ * fork labelling, so update checks, cache keys, and User-Agent strings keep
+ * using `VERSION` and stay on real package semantics.
+ */
+export const VERSION_OUTPUT: string = formatVersionOutput(VERSION, appConfig);
 export const CHANGELOG_URL: string | undefined = appConfig?.changelogUrl?.trim() || undefined;
 
 const ENV_PREFIX = APP_NAME.toUpperCase();

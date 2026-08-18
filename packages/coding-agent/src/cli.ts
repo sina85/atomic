@@ -8,7 +8,7 @@
  * Deliberately imports only config.ts statically: the full CLI module graph is
  * loaded dynamically so metadata fast paths (e.g. --version) skip it entirely.
  */
-import { APP_NAME, VERSION } from "./config.ts";
+import { APP_NAME, VERSION_OUTPUT } from "./config.ts";
 import { ATOMIC_AI_AGENT } from "./utils/agent-attribution.ts";
 import { enablePersistentCompileCache } from "./utils/compile-cache.ts";
 
@@ -22,7 +22,7 @@ process.emitWarning = (() => {}) as typeof process.emitWarning;
 const args = process.argv.slice(2);
 
 if (args[0] === "--version" || args[0] === "-v") {
-	console.log(VERSION);
+	console.log(VERSION_OUTPUT);
 	process.exit(0);
 }
 

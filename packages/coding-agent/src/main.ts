@@ -36,7 +36,7 @@ import {
 	getEnvValue,
 	getPackageDir,
 	setEnvValue,
-	VERSION,
+	VERSION_OUTPUT,
 } from "./config.ts";
 import type { CreateAgentSessionRuntimeFactory } from "./core/agent-session-runtime.ts";
 import {
@@ -319,7 +319,7 @@ export async function main(argv: string[], options?: MainOptions) {
 	time("parseArgs");
 
 	if (parsed.version) {
-		console.log(VERSION);
+		console.log(VERSION_OUTPUT);
 		process.exit(0);
 	}
 

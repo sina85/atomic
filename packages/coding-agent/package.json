@@ -6,12 +6,16 @@
   "atomicConfig": {
     "name": "atomic",
     "configDir": ".atomic",
-    "changelogUrl": "https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/CHANGELOG.md"
+    "changelogUrl": "https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/CHANGELOG.md",
+    "versionLabel": "0.9.14-alpha.3-sina",
+    "forkedFromVersion": "0.9.14-alpha.3"
   },
   "piConfig": {
     "name": "atomic",
     "configDir": ".atomic",
-    "changelogUrl": "https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/CHANGELOG.md"
+    "changelogUrl": "https://github.com/bastani-inc/atomic/blob/main/packages/coding-agent/CHANGELOG.md",
+    "versionLabel": "0.9.14-alpha.3-sina",
+    "forkedFromVersion": "0.9.14-alpha.3"
   },
   "bin": {
     "atomic": "dist/cli.js"

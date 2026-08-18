@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ATOMIC_AI_AGENT } from "../utils/agent-attribution.ts";
+import { readVersionOutput } from "../version-display.ts";
 import { INTERNAL_INTERCOM_BROKER_ARG, importInternalIntercomBroker } from "./internal-intercom-broker.ts";
 
 const APP_NAME = "atomic";
@@ -12,16 +13,6 @@ process.env.AI_AGENT = ATOMIC_AI_AGENT;
 process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 const args = process.argv.slice(2);
-
-function readVersion(): string {
-	try {
-		const packageJsonPath = join(dirname(process.execPath), "package.json");
-		const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
-		return typeof pkg.version === "string" ? pkg.version : "0.0.0";
-	} catch {
-		return "0.0.0";
-	}
-}
 
 if (args[0] === INTERNAL_INTERCOM_BROKER_ARG) {
 	if (args.length !== 2) {
@@ -34,7 +25,7 @@ if (args[0] === INTERNAL_INTERCOM_BROKER_ARG) {
 	});
 } else {
 	if (args[0] === "--version" || args[0] === "-v") {
-		console.log(readVersion());
+		console.log(readVersionOutput(join(dirname(process.execPath), "package.json")));
 		process.exit(0);
 	}
 

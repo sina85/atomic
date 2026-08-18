@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ENV_AGENT_DIR, VERSION } from "../src/config.ts";
+import { ENV_AGENT_DIR, VERSION_OUTPUT } from "../src/config.ts";
 import { removeTempDirs, runCliProcess } from "./cli-test-helpers.ts";
 
 const tempDirs: string[] = [];
@@ -71,7 +71,7 @@ describe("stdout cleanliness in non-interactive modes", () => {
 		const result = await runCli(["--version"]);
 
 		expect(result.code).toBe(0);
-		expect(result.stdout.trim()).toBe(VERSION);
+		expect(result.stdout.trim()).toBe(VERSION_OUTPUT);
 		expect(result.stderr).toBe("");
 	});
 

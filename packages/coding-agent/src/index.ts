@@ -35,6 +35,7 @@ export {
 	PACKAGE_NAME,
 	setEnvValue,
 	VERSION,
+	VERSION_OUTPUT,
 	WORKFLOW_STAGE_SUBAGENT_GUARD_ENV,
 } from "./config.ts";
 export {
